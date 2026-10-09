@@ -123,7 +123,7 @@ def _merge(base: dict, over: dict) -> dict:
 
 
 def load(path: str | Path | None = None) -> Config:
-    p = Path(path or os.environ.get("OCRBENCH_CONFIG") or ROOT / "config" / "example.yaml")
+    p = Path(path or os.environ.get("OCRBENCH_CONFIG") or os.environ.get("CONFIG") or ROOT / "config" / "example.yaml")
     raw = _merge(DEFAULTS, _expand(yaml.safe_load(p.read_text()) or {}))
     for key in ("name_prefix", "aws", "ocr", "bench"):
         if key not in raw:
