@@ -280,3 +280,90 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
         "legend_md": legend_md(meta),
     }
     return build_site(run_dir / "docs", run_dir, scores, site_root / meta["id"], sections=sections)
+
+
+def comparison(items: list[dict]) -> dict:
+    """Cross-run tables. items: [{"meta":..., "scores":...}] newest first.
+
+    Rows are keyed by what was actually measured (pipeline + extractor model id, or backend + model id),
+    so a renamed config key never silently compares different models.
+    """
+    from . import explain
+
+    runs_ = [i["meta"]["id"] for i in items]
+    extraction: dict[str, dict] = {}
+    reading: dict[str, dict] = {}
+    speed: dict[str, dict] = {}
+    for it in items:
+        m, s, rid = it["meta"], it["scores"], it["meta"]["id"]
+        be = m.get("llm_backends") or {}
+        ex = m.get("extraction") or {}
+        for a in s["extraction"]["aggregate"]:
+            ext = (ex.get("agents") or {}).get(a["pipeline"]) or ex.get("agent")
+            label = f"{a['pipeline'].split('->')[0]} -> {explain.model_label(be.get(ext, {}).get('model'))}"
+            extraction.setdefault(label, {}).setdefault(rid, {})[a["variant"]] = a["field_accuracy"]
+        for a in s["transcription"]["aggregate"]:
+            model = (
+                explain.ocr_label(m["ocr"])
+                if a["backend"] == "ocr"
+                else explain.model_label(be.get(a["backend"], {}).get("model"))
+            )
+            reading.setdefault(model, {}).setdefault(rid, {})[a["variant"]] = (a.get("cer_median"), a["num_recall"])
+        for sp in s["speed"]:
+            if sp["backend"] == "ocr":
+                key = f"ocr on {m['ocr'].get('instance_type')}"
+                speed.setdefault(rid, {}).setdefault(sp["concurrency"], sp["pages_per_min"])
+                speed[rid]["_host"] = key
+    return {"runs": runs_, "extraction": extraction, "reading": reading, "ocr_speed": speed}
+
+
+def comparison_md(c: dict) -> str:
+    runs_ = c["runs"]
+    if len(runs_) < 2:
+        return ""
+    out = [
+        "## Compare runs",
+        "",
+        "Same metric, side by side. Rows are matched on the actual model, not the config name.",
+        "",
+        "### Field accuracy (clean / degraded)",
+        "",
+        "| input -> extractor | " + " | ".join(f"`{r}`" for r in runs_) + " |",
+        "|---" * (len(runs_) + 1) + "|",
+    ]
+    for label, per in sorted(c["extraction"].items()):
+        cells = []
+        for r in runs_:
+            x = per.get(r)
+            cells.append("–" if not x else f"{x.get('clean', 0):.1%} / {x.get('degraded', 0):.1%}")
+        out.append(f"| {label} | " + " | ".join(cells) + " |")
+    out += [
+        "",
+        "### Transcription, degraded pages (CER median / number recall)",
+        "",
+        "| reader | " + " | ".join(f"`{r}`" for r in runs_) + " |",
+        "|---" * (len(runs_) + 1) + "|",
+    ]
+    for model, per in sorted(c["reading"].items()):
+        cells = []
+        for r in runs_:
+            x = (per.get(r) or {}).get("degraded")
+            cells.append("–" if not x else f"{x[0]:.3f} / {x[1]:.1%}")
+        out.append(f"| {model} | " + " | ".join(cells) + " |")
+    if c["ocr_speed"]:
+        out += [
+            "",
+            "### OCR throughput (pages/min by concurrency)",
+            "",
+            "| run | host | c1 | c4 | c16 | c32 |",
+            "|---|---|---|---|---|---|",
+        ]
+        for r in runs_:
+            sp = c["ocr_speed"].get(r)
+            if sp:
+                out.append(
+                    f"| `{r}` | {sp['_host']} | "
+                    + " | ".join(f"{sp[k]:.1f}" if k in sp else "–" for k in (1, 4, 16, 32))
+                    + " |"
+                )
+    return "\n".join(out)

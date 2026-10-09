@@ -742,7 +742,7 @@ def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, secti
     return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir), sections).build()
 
 
-def build_experiments_index(runs: list[dict], out_dir: Path) -> Path:
+def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str = "") -> Path:
     """site/index.html: one row per run with models, GPU, cost and headline results, linking to the run page.
 
     Each item: {"meta": run.json dict, "headline": reporting.headline(...), "bottom_line": str}.
@@ -851,7 +851,9 @@ def build_experiments_index(runs: list[dict], out_dir: Path) -> Path:
     body = (
         "<h1>ocr-bench experiments</h1>"
         f'<p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}. Click one for findings, setup, '
-        "results and every document.</p>" + ("".join(cards) or '<p class="empty">No runs yet.</p>')
+        "results and every document.</p>"
+        + (f'<section class="compare">{markdown_lite.render(comparison_md)}</section>' if comparison_md else "")
+        + ("".join(cards) or '<p class="empty">No runs yet.</p>')
     )
     idx = out_dir / "index.html"
     idx.write_text(_page("ocr-bench experiments", body, ""), encoding="utf-8")

@@ -203,3 +203,28 @@ def test_named_extractor_pipeline(tiny_docs, tmp_path, monkeypatch):
     recs = [json.loads(x) for x in (tmp_path / "extractions.jsonl").read_text().splitlines()]
     assert {r["agent"] for r in recs} == {cfg["bench"]["extraction"]["agent"], "bedrock-haiku"}
     assert sorted(set(used)) == sorted({cfg["bench"]["extraction"]["agent"], "bedrock-haiku"})
+
+
+def test_comparison_matches_on_model_not_key():
+    from ocrbench import reporting
+
+    def run(rid, agent_model, acc):
+        meta = {
+            "id": rid,
+            "ocr": {"hf_repo": "x/ocr", "hf_revision": "abcdef12", "instance_type": "ml.g5.xlarge"},
+            "llm_backends": {"a": {"model": agent_model}},
+            "extraction": {"agent": "a", "agents": {"image->agent": "a"}},
+        }
+        scores = {
+            "extraction": {"aggregate": [{"pipeline": "image->agent", "variant": "clean", "field_accuracy": acc}]},
+            "transcription": {"aggregate": []},
+            "speed": [{"backend": "ocr", "concurrency": 1, "pages_per_min": 9.0}],
+        }
+        return {"meta": meta, "scores": scores}
+
+    c = reporting.comparison(
+        [run("r2", "anthropic.claude-sonnet-5-5", 0.99), run("r1", "anthropic.claude-sonnet-4-5-20250929-v1:0", 0.97)]
+    )
+    md = reporting.comparison_md(c)
+    assert "image -> Claude Sonnet 5.5" in md and "image -> Claude Sonnet 4.5 (2025-09-29)" in md
+    assert "ml.g5.xlarge" in md
