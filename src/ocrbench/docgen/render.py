@@ -6,6 +6,7 @@ import random
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 from PIL import Image, ImageFilter
@@ -59,14 +60,18 @@ def _chrome_print(chrome: str, html_path: Path, pdf_path: Path, timeout: int) ->
         subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
 
 
+_PDFIUM_LOCK = threading.Lock()  # pdfium is not thread-safe; Chrome rendering stays parallel
+
+
 def pdf_to_images(pdf_path: Path, scale: float = 2.0) -> list[Image.Image]:
     import pypdfium2 as pdfium
 
-    pdf = pdfium.PdfDocument(str(pdf_path))
-    try:
-        return [pdf[i].render(scale=scale).to_pil().convert("RGB") for i in range(len(pdf))]
-    finally:
-        pdf.close()
+    with _PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(str(pdf_path))
+        try:
+            return [pdf[i].render(scale=scale).to_pil().convert("RGB") for i in range(len(pdf))]
+        finally:
+            pdf.close()
 
 
 def degrade(img: Image.Image, r: random.Random) -> tuple[Image.Image, int]:
