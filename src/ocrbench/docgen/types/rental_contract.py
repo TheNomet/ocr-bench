@@ -13,7 +13,10 @@ SCHEMA = {
     "fields": {
         "landlord": {"type": "string", "description": "Name of the landlord (utleier)"},
         "tenant": {"type": "string", "description": "Name of the tenant (leietaker)"},
-        "property_address": {"type": "string", "description": "Address of the rented home, as printed"},
+        "property_address": {
+            "type": "string",
+            "description": "Address of the rented home including the flat number, as printed",
+        },
         "start_date": {"type": "string", "description": "Start date of the tenancy (dd.mm.yyyy)"},
         "monthly_rent": {"type": "string", "description": "Monthly rent in NOK"},
         "deposit": {"type": "string", "description": "Deposit amount in NOK"},
@@ -180,7 +183,7 @@ def build(r: random.Random) -> Doc:
 
     doc.field("landlord", landlord)
     doc.field("tenant", tenant)
-    doc.field("property_address", flat)
+    doc.field("property_address", f"{flat}, leilighet {unit}")
     doc.field("start_date", fake.fd(start))
     doc.field("monthly_rent", rent)
     doc.field("deposit", deposit)

@@ -30,6 +30,12 @@ def normalise(text: str) -> str:
 
 
 def levenshtein(a, b) -> int:
+    try:
+        from rapidfuzz.distance import Levenshtein
+
+        return Levenshtein.distance(a, b)  # works on str and on lists of words
+    except ImportError:
+        pass
     if len(a) < len(b):
         a, b = b, a
     prev = list(range(len(b) + 1))
@@ -59,6 +65,7 @@ def page_metrics(gt_text: str, gt_numbers: list[str], hyp: str) -> dict:
         "missing_examples": missing[:5],
         "num_hallucinated": len(halluc),
         "hallucinated_examples": halluc[:5],
+        "len_ratio": len(h) / max(1, len(g)),
         "clean_text": h,
     }
 
@@ -175,6 +182,8 @@ def score(cfg: Config, docs: Path, run_dir: Path, tag: str) -> dict:
                             m: st.mean(p[m] for p in s)
                             for m in ("cer", "wer", "word_recall", "word_precision", "num_recall")
                         },
+                        "cer_median": st.median(p["cer"] for p in s),
+                        "runaway": sum(p["len_ratio"] > 3 for p in s),
                         "num_missing": sum(p["num_missing"] for p in s),
                         "num_hallucinated": sum(p["num_hallucinated"] for p in s),
                     }

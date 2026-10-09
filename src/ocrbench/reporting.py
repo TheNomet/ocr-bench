@@ -31,12 +31,16 @@ def summary_md(scores: dict) -> str:
         out += [
             "## Transcription quality",
             "",
-            "| backend | variant | pages | CER | word recall | number recall | missing nums | invented nums |",
-            "|---|---|---|---|---|---|---|---|",
+            "Runaway = output more than 3x the page's length (repetition loop). One runaway page dominates "
+            "the mean CER, so the median is shown too.",
+            "",
+            "| backend | variant | pages | CER mean | CER median | runaway | word recall | number recall | missing nums | invented nums |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
         for a in ta:
             out.append(
-                f"| {a['backend']} | {a['variant']} | {a['pages']} | {a['cer']:.3f} | {a['word_recall']:.1%} | "
+                f"| {a['backend']} | {a['variant']} | {a['pages']} | {a['cer']:.3f} | {a.get('cer_median', 0):.3f} | "
+                f"{a.get('runaway', 0)} | {a['word_recall']:.1%} | "
                 f"{a['num_recall']:.1%} | {a['num_missing']} | {a['num_hallucinated']} |"
             )
         out.append("")
