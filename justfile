@@ -112,6 +112,10 @@ docs per_type="":
 run plan tag=plan:
     {{ob}} run --plan {{plan}} --tag {{tag}}
 
+# Re-run only stage 2 (extraction) on an existing run's transcripts
+extract tag:
+    {{ob}} run --plan none --tag {{tag}} --extract-only
+
 fetch tag:
     {{ob}} fetch --tag {{tag}}
 

@@ -192,7 +192,9 @@ def run_task(cfg: Config, outputs: dict, args: list[str]) -> tuple[str, int | No
         time.sleep(10)
     for _ in range(30):  # exitCode is filled in a little after STOPPED
         t = ecs.describe_tasks(cluster=outputs["ecs_cluster"], tasks=[arn])["tasks"][0]
-        code = t["containers"][0].get("exitCode")
+        # pick ours by name: accounts may inject sidecars (e.g. a security agent) into every task
+        ours = next((c for c in t["containers"] if c["name"] == "bench"), t["containers"][0])
+        code = ours.get("exitCode")
         if code is not None:
             break
         time.sleep(2)

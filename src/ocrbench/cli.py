@@ -197,7 +197,13 @@ def cmd_task_run(cfg: Config, a) -> None:
     n = aws.s3_sync_down(cfg.bucket, "docs", docs)
     print(f"synced {n} doc files", flush=True)
     try:
-        _run_plan(cfg, docs, out, a.plan, extract=not a.no_extract)
+        if a.extract_only:
+            from .extract import run as extract_run
+
+            print(f"pulled {aws.s3_sync_down(cfg.bucket, f'results/{a.tag}', out)} existing result files", flush=True)
+            asyncio.run(extract_run(cfg, docs, out))
+        else:
+            _run_plan(cfg, docs, out, a.plan, extract=not a.no_extract)
     finally:
         if out.exists():
             print(f"uploaded {aws.s3_sync_up(out, cfg.bucket, f'results/{a.tag}')} result files", flush=True)
@@ -210,7 +216,12 @@ def cmd_run(cfg: Config, a) -> None:
     if not (docs / "manifest.json").exists():
         raise SystemExit(f"{docs}/manifest.json missing — run `ocrbench docs` first")
     if cfg["runner"]["mode"] == "local":
-        _run_plan(cfg, docs, Path(a.out) / a.tag, a.plan, extract=not a.no_extract)
+        if a.extract_only:
+            from .extract import run as extract_run
+
+            asyncio.run(extract_run(cfg, docs, Path(a.out) / a.tag))
+        else:
+            _run_plan(cfg, docs, Path(a.out) / a.tag, a.plan, extract=not a.no_extract)
         return
     o = outputs(cfg)
     print(f"docs -> s3://{cfg.bucket}/docs: {aws.s3_sync_up(docs, cfg.bucket, 'docs')} files uploaded")
@@ -220,6 +231,8 @@ def cmd_run(cfg: Config, a) -> None:
     args = ["--config", "s3://config/bench.yaml", "task-run", "--plan", a.plan, "--tag", a.tag]
     if a.no_extract:
         args.append("--no-extract")
+    if a.extract_only:
+        args.append("--extract-only")
     _, code = aws.run_task(cfg, o, args)
     cmd_fetch(cfg, a)
     if code != 0:
@@ -316,6 +329,11 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--plan", required=True)
         p.add_argument("--tag", required=True)
         p.add_argument("--no-extract", action="store_true")
+        p.add_argument(
+            "--extract-only",
+            action="store_true",
+            help="skip stage 1; re-run stage 2 on the transcripts already in results/<tag>",
+        )
     p = common(sub.add_parser("fetch"))
     p.add_argument("--tag", required=True)
     p = common(sub.add_parser("report"))

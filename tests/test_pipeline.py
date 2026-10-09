@@ -58,6 +58,7 @@ def test_field_correct():
 def test_parse_json():
     assert parse_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json('Here you go: {"a": "x"} thanks') == {"a": "x"}
+    assert parse_json('{"a": 1}\n\nNote: {"b": 2}') == {"a": 1}
 
 
 def test_der_to_raw():

@@ -50,13 +50,11 @@ def parse_json(text: str) -> dict:
     body = (text or "").strip()
     if body.startswith("```"):
         body = body.strip("`").removeprefix("json").strip()
-    try:
-        return json.loads(body)
-    except json.JSONDecodeError:
-        s, e = body.find("{"), body.rfind("}")
-        if s != -1 and e > s:
-            return json.loads(body[s : e + 1])
-        raise
+    start = body.find("{")
+    if start == -1:
+        raise json.JSONDecodeError("no JSON object", body, 0)
+    obj, _ = json.JSONDecoder().raw_decode(body[start:])  # ignores trailing prose / a second object
+    return obj
 
 
 def first_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str], Path]:
@@ -88,6 +86,8 @@ async def run(
     strip = bool(cfg["ocr"].get("strip_grounding_tokens", True))
     max_retries = cfg["bench"].get("max_retries", 4)
     out = run_dir / "extractions.jsonl"
+    if out.exists() and not pipelines:  # full re-run: start clean
+        out.rename(run_dir / "extractions.prev.jsonl")
 
     for pipe in pipelines or ex["pipelines"]:
         source = pipe.split("->")[0]
