@@ -1,0 +1,34 @@
+# Local configs hold account IDs, endpoints and credentials references — never commit them.
+config/*.yaml
+!config/example.yaml
+.public-denylist
+
+# Generated data
+docs-out/
+results/
+site/
+*.tfplan
+
+# Tooling
+.tools/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+infra/terraform/backend.hcl
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+
+# Extra CA bundles / secrets
+*.pem
+*.key
+.env
+.DS_Store

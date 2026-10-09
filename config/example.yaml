@@ -1,0 +1,168 @@
+# ocr-bench configuration — the single source of truth for the CLI and Terraform.
+#
+# Copy to config/<name>.yaml (gitignored) and select it with `CONFIG=config/<name>.yaml`
+# (justfile) or `ocrbench --config config/<name>.yaml ...`. Values may reference
+# environment variables as ${VAR} or ${VAR:-default}.
+#
+# Every block is documented in docs/configuration.md.
+
+# Short name used as the prefix for every AWS resource (S3 bucket, ECR repos, IAM roles...).
+# Must be globally unique enough for the S3 bucket name: <name_prefix>-artifacts.
+name_prefix: ocrbench-dev
+
+aws:
+  profile: default            # AWS CLI/SDK profile used by the CLI and Terraform
+  account_id: "123456789012"  # Terraform refuses to run against any other account
+  region: eu-west-1
+  # Optional IAM permissions boundary applied to every role the stack creates
+  # (some landing zones require one). null = none.
+  permissions_boundary_arn: null
+  # Tags added to every resource.
+  tags:
+    Project: ocr-bench
+    Temporary: "true"
+
+# Terraform remote state. null bucket = local state file in infra/terraform/.
+terraform_state:
+  bucket: null                # e.g. my-tf-state-bucket
+  key: ocr-bench/terraform.tfstate
+  dynamodb_table: null        # optional lock table
+
+network:
+  # existing: use an existing VPC + private subnets (they need a route to S3,
+  #           ECR, CloudWatch Logs, SageMaker runtime and your LLM endpoints).
+  # create:   create a small VPC with 2 private subnets, a NAT gateway and an S3 endpoint.
+  mode: create
+  existing:
+    vpc_id: null              # or set vpc_name_tag
+    vpc_name_tag: null
+    subnet_ids: []            # or set subnet_name_tag_glob
+    subnet_name_tag_glob: null
+  create:
+    cidr: 10.42.0.0/24
+
+ecs:
+  # create: a dedicated Fargate cluster for the bench runner; otherwise the name of an existing cluster.
+  cluster: create
+
+# ---------------------------------------------------------------------------
+# Self-hosted OCR model (vLLM on SageMaker)
+# ---------------------------------------------------------------------------
+ocr:
+  name: unlimited-ocr                       # backend name used in results
+  hf_repo: baidu/Unlimited-OCR
+  hf_revision: 07dea832e22aefee32ad281d4b80551282e1c168
+  hf_skip_prefixes: ["assets/", "wheel/", "Unlimited-OCR.pdf", ".gitattributes"]
+  source_image: docker.io/vllm/vllm-openai:unlimited-ocr
+  image_platform: linux/amd64
+  served_model_name: baidu/Unlimited-OCR
+  # Extra `vllm serve` arguments (model path, host and port are added automatically).
+  serve_args:
+    - --trust-remote-code
+    - --logits_processors
+    - vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor
+    - --no-enable-prefix-caching
+    - --mm-processor-cache-gb
+    - "0"
+    - --max-num-seqs
+    - "64"
+    - --max-model-len
+    - "32768"
+    - --gpu-memory-utilization
+    - "0.90"
+  # Per-request body (OpenAI chat format). The image is appended as an image_url part.
+  request:
+    prompt: "<image>document parsing."
+    max_tokens: 8192
+    temperature: 0.0
+    extra_body:
+      skip_special_tokens: false
+      vllm_xargs: {ngram_size: 35, window_size: 128}
+  # Post-processing of the raw output before scoring: unwrap <|ref|>, drop <|det|> boxes.
+  strip_grounding_tokens: true
+  sagemaker:
+    # Tried in priority order (GPU capacity is often scarce; one type alone may fail).
+    instance_pools: [ml.g6.xlarge, ml.g6e.xlarge, ml.g5.xlarge, ml.g5.2xlarge]
+    inference_ami_version: al2023-ami-sagemaker-inference-gpu-4-1   # NVIDIA driver for CUDA 13 images
+    container_startup_timeout_s: 1800
+    model_download_timeout_s: 1800
+    network_isolation: true
+  # Optional: talk to an already-running vLLM server instead of SageMaker (local GPU, tunnel...).
+  direct_url: null            # e.g. http://localhost:8000
+
+# ---------------------------------------------------------------------------
+# LLM backends (transcription + extraction). Reference them by key below.
+# ---------------------------------------------------------------------------
+llm_backends:
+  bedrock-sonnet:
+    provider: bedrock
+    model_id: anthropic.claude-sonnet-4-5-20250929-v1:0   # or an inference profile id
+    region: ${AWS_REGION:-eu-west-1}
+    price_per_mtok: {input: 3.0, output: 15.0}            # USD, for the cost table only
+  bedrock-haiku:
+    provider: bedrock
+    model_id: anthropic.claude-haiku-4-5-20251001-v1:0
+    region: ${AWS_REGION:-eu-west-1}
+    price_per_mtok: {input: 1.0, output: 5.0}
+  # Any OpenAI-compatible chat-completions endpoint (gateway, proxy, OpenAI, vLLM...).
+  # gateway-sonnet:
+  #   provider: openai_compatible
+  #   base_url: https://llm-gateway.example.internal       # /v1/chat/completions is appended
+  #   model: anthropic.claude-sonnet-4-5-20250929-v1:0
+  #   ca_bundle: null            # extra PEM to trust (corporate TLS), path on the runner
+  #   cache_bust: true           # add a per-request nonce: some gateways cache identical requests
+  #   price_per_mtok: {input: 3.0, output: 15.0}
+  #   headers: {}                # extra static headers
+  #   auth:
+  #     type: none | bearer_env | oauth2_kms_jwt
+  #     # bearer_env:      env: MY_TOKEN_VAR
+  #     # oauth2_kms_jwt:  client-credentials with a private_key_jwt assertion signed by AWS KMS
+  #     token_url: https://idp.example.com/oauth2/token
+  #     client_id: 00000000-0000-0000-0000-000000000000
+  #     kms_key_id: 00000000-0000-0000-0000-000000000000    # ECC_NIST_P256 SIGN_VERIFY key
+  #     kms_region: eu-west-1
+  #     scope: llm.chat:write
+
+# ---------------------------------------------------------------------------
+# Benchmark
+# ---------------------------------------------------------------------------
+bench:
+  docs:
+    per_type: 6            # documents per type (8 types) -> ~96 pages incl. degraded variants
+    seed: 7
+    scale: 2.0             # pdfium render scale (2.0 ~ 144 dpi, A4 ~ 1190x1684 px)
+  # Backends that transcribe pages: "ocr" = the self-hosted model above, others = llm_backends keys.
+  transcribers: [ocr, bedrock-sonnet, bedrock-haiku]
+  # Stage 2 — an LLM agent extracts the per-type fields.
+  extraction:
+    agent: bedrock-sonnet                 # llm_backends key that does the extraction
+    # Pipelines to score. "<transcriber>->agent" extracts from that transcriber's text;
+    # "image->agent" sends the page images straight to the agent (one step).
+    pipelines: ["ocr->agent", "bedrock-sonnet->agent", "image->agent"]
+    concurrency: 8
+  # Named run plans: each item is one transcription run.
+  plans:
+    smoke:
+      - {backend: ocr, concurrency: 1, limit: 2, variant: clean}
+      - {backend: bedrock-sonnet, concurrency: 1, limit: 1, variant: clean}
+    suite:
+      - {backend: ocr, concurrency: 1}
+      - {backend: bedrock-sonnet, concurrency: 1}
+      - {backend: bedrock-haiku, concurrency: 1}
+      - {backend: ocr, concurrency: 4}
+      - {backend: ocr, concurrency: 16}
+      - {backend: ocr, concurrency: 32}
+      - {backend: bedrock-sonnet, concurrency: 16}
+      - {backend: bedrock-haiku, concurrency: 16}
+  max_retries: 4
+
+# Where the bench runs: "fargate" (inside the VPC — needed when endpoints are private)
+# or "local" (this machine; needs network access to every backend).
+runner:
+  mode: fargate
+  cpu: 2048
+  memory: 4096
+  # Bench image = this base + a layer with the ocrbench package and its wheels (built with crane).
+  base_image: docker.io/library/python:3.12-slim
+  # Optional PEM bundle baked into the bench image and trusted for outbound TLS.
+  extra_ca_pem: null        # e.g. ~/certs/corp-root.pem
