@@ -61,7 +61,8 @@ def summary_md(scores: dict) -> str:
                     key = f"{d['doc_id'].rsplit('-', 1)[0]}.{f}"
                     misses.setdefault(d["pipeline"], {}).setdefault(key, 0)
                     misses[d["pipeline"]][key] += 1
-        out += ["", "Most-missed fields:", ""]
+        if misses:
+            out += ["", "Most-missed fields:", ""]
         for p, m in sorted(misses.items()):
             top = ", ".join(f"`{k}` ({v})" for k, v in sorted(m.items(), key=lambda x: -x[1])[:5])
             out.append(f"- **{p}**: {top}")

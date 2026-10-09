@@ -17,7 +17,10 @@ export PATH := justfile_directory() + "/.tools:" + env("PATH")
 
 ob := "uv run ocrbench"
 tf := "terraform -chdir=infra/terraform"
-prefix := `uv run python -c "from ocrbench.config import load; print(load().prefix)" 2>/dev/null || echo unknown`
+prefix := `uv run python scripts/cfg_get.py prefix`
+# Terraform/aws CLI need the profile + region from the config too (Python sets them only for itself)
+export AWS_PROFILE := env("AWS_PROFILE", `uv run python scripts/cfg_get.py profile`)
+export AWS_REGION := `uv run python scripts/cfg_get.py region`
 state := ".state/" + prefix
 
 default:
@@ -42,8 +45,8 @@ lint:
 
 # ---- infrastructure ----
 
-# Terraform plan/apply with the current config. `just tf plan`, `just tf apply`.
-tf *args: _tfinit
+# Terraform passthrough with the vars from the last `deploy` (does not re-render them). `just tf plan`
+tf *args:
     {{tf}} {{args}} -var-file="$PWD/{{state}}/terraform.tfvars.json"
 
 _tfinit with_model="":
