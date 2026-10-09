@@ -32,3 +32,5 @@ infra/terraform/*.tfstate.*
 *.key
 .env
 .DS_Store
+infra/terraform/backend.tf
+.state/

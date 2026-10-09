@@ -1,0 +1,11 @@
+output "bucket" { value = aws_s3_bucket.artifacts.id }
+output "registry" { value = local.registry }
+output "vllm_repository_url" { value = aws_ecr_repository.repo["vllm"].repository_url }
+output "bench_repository_url" { value = aws_ecr_repository.repo["bench"].repository_url }
+output "ecs_cluster" { value = local.cluster_name }
+output "bench_task_definition" { value = aws_ecs_task_definition.bench.arn }
+output "subnet_ids" { value = local.subnet_ids }
+output "security_group_id" { value = aws_security_group.runner.id }
+output "log_group" { value = aws_cloudwatch_log_group.bench.name }
+output "sagemaker_model" { value = try(aws_sagemaker_model.ocr[0].name, "") }
+output "endpoint_name" { value = local.endpoint_name }
