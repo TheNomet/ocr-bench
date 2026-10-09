@@ -17,17 +17,19 @@ _BULLET = re.compile(r"^\s*[-*]\s+(.*)$")
 
 
 def inline(text: str) -> str:
-    """Render inline markup (code spans, bold) with everything else escaped."""
-    parts = text.split("`")
-    out = []
-    for i, part in enumerate(parts):
-        # Odd segments are inside backticks — but only if the backtick was closed.
-        if i % 2 == 1 and i < len(parts) - 1:
-            out.append(f"<code>{html.escape(part)}</code>")
-        else:
-            seg = html.escape(part if i % 2 == 0 else "`" + part)
-            out.append(_BOLD.sub(r"<strong>\1</strong>", seg))
-    return "".join(out)
+    """Render inline markup (code spans, bold) with everything else escaped.
+
+    Code spans are swapped for placeholders first, so bold may wrap them (**`x`**).
+    """
+    codes: list[str] = []
+
+    def stash(m: re.Match) -> str:
+        codes.append(f"<code>{html.escape(m.group(1))}</code>")
+        return f"\x00{len(codes) - 1}\x00"
+
+    seg = html.escape(re.sub(r"`([^`]+)`", stash, text), quote=False)
+    seg = _BOLD.sub(r"<strong>\1</strong>", seg)
+    return re.sub(r"\x00(\d+)\x00", lambda m: codes[int(m.group(1))], seg)
 
 
 def _split_row(line: str) -> list[str]:
@@ -91,7 +93,7 @@ def render(md: str) -> str:
                 header = _split_row(rows[0])
                 body_rows = rows[2:]
             parts = ['<div class="table-wrap"><table>']
-            if header is not None:
+            if header is not None and any(c.strip() for c in header):  # `| | |` = headerless table
                 parts.append("<thead><tr>" + "".join(f"<th>{inline(c)}</th>" for c in header) + "</tr></thead>")
             parts.append("<tbody>")
             for r in body_rows:

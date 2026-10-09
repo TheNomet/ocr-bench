@@ -46,8 +46,10 @@ section th, section td, .summary th, .summary td { border: 1px solid var(--borde
 .run-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1.25rem 2.5rem; margin-top: 1.25rem; }
 .run-grid .block.wide { grid-row: span 2; }
 @media (max-width: 900px) { .run-grid { grid-template-columns: 1fr; } .run-grid .block.wide { grid-row: auto; } }
+.run-card table, .run-card th, .run-card td { border: 0; background: none; }
+.run-card code { white-space: nowrap; }
 table.models { border-collapse: collapse; width: 100%; font-size: .88rem; }
-table.models td { padding: .5rem .75rem .5rem 0; border-top: 1px solid #eef0f3; vertical-align: top; }
+table.models td { padding: .5rem .75rem .5rem 0; border-top: 1px solid #eef0f3 !important; vertical-align: top; }
 table.models tr:first-child td { border-top: 0; }
 table.models td.role { color: #667; width: 10rem; }
 .mname { font-weight: 600; }
@@ -57,8 +59,8 @@ table.models td.role { color: #667; width: 10rem; }
 .kv > span:first-child { color: #667; }
 table.mini { border-collapse: collapse; width: 100%; font-size: .85rem; }
 table.mini th { text-align: left; font-weight: 600; color: #667; font-size: .74rem; padding: .25rem .6rem .3rem 0;
-  border-bottom: 1px solid var(--border); white-space: nowrap; }
-table.mini td { padding: .35rem .6rem .35rem 0; border-bottom: 1px solid #eef0f3; white-space: nowrap; }
+  border-bottom: 1px solid var(--border) !important; white-space: nowrap; }
+table.mini td { padding: .35rem .6rem .35rem 0; border-bottom: 1px solid #eef0f3 !important; white-space: nowrap; }
 table.mini td.win { font-weight: 700; color: #0a6b2d; }
 .summary { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .25rem 1rem; margin: 1rem 0; }
 .table-wrap { overflow-x: auto; }

@@ -764,14 +764,18 @@ def build_experiments_index(runs: list[dict], out_dir: Path) -> Path:
             return (
                 f'<tr><td class="role">{e(role)}</td><td><code>{e(key)}</code></td>'
                 f'<td><div class="mname">{e(label)}</div><div class="mid">{e(mid or "")}</div>'
-                + (f'<div class="mnote">{e(note)}</div>' if note else "")
+                + (f'<div class="mnote">{markdown_lite.inline(note)}</div>' if note else "")
                 + "</td></tr>"
             )
 
         rows = []
         for t in m.get("transcribers") or []:
             if t == "ocr":
-                rows.append(model_row("transcriber, self-hosted", "ocr", ocr_label(o), o.get("served_model_name")))
+                rows.append(
+                    model_row(
+                        "transcriber, self-hosted", "ocr", ocr_label(o), f"HF revision {o.get('hf_revision', '?')}"
+                    )
+                )
             else:
                 mid = be.get(t, {}).get("model")
                 rows.append(model_row("transcriber", t, model_label(mid), mid))
