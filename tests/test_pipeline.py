@@ -123,8 +123,8 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
 
     class Writer(GroundTruthBackend):
         async def complete(self, req):
-            assert "## Bottom line" in req.prompt and '"extraction"' in req.prompt
-            return Response("## Bottom line\nUse image->agent.\n\n## What was tested\nx", 900, 40)
+            assert "## Bottom line" in req.prompt and "# Key facts" in req.prompt and "cheapest pipeline" in req.prompt
+            return Response("## Bottom line\nUse image->agent, 1234 is made up.\n\n## Caveats\nx", 900, 40)
 
     monkeypatch.setattr(summarize, "get_backend", lambda c, n: Writer(n, tiny_docs))
     monkeypatch.setattr(runs, "record_endpoint", lambda c, d: None)
@@ -153,7 +153,8 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
     ):
         assert needle in report, needle
     index = (tmp_path / "site" / "index.html").read_text()
-    assert meta["id"] in index and "Use image-&gt;agent." in index or "Use image->agent." in index
+    assert meta["id"] in index and "Use image-&gt;agent" in index and "pipeline</th>" in index
+    assert "extraction agent" in index and "Reads the document type" in index
     run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()
     assert "all experiments" in run_page and 'id="legend"' in run_page
 
@@ -163,3 +164,11 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
 
     cli.cmd_run(cfg, B())
     assert "summarize" in runs.load(d)["stages"]
+
+
+def test_unverified_numbers():
+    from ocrbench.summarize import unverified_numbers
+
+    src = "accuracy 98.8% at $7.44/1k docs, ~307 pages/hour, 1 686 pages"
+    assert unverified_numbers("98.8% and 99% and $7.44 and 307 and 1,686", src) == []
+    assert unverified_numbers("costs 3x more, 280 pages/hour", src) == ["280"]

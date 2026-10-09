@@ -29,12 +29,12 @@ def setup_md(meta: dict) -> str:
         "",
         "### Models",
         "",
-        "| role | name in tables | model | served by | price |",
-        "|---|---|---|---|---|",
+        "| role | name in tables | model | model id | served by | price |",
+        "|---|---|---|---|---|---|",
     ]
     gpu_price = f"{_usd(o.get('price_per_hour_usd'))}/hour (on-demand)" if o.get("price_per_hour_usd") else "–"
     out.append(
-        f"| transcriber (self-hosted) | `ocr` | {o['hf_repo']} @ `{(o.get('hf_revision') or '')[:8]}` | "
+        f"| transcriber (self-hosted) | `ocr` | {explain.ocr_label(o)} | `{o.get('served_model_name')}` | "
         f"vLLM on {o.get('serving', 'SageMaker')} | {gpu_price} |"
     )
     roles: dict[str, list[str]] = {}
@@ -47,7 +47,12 @@ def setup_md(meta: dict) -> str:
         b = meta["llm_backends"].get(name, {})
         p = b.get("price_per_mtok") or {}
         price = f"${p.get('input')} in / ${p.get('output')} out per 1M tokens" if p else "–"
-        out.append(f"| {', '.join(rs)} | `{name}` | {b.get('model', '?')} | {b.get('via', '?')} | {price} |")
+        out.append(
+            f"| {', '.join(rs)} | `{name}` | {explain.model_label(b.get('model'))} | `{b.get('model', '?')}` | "
+            f"{b.get('via', '?')} | {price} |"
+        )
+    agent_model = meta["llm_backends"].get(meta["extraction"]["agent"], {}).get("model")
+    out += ["", "### The extraction agent", "", explain.agent_note(agent_model)]
     out += [
         "",
         "### GPU",
@@ -175,6 +180,11 @@ def results_md(scores: dict) -> str:
     return "\n".join(out)
 
 
+def unverified(author: str) -> list[str]:
+    m = re.search(r"unverified numbers: (.*)$", author or "")
+    return [] if not m or m.group(1).strip() == "none" else [x.strip() for x in m.group(1).split(",")]
+
+
 def read_summary(run_dir: Path) -> tuple[str, str]:
     """(body, author line) of summary.md, or ("", "")."""
     p = run_dir / "summary.md"
@@ -196,8 +206,16 @@ def headline(meta: dict, scores: dict) -> dict:
             best[v] = {"pipeline": b["pipeline"], "field_accuracy": b["field_accuracy"]}
     ocr_rows = [s for s in scores["speed"] if s["backend"] == "ocr"]
     c1 = [s for s in ocr_rows if s["concurrency"] == 1]
+    pipes: dict[str, dict] = {}
+    for a in ea:
+        pipes.setdefault(a["pipeline"], {})[a["variant"]] = {
+            "acc": a["field_accuracy"],
+            "cost": a["cost_per_1k_docs_usd"],
+            "s": a["end_to_end_latency_s"],
+        }
     return {
         "best": best,
+        "pipelines": pipes,
         "ocr_p50_s": c1[0]["p50_s"] if c1 else None,
         "ocr_max_pages_per_min": max((s["pages_per_min"] for s in ocr_rows), default=None),
     }
@@ -206,7 +224,13 @@ def headline(meta: dict, scores: dict) -> dict:
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     body, author = read_summary(run_dir)
     findings = (
-        ["## Findings", "", f"*{author}. Check the numbers against the tables below.*", "", body]
+        ["## Findings", "", f"*{author.split(';')[0]}. It interprets the key facts above.*", ""]
+        + (
+            [f"> **Unverified numbers** (not found in the key facts): {', '.join(unverified(author))}", ""]
+            if unverified(author)
+            else []
+        )
+        + [body]
         if body
         else ["## Findings", "", "*No LLM summary yet. Run the `summarize` stage.*"]
     )
@@ -235,7 +259,8 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
     sections = {
         "facts_md": to_md(compute(meta, scores)),
         "findings": body,
-        "findings_author": author,
+        "findings_author": author.split(";")[0],
+        "findings_unverified": unverified(author),
         "setup_md": setup_md(meta),
         "legend_md": legend_md(meta),
     }

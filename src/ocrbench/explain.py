@@ -88,3 +88,38 @@ def pipeline_text(pipe: str, ocr_name: str = "ocr") -> str:
     if src == "ocr":
         return PIPELINES["ocr"].replace("self-hosted OCR model", f"self-hosted OCR model ({ocr_name})")
     return PIPELINES["llm"].replace("this LLM", f"`{src}`")
+
+
+# --------------------------------------------------------------------------- model names
+_CLAUDE = __import__("re").compile(r"claude-(?P<fam>[a-z]+)-(?P<maj>\d+)(?:-(?P<min>\d))?(?:-(?P<date>\d{8}))?")
+
+
+def model_label(model_id: str | None) -> str:
+    """'anthropic.claude-sonnet-4-5-20250929-v1:0' -> 'Claude Sonnet 4.5 (2025-09-29)'. Unknown ids pass through."""
+    if not model_id:
+        return "?"
+    m = _CLAUDE.search(model_id)
+    if not m:
+        return model_id
+    ver = m["maj"] + (f".{m['min']}" if m["min"] else "")
+    date = m["date"]
+    return f"Claude {m['fam'].capitalize()} {ver}" + (f" ({date[:4]}-{date[4:6]}-{date[6:]})" if date else "")
+
+
+def ocr_label(ocr: dict) -> str:
+    return f"{ocr.get('hf_repo', '?')} @ {(ocr.get('hf_revision') or '')[:8]}"
+
+
+# Static description of the extraction agent; only the model is filled in from the run.
+AGENT_INPUT = (
+    "the document type's field list (name, type, one-line description), plus either the page images "
+    "(`image->agent`) or the text transcript of every page, in order (`<transcriber>->agent`)"
+)
+AGENT_OUTPUT = "one JSON object with the field values copied verbatim; temperature 0, max 2,048 output tokens"
+
+
+def agent_note(model_id: str | None) -> str:
+    return (
+        f"The **agent** is {model_label(model_id)} (`{model_id}`), the same model in every pipeline. "
+        f"It gets {AGENT_INPUT}, and returns {AGENT_OUTPUT}. It never sees the ground truth."
+    )

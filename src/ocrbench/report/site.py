@@ -412,7 +412,12 @@ class _Site:
             parts.append('<h2 id="findings">Findings</h2>')
             if sec.get("findings"):
                 parts.append(
-                    f'<p class="muted small">{e(sec.get("findings_author"))}. '
+                    (
+                        f'<p class="warn">Unverified numbers (not in the key facts): {e(", ".join(sec["findings_unverified"]))}</p>'
+                        if sec.get("findings_unverified")
+                        else ""
+                    )
+                    + f'<p class="muted small">{e(sec.get("findings_author"))}. '
                     "Check the numbers against the tables below.</p>"
                 )
                 parts.append(f'<div class="summary">{markdown_lite.render(sec["findings"])}</div>')
@@ -747,52 +752,94 @@ def build_experiments_index(runs: list[dict], out_dir: Path) -> Path:
     assets.mkdir(parents=True, exist_ok=True)
     (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
     (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
+    from ..explain import AGENT_INPUT, model_label, ocr_label
+
     cards = []
     for r in runs:
         m, h = r["meta"], r.get("headline") or {}
-        o = m.get("ocr") or {}
-        models = []
+        o, be = m.get("ocr") or {}, m.get("llm_backends") or {}
+        docs = m.get("documents") or {}
+
+        def model_row(role: str, key: str, label: str, mid: str | None, note: str = "") -> str:
+            return (
+                f'<tr><td class="role">{e(role)}</td><td><code>{e(key)}</code></td>'
+                f'<td><div class="mname">{e(label)}</div><div class="mid">{e(mid or "")}</div>'
+                + (f'<div class="mnote">{e(note)}</div>' if note else "")
+                + "</td></tr>"
+            )
+
+        rows = []
         for t in m.get("transcribers") or []:
             if t == "ocr":
-                models.append(f"<b>ocr</b>: {e(o.get('hf_repo'))}")
+                rows.append(model_row("transcriber, self-hosted", "ocr", ocr_label(o), o.get("served_model_name")))
             else:
-                models.append(f"<b>{e(t)}</b>: {e((m.get('llm_backends') or {}).get(t, {}).get('model'))}")
+                mid = be.get(t, {}).get("model")
+                rows.append(model_row("transcriber", t, model_label(mid), mid))
         agent = (m.get("extraction") or {}).get("agent")
-        models.append(f"<b>agent</b>: {e((m.get('llm_backends') or {}).get(agent, {}).get('model', agent))}")
-        price = o.get("price_per_hour_usd")
-        gpu = (
-            f"<code>{e(o.get('instance_type') or '?')}</code> &middot; {e(o.get('gpu') or '?')} &middot; "
-            f"{e(o.get('host') or '?')} &middot; "
-            + (f"${price:.2f}/h" if isinstance(price, (int, float)) else "price ?")
-        )
-        best = h.get("best") or {}
-        res = []
-        for v in ("clean", "degraded"):
-            if v in best:
-                res.append(
-                    f"best field accuracy ({v}): <b>{e(fmt(best[v]['field_accuracy'], 'pct'))}</b> "
-                    f"<code>{e(best[v]['pipeline'])}</code>"
-                )
-        if h.get("ocr_p50_s") is not None:
-            res.append(
-                f"OCR p50 {e(fmt(h['ocr_p50_s'], 'sec'))} s/page, max {e(fmt(h.get('ocr_max_pages_per_min'), 'f1'))} pages/min"
+        amodel = be.get(agent, {}).get("model")
+        rows.append(
+            model_row(
+                "extraction agent",
+                agent or "?",
+                model_label(amodel),
+                amodel,
+                f"Reads {AGENT_INPUT}; returns the fields as JSON.",
             )
-        docs = m.get("documents") or {}
+        )
+
+        price = o.get("price_per_hour_usd")
+        price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
+        gpu = (
+            f'<div class="kv"><span>Instance</span><code>{e(o.get("instance_type") or "?")}</code></div>'
+            f'<div class="kv"><span>GPU</span><span>{e(o.get("gpu") or "?")}</span></div>'
+            f'<div class="kv"><span>Host</span><span>{e(o.get("host") or "?")}</span></div>'
+            f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
+            '<span class="muted">on-demand, billed while idle too</span></span></div>'
+            f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
+        )
+
+        pipes = h.get("pipelines") or {}
+        best = {v: (h.get("best") or {}).get(v, {}).get("pipeline") for v in ("clean", "degraded")}
+        prow = []
+        for p, vs in pipes.items():
+            cells = []
+            for v in ("clean", "degraded"):
+                x = vs.get(v)
+                cls = ' class="win"' if x and best.get(v) == p else ""
+                cells.append(f"<td{cls}>{e(fmt(x['acc'], 'pct')) if x else '&ndash;'}</td>")
+            c = vs.get("clean") or vs.get("degraded") or {}
+            prow.append(
+                f"<tr><td><code>{e(p)}</code></td>{''.join(cells)}"
+                f"<td>{e(fmt(c.get('s'), 'sec'))} s</td><td>{e(fmt(c.get('cost'), 'usd'))}</td></tr>"
+            )
+        results = (
+            '<table class="mini"><thead><tr><th>pipeline</th><th>clean</th><th>degraded</th>'
+            "<th>time / doc</th><th>$ / 1k docs</th></tr></thead><tbody>" + "".join(prow) + "</tbody></table>"
+            '<p class="muted small">Field accuracy; best per variant in green. Time and cost: clean pages.</p>'
+            if prow
+            else '<p class="muted">not scored yet</p>'
+        )
+
         bl = r.get("bottom_line") or ""
+        created = (m.get("created") or "")[:16].replace("T", " ")
         cards.append(
             f'<a class="run-card" href="{quote(m["id"])}/index.html">'
-            f'<div class="run-head"><span class="mono">{e(m["id"])}</span>'
-            f'<span class="muted small">plan <code>{e(m.get("plan"))}</code> &middot; {e(docs.get("count"))} docs / '
-            f"{e(docs.get('page_images'))} page images &middot; {e(m.get('created'))}</span></div>"
-            f'<div class="run-row"><span class="label">Models</span><span>{" &middot; ".join(models)}</span></div>'
-            f'<div class="run-row"><span class="label">GPU</span><span>{gpu}</span></div>'
-            f'<div class="run-row"><span class="label">Results</span><span>{"<br>".join(res) or "not scored yet"}</span></div>'
+            f'<div class="run-head"><div><div class="run-id">{e(m["id"])}</div>'
+            f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
+            f'<span class="chip">{e(docs.get("count"))} docs &middot; {e(docs.get("page_images"))} page images</span>'
+            f'<span class="chip">{e(created)}</span></div></div>'
+            '<span class="open">Open run &rarr;</span></div>'
             + (
-                f'<div class="run-row"><span class="label">Bottom line</span><span>{markdown_lite.render(bl)}</span></div>'
+                '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'
+                f"{markdown_lite.render(bl)}</div>"
                 if bl
                 else ""
             )
-            + "</a>"
+            + '<div class="run-grid">'
+            f'<div class="block wide"><h4>Models</h4><table class="models">{"".join(rows)}</table></div>'
+            f'<div class="block"><h4>GPU (OCR model)</h4>{gpu}</div>'
+            f'<div class="block"><h4>Results</h4>{results}</div>'
+            "</div></a>"
         )
     body = (
         "<h1>ocr-bench experiments</h1>"

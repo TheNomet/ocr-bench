@@ -78,12 +78,20 @@ def compute(meta: dict, scores: dict) -> dict:
         ocr_max = throughput.get("ocr", {}).get("max_pages_per_min")
         if ocr_max:
             break_even["_ocr_capacity_pages_per_hour"] = round(ocr_max * 60)
+    misses: dict[str, dict[str, int]] = {}
+    for d in scores["extraction"]["docs"]:
+        for fld, x in d["fields"].items():
+            if not x["correct"]:
+                k = f"{d['doc_id'].rsplit('-', 1)[0]}.{fld}"
+                misses.setdefault(d["pipeline"], {}).setdefault(k, 0)
+                misses[d["pipeline"]][k] += 1
     return {
         "pipelines": pipelines,
         "reading": reading,
         "throughput": throughput,
         "break_even": break_even,
         "gpu_price_per_hour_usd": price,
+        "most_missed": {p: sorted(m.items(), key=lambda x: -x[1])[:4] for p, m in sorted(misses.items())},
     }
 
 
@@ -137,4 +145,8 @@ def to_md(f: dict) -> str:
                 f"- cheaper than `{b}` transcription ({usd(x['llm_cost_per_1k_pages_usd'])}/1k pages) above "
                 f"**~{x['ocr_cheaper_above_pages_per_hour']} pages/hour** sustained"
             )
+    mm = f.get("most_missed") or {}
+    if mm:
+        out += ["", "Fields missed most often (count over clean + degraded documents):", ""]
+        out += [f"- `{p}`: " + ", ".join(f"`{k}` ({n})" for k, n in items) for p, items in mm.items()]
     return "\n".join(out)
