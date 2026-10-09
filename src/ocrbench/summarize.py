@@ -40,7 +40,14 @@ A short table: goal (e.g. highest accuracy, lowest latency, lowest cost at volum
 choice -> why. Then 2-4 caveats about how far these results generalise (synthetic documents, sample size,
 single GPU host, list prices).
 
-Rules: no invented numbers; round sensibly; refer to pipelines by their exact names; keep it under ~600 words."""
+Rules:
+- Base every "best / cheapest / fastest / cheaper above N pages/hour" statement on `key_facts`; those are computed
+  exactly. Do not recompute them and do not contradict them.
+- For transcription quality use the median CER and invented numbers excluding runaway pages (from `key_facts`);
+  mean CER is distorted by single runaway pages, so mention runaways separately instead of quoting mean CER.
+- Pipeline cost/latency already include the transcription step; compare pipelines with pipelines.
+- No numbers that are not in the data; round sensibly; use exact pipeline names; under ~600 words.
+- Before answering, check each number you wrote against the data."""
 
 
 def build_prompt(meta: dict, scores: dict) -> str:
@@ -54,7 +61,10 @@ def build_prompt(meta: dict, scores: dict) -> str:
                 key = f"{d['doc_id'].rsplit('-', 1)[0]}.{f}"
                 misses.setdefault(d["pipeline"], {}).setdefault(key, 0)
                 misses[d["pipeline"]][key] += 1
+    from .facts import compute
+
     data = {
+        "key_facts": compute(meta, scores),
         "setup": {
             k: meta.get(k)
             for k in (

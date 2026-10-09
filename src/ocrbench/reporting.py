@@ -206,13 +206,16 @@ def headline(meta: dict, scores: dict) -> dict:
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     body, author = read_summary(run_dir)
     findings = (
-        ["## Findings", "", f"*LLM-written ({author}). Check the numbers against the tables below.*", "", body]
+        ["## Findings", "", f"*{author}. Check the numbers against the tables below.*", "", body]
         if body
         else ["## Findings", "", "*No LLM summary yet. Run the `summarize` stage.*"]
     )
+    from .facts import compute, to_md
+
     parts = [
         f"# ocr-bench run `{meta['id']}`",
         "",
+        to_md(compute(meta, scores)),
         "\n".join(findings),
         setup_md(meta),
         legend_md(meta),
@@ -226,8 +229,11 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
 
     (run_dir / "scores.json").write_text(json.dumps(scores, ensure_ascii=False, indent=1), encoding="utf-8")
     (run_dir / "report.md").write_text(report_md(meta, scores, run_dir), encoding="utf-8")
+    from .facts import compute, to_md
+
     body, author = read_summary(run_dir)
     sections = {
+        "facts_md": to_md(compute(meta, scores)),
         "findings": body,
         "findings_author": author,
         "setup_md": setup_md(meta),

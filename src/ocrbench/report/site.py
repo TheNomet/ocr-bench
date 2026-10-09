@@ -403,14 +403,16 @@ class _Site:
             parts.append(f'<p class="muted">Scored {e(gen)}</p>')
         if sec:
             parts.append(
-                '<nav class="toc small">Jump to: <a href="#findings">Findings</a> &middot; '
+                '<nav class="toc small">Jump to: <a href="#facts">Key facts</a> &middot; <a href="#findings">Findings</a> &middot; '
                 '<a href="#setup">Setup</a> &middot; <a href="#legend">How to read</a> &middot; '
                 '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
             )
+            if sec.get("facts_md"):
+                parts.append(f'<section id="facts" class="facts">{markdown_lite.render(sec["facts_md"])}</section>')
             parts.append('<h2 id="findings">Findings</h2>')
             if sec.get("findings"):
                 parts.append(
-                    f'<p class="muted small">LLM-written ({e(sec.get("findings_author"))}). '
+                    f'<p class="muted small">{e(sec.get("findings_author"))}. '
                     "Check the numbers against the tables below.</p>"
                 )
                 parts.append(f'<div class="summary">{markdown_lite.render(sec["findings"])}</div>')

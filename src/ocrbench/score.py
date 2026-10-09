@@ -184,6 +184,7 @@ def score(cfg: Config, docs: Path, run_dir: Path, tag: str, gpu_hour: float | No
                         },
                         "cer_median": st.median(p["cer"] for p in s),
                         "runaway": sum(p["len_ratio"] > 3 for p in s),
+                        "num_hallucinated_excl_runaway": sum(p["num_hallucinated"] for p in s if p["len_ratio"] <= 3),
                         "num_missing": sum(p["num_missing"] for p in s),
                         "num_hallucinated": sum(p["num_hallucinated"] for p in s),
                     }
