@@ -20,17 +20,22 @@ src/ocrbench/
   cli.py                   all commands; `ocrbench --help`
   docgen/                  document generator (types/<type>.py = one module per document type)
   backends/                ocr (vllm_ocr.py), bedrock.py, openai_compat.py (auth: none | bearer_env | oauth2_kms_jwt)
+  runs.py                  run folders runs/<id>/ + run.json (setup, GPU, price, stage timings)
   transcribe.py            stage 1 runner (concurrency, retries, JSONL records)
   extract.py               stage 2 runner (pipelines "<transcriber>->agent" and "image->agent")
-  score.py                 metrics + aggregation -> scores dict
-  reporting.py, report/    report.md + static site
+  score.py                 stage 3: metrics + aggregation -> scores dict
+  summarize.py             stage 4: LLM writes the findings (summary.md) from setup + scores
+  explain.py               legend/glossary text shared by report.md and the site
+  reporting.py, report/    report.md, per-run site, experiments index
   images.py                crane-based image builds (OCR SageMaker wrapper, bench runner)
   weights.py               HF snapshot -> S3, SHA-256 verified
   aws.py                   S3 sync, SageMaker endpoint lifecycle, Fargate run_task, pricing
 infra/terraform/           one root module; network/ submodule for network.mode=create
 justfile                   deploy / run / report / destroy
 .state/<prefix>/           LOCAL: tfvars, outputs.json, local tf state (gitignored)
-docs-out/ results/ site/   LOCAL generated data (gitignored)
+docs-out/                  LOCAL current document set (a run copies it into runs/<id>/docs)
+runs/<id>/                 LOCAL one folder per run, mirrored to s3://<bucket>/runs/<id>/ (gitignored)
+site/                      LOCAL experiments index + one site per run (gitignored)
 ```
 
 ## Lifecycle (see README for commands)
@@ -43,12 +48,16 @@ docs-out/ results/ site/   LOCAL generated data (gitignored)
 3. The SageMaker **endpoint** is *not* in Terraform. `ocrbench endpoint up` creates it with
    `InstancePools`, a priority list of GPU types, because single GPU types often have no
    capacity. The AWS provider doesn't support instance pools.
-4. `ocrbench run` with `runner.mode: fargate` uploads `docs-out/` and the config to S3, then
-   launches the Fargate task, which runs `ocrbench task-run`. It streams the logs and syncs
-   `results/<tag>/` back.
-5. `ocrbench report` scores the run and writes `results/<tag>/report.md` and
-   `site/<tag>/index.html`. If `results/<tag>/findings.md` exists (hand- or agent-written),
-   it is placed at the top of the report.
+4. `ocrbench run --plan P` creates `runs/<date>-<plan>/`: a copy of `docs-out/`, a config
+   snapshot, and `run.json`. It records the GPU host that is actually serving and its price
+   from the Pricing API. With `runner.mode: fargate` it uploads the folder to
+   `s3://<bucket>/runs/<id>/`, launches the task (`ocrbench task-run`), which runs the
+   stages and syncs back after each one, then fetches the folder.
+5. The stages are transcribe → extract → score → summarize. Each can be redone with
+   `ocrbench run --id <id> --stages ...`. The summarize stage needs the LLM, so with a
+   private gateway it runs in Fargate too.
+6. `ocrbench report` re-scores locally (cheap), rewrites `report.md` and `site/<id>/`, and
+   rebuilds `site/index.html` from all runs.
 
 ## Rules
 
@@ -64,6 +73,10 @@ docs-out/ results/ site/   LOCAL generated data (gitignored)
   through `Config`.
 - **Resource names** come from `name_prefix`. If you change a name, change it in both
   `config.py` and `infra/terraform/main.tf` `locals`.
+- **Runs are never committed.** They contain backend keys, model ids and region, which can
+  identify the deployment. Publish findings only by hand, after redacting them.
+- **The LLM summary is labelled as LLM-written** and is instructed to use only the numbers
+  provided. If you change `summarize.py`, keep both properties.
 - **Cost.** The SageMaker endpoint bills per hour while it exists. Always finish with
   `just endpoint-down` (or `just destroy`).
 - **Scoring is by design not formatting-sensitive.** CER/WER are computed on normalised text

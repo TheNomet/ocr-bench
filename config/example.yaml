@@ -140,6 +140,9 @@ bench:
     # "image->agent" sends the page images straight to the agent (one step).
     pipelines: ["ocr->agent", "bedrock-sonnet->agent", "image->agent"]
     concurrency: 8
+  # Stage 4: an LLM reads the setup + scored tables and writes the findings (runs/<id>/summary.md).
+  summary:
+    agent: bedrock-sonnet                 # llm_backends key; defaults to the extraction agent
   # Named run plans: each item is one transcription run.
   plans:
     smoke:

@@ -5,7 +5,7 @@ generator (`ocrbench.docgen`), the runners (`ocrbench.transcribe`, `ocrbench.ext
 the scorer (`ocrbench.score`) and the viewer (`ocrbench.report`).
 
 Paths are relative to a **docs directory** (default `docs-out/`) or a **run directory**
-(default `results/<tag>/`). Everything is UTF-8; JSON files are pretty-printed; JSONL has
+(default `runs/<id>/`). Everything is UTF-8; JSON files are pretty-printed; JSONL has
 one object per line.
 
 ## 1. Generated documents (`docs-out/`)
@@ -66,10 +66,44 @@ These are the per-type extraction schemas given to the extraction agent:
                         "selected_options": {"type": "list", "description": "..."}}}}
 ```
 
-## 2. Transcription runs (`results/<tag>/`)
+## 2. Run folder (`runs/<id>/`)
+
+`<id>` is `<YYYY-MM-DD>-<plan>`, with `-2`, `-3`, … appended for repeats on the same day.
 
 ```
-results/<tag>/
+runs/<id>/
+  run.json                  setup + stage timings (below)
+  config.yaml               snapshot of the config used
+  docs/                     copy of the document set (section 1 layout)
+  runs.jsonl transcripts.jsonl extractions.jsonl outputs/     (sections 2-3)
+  scores.json               stage 3 (section 4)
+  summary.md                stage 4: LLM-written findings; first line is an HTML comment naming the model
+  report.md                 findings + setup + legend + result tables
+```
+
+### run.json
+
+```json
+{"id": "2026-10-09-suite", "plan": "suite", "plan_items": [{"backend": "ocr", "concurrency": 1}],
+ "created": "...", "git_commit": "90b8e41", "region": "eu-west-1",
+ "runner": {"mode": "fargate", "cpu": 2048, "memory": 4096},
+ "documents": {"count": 48, "pages": 54, "page_images": 108, "seed": 7, "per_type": 6,
+               "types": {"invoice": {"docs": 6, "pages": 6, "description": "...", "fields": ["..."]}}},
+ "ocr": {"hf_repo": "...", "hf_revision": "...", "instance_type": "ml.g5.xlarge", "gpu": "NVIDIA A10G, 24 GB",
+         "host": "4 vCPU, 16 GB RAM", "price_per_hour_usd": 1.49, "image_digest": "sha256:...", "...": "..."},
+ "llm_backends": {"bedrock-sonnet": {"provider": "bedrock", "model": "...", "via": "AWS Bedrock",
+                                     "price_per_mtok": {"input": 3.0, "output": 15.0}}},
+ "transcribers": ["ocr", "bedrock-sonnet"], "extraction": {"agent": "...", "pipelines": ["..."]},
+ "summary": {"agent": "..."},
+ "stages": {"transcribe": {"finished": "...", "seconds": 3600.0}}}
+```
+
+`llm_backends` holds model identity and price only: never hosts, auth or credentials.
+
+## 2a. Transcription records (inside the run folder)
+
+```
+runs/<id>/
   runs.jsonl                # one line per run (backend x concurrency)
   transcripts.jsonl         # one line per request
   outputs/<backend>/<doc_id>.p<n>.<variant>.r<run_id>.md   # raw model output
@@ -96,7 +130,7 @@ results/<tag>/
 ## 3. Extraction runs (same run directory)
 
 ```
-results/<tag>/
+runs/<id>/
   extractions.jsonl
   outputs/extract/<pipeline_slug>/<doc_id>.<variant>.json   # parsed fields returned by the agent
 ```
@@ -119,7 +153,8 @@ is **not** included in `latency_s`; the report adds the two together for end-to-
 
 ## 4. Scores and site
 
-- `results/<tag>/scores.json`: written by `ocrbench report`. It holds the per-page
+- `runs/<id>/scores.json`: written by the score stage and by `ocrbench report`. It holds the per-page
   transcription metrics, per-document field metrics, and aggregates.
-- `site/<tag>/index.html`: the static viewer, also written by `ocrbench report`. It copies
-  the images it shows, so the folder is self-contained.
+- `site/index.html`: the experiments index. `site/<id>/index.html` is the run page and
+  `site/<id>/docs/<doc_id>.html` the document pages. Written by `ocrbench report`, which
+  copies the images, so each `site/<id>/` folder is self-contained.

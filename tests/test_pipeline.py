@@ -104,19 +104,63 @@ def tiny_docs(tmp_path_factory):
     return d
 
 
-def test_end_to_end_local(tiny_docs, tmp_path, monkeypatch):
-    from ocrbench import extract, reporting, score, transcribe
+def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
+    """A full run in runs/<id>/: transcribe -> extract -> score -> summarize, then report + experiments index."""
+    from ocrbench import cli, extract, runs, summarize, transcribe
 
     cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    cfg.raw["runner"]["mode"] = "local"
+    cfg.raw["bench"]["plans"]["t"] = [{"backend": "ocr", "concurrency": 2}]
+    cfg.raw["bench"]["extraction"]["pipelines"] = ["ocr->agent", "image->agent"]
+    monkeypatch.setattr(runs, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
     fake = {}
-    monkeypatch.setattr(transcribe, "get_backend", lambda c, n: fake.setdefault(n, GroundTruthBackend(n, tiny_docs)))
-    monkeypatch.setattr(extract, "get_backend", lambda c, n: fake.setdefault(n, GroundTruthBackend(n, tiny_docs)))
-    out = tmp_path / "run"
-    asyncio.run(transcribe.run(cfg, tiny_docs, out, backend="ocr", concurrency=2))
-    asyncio.run(extract.run(cfg, tiny_docs, out, pipelines=["ocr->agent", "image->agent"]))
-    s = score.score(cfg, tiny_docs, out, "t")
-    assert s["transcription"]["aggregate"] and all(a["cer"] == 0 for a in s["transcription"]["aggregate"])
-    assert {a["pipeline"] for a in s["extraction"]["aggregate"]} == {"ocr->agent", "image->agent"}
+
+    def get(c, n):
+        return fake.setdefault(n, GroundTruthBackend(n, tiny_docs))
+
+    monkeypatch.setattr(transcribe, "get_backend", get)
+    monkeypatch.setattr(extract, "get_backend", get)
+
+    class Writer(GroundTruthBackend):
+        async def complete(self, req):
+            assert "## Bottom line" in req.prompt and '"extraction"' in req.prompt
+            return Response("## Bottom line\nUse image->agent.\n\n## What was tested\nx", 900, 40)
+
+    monkeypatch.setattr(summarize, "get_backend", lambda c, n: Writer(n, tiny_docs))
+    monkeypatch.setattr(runs, "record_endpoint", lambda c, d: None)
+
+    class A:
+        plan, id, stages, docs = "t", None, "all", str(tiny_docs)
+
+    cli.cmd_run(cfg, A())
+    (d,) = (tmp_path / "runs").iterdir()
+    meta = runs.load(d)
+    assert set(meta["stages"]) == {"transcribe", "extract", "score", "summarize"}
+    assert (d / "docs" / "manifest.json").exists() and (d / "config.yaml").exists()
+    s = json.loads((d / "scores.json").read_text())
     assert all(a["field_accuracy"] == 1 for a in s["extraction"]["aggregate"])
-    idx = reporting.write(s, tiny_docs, out, tmp_path / "site")
-    assert idx.exists() and (out / "report.md").read_text().startswith("# ocr-bench")
+    report = (d / "report.md").read_text()
+    for needle in (
+        "## Findings",
+        "LLM-written",
+        "## Setup",
+        "### GPU",
+        "### Pipelines (the arrows)",
+        "### Document types",
+        "`image->agent`",
+        "holiday_survey",
+        "## Results",
+    ):
+        assert needle in report, needle
+    index = (tmp_path / "site" / "index.html").read_text()
+    assert meta["id"] in index and "Use image-&gt;agent." in index or "Use image->agent." in index
+    run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()
+    assert "all experiments" in run_page and 'id="legend"' in run_page
+
+    # resume: only re-summarize
+    class B:
+        plan, id, stages, docs = None, meta["id"], "summarize", str(tiny_docs)
+
+    cli.cmd_run(cfg, B())
+    assert "summarize" in runs.load(d)["stages"]

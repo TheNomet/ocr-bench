@@ -24,6 +24,17 @@ code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "
 code { background: var(--panel); padding: .1em .3em; border-radius: 4px; }
 pre { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: .75rem;
       white-space: pre-wrap; word-break: break-word; margin: .5rem 0; max-height: 70vh; overflow: auto; }
+.toc { margin: .5rem 0 1rem; }
+section { margin: 1.5rem 0; }
+section table, .summary table { border-collapse: collapse; margin: .5rem 0; font-size: .9rem; }
+section th, section td, .summary th, .summary td { border: 1px solid var(--border); padding: .3rem .55rem; text-align: left; vertical-align: top; }
+.run-card { display: block; border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0;
+  color: inherit; text-decoration: none; background: var(--panel); }
+.run-card:hover { border-color: #8aa4c8; }
+.run-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .4rem; font-size: 1.05rem; }
+.run-row { display: grid; grid-template-columns: 7.5rem 1fr; gap: .5rem; padding: .15rem 0; font-size: .92rem; }
+.run-row .label { color: #667; }
+.run-row p { margin: 0; }
 .summary { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .25rem 1rem; margin: 1rem 0; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem; font-size: .9rem; }

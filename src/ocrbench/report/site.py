@@ -112,7 +112,9 @@ TRANSCRIPTION_COLS = [
     Col("backend", "Backend"),
     Col("variant", "Variant"),
     Col("pages", "Pages", "int"),
-    Col("cer", "CER", "rate", "low", "Character error rate"),
+    Col("cer", "CER mean", "rate", "low", "Character error rate, mean over pages"),
+    Col("cer_median", "CER median", "rate", "low", "Character error rate of the typical page"),
+    Col("runaway", "Runaway", "int", "low", "Pages whose output is >3x the page length (repetition loop)"),
     Col("wer", "WER", "rate", "low", "Word error rate"),
     Col("word_recall", "Word recall", "pct", "high"),
     Col("word_precision", "Word precision", "pct", "high"),
@@ -290,7 +292,10 @@ def _page(title: str, body: str, prefix: str) -> str:
 
 
 class _Site:
-    def __init__(self, docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path) -> None:
+    def __init__(
+        self, docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, sections: dict | None = None
+    ) -> None:
+        self.sections = sections or {}
         self.docs_dir = Path(docs_dir)
         self.run_dir = Path(run_dir)
         self.scores = scores or {}
@@ -388,22 +393,45 @@ class _Site:
         return {k: statistics.fmean(v) for k, v in sorted(vals.items())}
 
     def render_index(self) -> str:
-        parts = [f"<h1>ocr-bench — {e(self.tag)}</h1>"]
+        sec = self.sections
+        parts = []
+        if sec:
+            parts.append('<p class="small"><a href="../index.html">&larr; all experiments</a></p>')
+        parts.append(f"<h1>ocr-bench &mdash; {e(self.tag)}</h1>")
         gen = self.scores.get("generated")
         if gen:
-            parts.append(f'<p class="muted">Generated {e(gen)}</p>')
-        summary = markdown_lite.render(str(self.scores.get("summary_md") or ""))
-        if summary:
-            parts.append(f'<div class="summary">{summary}</div>')
+            parts.append(f'<p class="muted">Scored {e(gen)}</p>')
+        if sec:
+            parts.append(
+                '<nav class="toc small">Jump to: <a href="#findings">Findings</a> &middot; '
+                '<a href="#setup">Setup</a> &middot; <a href="#legend">How to read</a> &middot; '
+                '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
+            )
+            parts.append('<h2 id="findings">Findings</h2>')
+            if sec.get("findings"):
+                parts.append(
+                    f'<p class="muted small">LLM-written ({e(sec.get("findings_author"))}). '
+                    "Check the numbers against the tables below.</p>"
+                )
+                parts.append(f'<div class="summary">{markdown_lite.render(sec["findings"])}</div>')
+            else:
+                parts.append('<p class="empty">No LLM summary yet: run the summarize stage.</p>')
+            parts.append(f'<section id="setup">{markdown_lite.render(sec.get("setup_md", ""))}</section>')
+            parts.append(f'<section id="legend">{markdown_lite.render(sec.get("legend_md", ""))}</section>')
+        else:
+            summary = markdown_lite.render(str(self.scores.get("summary_md") or ""))
+            if summary:
+                parts.append(f'<div class="summary">{summary}</div>')
 
-        parts.append("<h2>Speed</h2>")
+        parts.append('<h2 id="results">Results</h2>')
+        parts.append("<h3>Speed and cost (stage 1)</h3>")
         parts.append(render_table(self.speed, SPEED_COLS, "concurrency", "No speed data."))
-        parts.append("<h2>Transcription quality</h2>")
+        parts.append("<h3>Transcription quality (stage 1)</h3>")
         parts.append(render_table(self.tr_agg, TRANSCRIPTION_COLS, "variant", "No transcription scores."))
-        parts.append("<h2>Field extraction</h2>")
+        parts.append("<h3>Field extraction (stage 2)</h3>")
         parts.append(render_table(self.ex_agg, EXTRACTION_COLS, "variant", "No extraction scores."))
 
-        parts.append(f"<h2>Documents ({len(self.manifest)})</h2>")
+        parts.append(f'<h2 id="documents">Documents ({len(self.manifest)})</h2>')
         if not self.manifest:
             parts.append('<p class="empty">No documents in manifest.</p>')
             return _page(f"ocr-bench — {self.tag}", "\n".join(parts), "")
@@ -697,11 +725,78 @@ class _Site:
         return index
 
 
-def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path) -> Path:
+def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, sections: dict | None = None) -> Path:
     """Write a static, self-contained HTML viewer into *out_dir* and return the index path.
 
     *docs_dir* holds ``manifest.json``/``schemas.json`` and the page images; *run_dir*
     holds ``transcripts.jsonl`` and the raw ``outputs/``; *scores* is the dict saved as
     ``scores.json`` (see docs/data-formats.md). Images are copied to ``out_dir/assets``.
     """
-    return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir)).build()
+    return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir), sections).build()
+
+
+def build_experiments_index(runs: list[dict], out_dir: Path) -> Path:
+    """site/index.html: one row per run with models, GPU, cost and headline results, linking to the run page.
+
+    Each item: {"meta": run.json dict, "headline": reporting.headline(...), "bottom_line": str}.
+    """
+    out_dir = Path(out_dir)
+    assets = out_dir / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
+    (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
+    cards = []
+    for r in runs:
+        m, h = r["meta"], r.get("headline") or {}
+        o = m.get("ocr") or {}
+        models = []
+        for t in m.get("transcribers") or []:
+            if t == "ocr":
+                models.append(f"<b>ocr</b>: {e(o.get('hf_repo'))}")
+            else:
+                models.append(f"<b>{e(t)}</b>: {e((m.get('llm_backends') or {}).get(t, {}).get('model'))}")
+        agent = (m.get("extraction") or {}).get("agent")
+        models.append(f"<b>agent</b>: {e((m.get('llm_backends') or {}).get(agent, {}).get('model', agent))}")
+        price = o.get("price_per_hour_usd")
+        gpu = (
+            f"<code>{e(o.get('instance_type') or '?')}</code> &middot; {e(o.get('gpu') or '?')} &middot; "
+            f"{e(o.get('host') or '?')} &middot; "
+            + (f"${price:.2f}/h" if isinstance(price, (int, float)) else "price ?")
+        )
+        best = h.get("best") or {}
+        res = []
+        for v in ("clean", "degraded"):
+            if v in best:
+                res.append(
+                    f"best field accuracy ({v}): <b>{e(fmt(best[v]['field_accuracy'], 'pct'))}</b> "
+                    f"<code>{e(best[v]['pipeline'])}</code>"
+                )
+        if h.get("ocr_p50_s") is not None:
+            res.append(
+                f"OCR p50 {e(fmt(h['ocr_p50_s'], 'sec'))} s/page, max {e(fmt(h.get('ocr_max_pages_per_min'), 'f1'))} pages/min"
+            )
+        docs = m.get("documents") or {}
+        bl = r.get("bottom_line") or ""
+        cards.append(
+            f'<a class="run-card" href="{quote(m["id"])}/index.html">'
+            f'<div class="run-head"><span class="mono">{e(m["id"])}</span>'
+            f'<span class="muted small">plan <code>{e(m.get("plan"))}</code> &middot; {e(docs.get("count"))} docs / '
+            f"{e(docs.get('page_images'))} page images &middot; {e(m.get('created'))}</span></div>"
+            f'<div class="run-row"><span class="label">Models</span><span>{" &middot; ".join(models)}</span></div>'
+            f'<div class="run-row"><span class="label">GPU</span><span>{gpu}</span></div>'
+            f'<div class="run-row"><span class="label">Results</span><span>{"<br>".join(res) or "not scored yet"}</span></div>'
+            + (
+                f'<div class="run-row"><span class="label">Bottom line</span><span>{markdown_lite.render(bl)}</span></div>'
+                if bl
+                else ""
+            )
+            + "</a>"
+        )
+    body = (
+        "<h1>ocr-bench experiments</h1>"
+        f'<p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}. Click one for findings, setup, '
+        "results and every document.</p>" + ("".join(cards) or '<p class="empty">No runs yet.</p>')
+    )
+    idx = out_dir / "index.html"
+    idx.write_text(_page("ocr-bench experiments", body, ""), encoding="utf-8")
+    return idx

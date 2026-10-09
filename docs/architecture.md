@@ -8,7 +8,7 @@ flowchart LR
     CLI -->|crane| IMG[(ECR: vllm, bench)]
     CLI -->|HF -> S3| W[(S3: models/ocr)]
     CLI -->|docgen| DOCS[docs-out/]
-    DOCS -->|sync| S3D[(S3: docs/)]
+    DOCS -->|copied into runs/id| S3D[(S3: runs/)]
     REP[report.md + site/] 
   end
   subgraph aws[AWS account]
@@ -18,7 +18,7 @@ flowchart LR
     TASK -->|InvokeEndpoint| EP
     TASK -->|Converse| BR[Bedrock]
     TASK -->|HTTPS| GW[OpenAI-compatible gateway]
-    TASK -->|results/| S3R[(S3: results/)]
+    TASK -->|runs/id/| S3R[(S3: runs/)]
   end
   S3R -->|fetch| REP
   W --> EP
@@ -34,8 +34,9 @@ flowchart LR
 | SageMaker endpoint | Serves the OCR model with vLLM's OpenAI server (`/ping` and `/invocations` on :8080) | Container runs network-isolated; SageMaker mounts weights from S3 at `/opt/ml/model` |
 | Fargate runner | Runs both stages inside the VPC | Needed when backends are only reachable privately; otherwise use `runner.mode: local` |
 | Backends | One interface: `complete(Request) -> Response` | Runners don't know which provider they're talking to |
-| Scorer | Page metrics, field accuracy, latency and cost aggregates | Pure function of the files in `results/<tag>/` |
-| Site | Static HTML, no external resources | Open via `file://` or zip it |
+| Scorer | Page metrics, field accuracy, latency and cost aggregates | Pure function of the files in `runs/<id>/` |
+| Summariser | Stage 4: an LLM turns setup + scores into findings and a recommendation | Labelled LLM-written; told to use only the given numbers |
+| Site | Experiments index → run page → document page; static HTML, no external resources | Open via `file://` or zip a run's folder |
 
 ## Two-stage evaluation
 

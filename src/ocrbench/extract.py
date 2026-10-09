@@ -86,8 +86,8 @@ async def run(
     strip = bool(cfg["ocr"].get("strip_grounding_tokens", True))
     max_retries = cfg["bench"].get("max_retries", 4)
     out = run_dir / "extractions.jsonl"
-    if out.exists() and not pipelines:  # full re-run: start clean
-        out.rename(run_dir / "extractions.prev.jsonl")
+    if out.exists():  # a re-run replaces the previous extraction pass instead of mixing with it
+        out.replace(run_dir / "extractions.prev.jsonl")
 
     for pipe in pipelines or ex["pipelines"]:
         source = pipe.split("->")[0]

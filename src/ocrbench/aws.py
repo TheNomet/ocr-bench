@@ -98,6 +98,22 @@ def endpoint_wait(cfg: Config) -> None:
         time.sleep(30)
 
 
+def endpoint_info(cfg: Config) -> dict:
+    """Live endpoint facts: instance type actually placed (instance pools) and the resolved image digest."""
+    sm = boto3.client("sagemaker", region_name=cfg.region)
+    try:
+        v = sm.describe_endpoint(EndpointName=cfg.endpoint_name)["ProductionVariants"][0]
+    except Exception:  # noqa: BLE001
+        return {}
+    live = [p["InstanceType"] for p in v.get("InstancePools") or [] if p.get("CurrentInstanceCount")]
+    imgs = v.get("DeployedImages") or [{}]
+    resolved = imgs[0].get("ResolvedImage", "")
+    return {
+        "instance_type": (live or [v.get("CurrentInstanceType")])[0],
+        "image_digest": resolved.split("@", 1)[1] if "@" in resolved else None,
+    }
+
+
 def endpoint_instance_type(cfg: Config) -> str | None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     try:

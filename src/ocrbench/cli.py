@@ -1,19 +1,12 @@
-"""ocrbench command line. Every command reads the same config (--config or $OCRBENCH_CONFIG).
+"""ocrbench command line. Every command reads the same config (--config, $CONFIG or $OCRBENCH_CONFIG).
 
-Local commands
-  docs                     generate synthetic documents into docs-out/
-  tf-vars                  render Terraform inputs from the config into .state/<prefix>/
-  upload-weights [--from-dir DIR]   stream the pinned HF snapshot to S3 (SHA-256 verified)
-  images ocr|bench|all     build + push images with crane (no Docker)
-  endpoint up|down|status  SageMaker endpoint with GPU instance-pool fallback
-  run --plan P --tag T     stage 1 (plan) + stage 2 (extraction); local or Fargate (runner.mode)
-  fetch --tag T            download results/<T>/ from S3
-  report --tag T           score + results/<T>/report.md + site/<T>/index.html
+Setup        docs | tf-vars | upload-weights | images ocr|bench|all | endpoint up|down|status
+Runs         run --plan P [--stages ...]      new run folder runs/<date>-<plan>/, all stages
+             run --id ID --stages a,b         resume / redo stages of an existing run
+             fetch --run ID | list | report [--run ID]   (report also rebuilds site/index.html)
+Gateways     probe-models / probe-task        which model ids does a gateway accept?
 
-Stage commands (used by `run`, also usable directly)
-  transcribe --backend B --concurrency N [--variant clean|degraded|both] [--limit N] [--repeat N]
-  extract [--pipeline P ...]
-  task-run --plan P --tag T   entrypoint inside the Fargate task
+Stages: transcribe (1) -> extract (2) -> score (3) -> summarize (4, LLM-written findings).
 """
 
 from __future__ import annotations
@@ -24,6 +17,8 @@ import json
 import os
 import sys
 import tempfile
+import time
+from datetime import datetime
 from pathlib import Path
 
 from . import config as config_mod
@@ -113,6 +108,15 @@ def cmd_upload_weights(cfg: Config, a) -> None:
     upload(cfg, Path(a.from_dir).expanduser() if a.from_dir else None)
 
 
+def cmd_images(cfg: Config, a) -> None:
+    from . import images
+
+    if a.which in ("ocr", "all"):
+        images.build_ocr(cfg, skip_mirror=a.skip_mirror)
+    if a.which in ("bench", "all"):
+        images.build_bench(cfg)
+
+
 def cmd_endpoint(cfg: Config, a) -> None:
     from . import aws
 
@@ -122,15 +126,6 @@ def cmd_endpoint(cfg: Config, a) -> None:
         "wait": aws.endpoint_wait,
         "status": lambda c: print(aws.endpoint_instance_type(c) or "no endpoint"),
     }[a.action](cfg)
-
-
-def cmd_images(cfg: Config, a) -> None:
-    from . import images
-
-    if a.which in ("ocr", "all"):
-        images.build_ocr(cfg, skip_mirror=a.skip_mirror)
-    if a.which in ("bench", "all"):
-        images.build_bench(cfg)
 
 
 def cmd_transcribe(cfg: Config, a) -> None:
@@ -151,130 +146,232 @@ def cmd_transcribe(cfg: Config, a) -> None:
     )
 
 
-def cmd_extract(cfg: Config, a) -> None:
-    from .extract import run
+# ------------------------------------------------------------------ stages over a run folder
+def _parse_stages(s: str) -> list[str]:
+    from .runs import STAGES
 
-    asyncio.run(run(cfg, Path(a.docs), Path(a.out), pipelines=a.pipeline or None, variant=a.variant, limit=a.limit))
+    stages = STAGES if s == "all" else [x.strip() for x in s.split(",") if x.strip()]
+    bad = [x for x in stages if x not in STAGES]
+    if bad:
+        raise SystemExit(f"unknown stage(s) {bad}; choose from {STAGES} or 'all'")
+    return [x for x in STAGES if x in stages]  # canonical order
 
 
-def _run_plan(cfg: Config, docs: Path, out: Path, plan: str, extract: bool) -> None:
+def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
+    """Run stages over runs/<id>/. `sync` (optional) is called after each stage (Fargate: upload to S3)."""
+    from . import runs
     from .extract import run as extract_run
+    from .score import score
     from .transcribe import run as transcribe_run
 
-    items = cfg.plan(plan)
-    for i, it in enumerate(items, 1):
-        print(f"\n=== [{i}/{len(items)}] {json.dumps(it)}", flush=True)
-        asyncio.run(
-            transcribe_run(
-                cfg,
-                docs,
-                out,
-                backend=it["backend"],
-                concurrency=int(it.get("concurrency", 1)),
-                variant=it.get("variant", "both"),
-                limit=int(it.get("limit", 0)),
-                repeat=int(it.get("repeat", 1)),
-                warmup=it.get("warmup", True),
+    meta = runs.load(d)
+    docs = d / "docs"
+    items = meta.get("plan_items") or []
+    for st in stages:
+        t0 = time.time()
+        print(f"\n##### stage: {st}", flush=True)
+        if st == "transcribe":
+            for i, it in enumerate(items, 1):
+                print(f"\n=== [{i}/{len(items)}] {json.dumps(it)}", flush=True)
+                asyncio.run(
+                    transcribe_run(
+                        cfg,
+                        docs,
+                        d,
+                        backend=it["backend"],
+                        concurrency=int(it.get("concurrency", 1)),
+                        variant=it.get("variant", "both"),
+                        limit=int(it.get("limit", 0)),
+                        repeat=int(it.get("repeat", 1)),
+                        warmup=it.get("warmup", True),
+                    )
+                )
+        elif st == "extract":
+            lim = max((int(it.get("limit", 0)) for it in items), default=0)
+            variants = {it.get("variant", "both") for it in items}
+            asyncio.run(
+                extract_run(
+                    cfg,
+                    docs,
+                    d,
+                    pipelines=meta["extraction"]["pipelines"],
+                    variant=variants.pop() if len(variants) == 1 else "both",
+                    limit=lim,
+                )
             )
-        )
-    if extract:
-        lim = max((int(it.get("limit", 0)) for it in items), default=0)
-        variant = (
-            items[0].get("variant", "both")
-            if all(it.get("variant") == items[0].get("variant") for it in items)
-            else "both"
-        )
-        print("\n=== extraction", flush=True)
-        asyncio.run(extract_run(cfg, docs, out, variant=variant, limit=lim))
+        elif st == "score":
+            s = score(cfg, docs, d, meta["id"], gpu_hour=meta["ocr"].get("price_per_hour_usd"))
+            (d / "scores.json").write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"scored: {len(s['transcription']['pages'])} pages, {len(s['extraction']['docs'])} extractions")
+        elif st == "summarize":
+            from . import summarize
+
+            sp = d / "scores.json"
+            if not sp.exists():
+                raise SystemExit("summarize needs scores.json: run the score stage first")
+            summarize.run(cfg, d, runs.load(d), json.loads(sp.read_text(encoding="utf-8")))
+        runs.stage(d, st, finished=datetime.now().isoformat(timespec="seconds"), seconds=round(time.time() - t0, 1))
+        if sync:
+            sync()
 
 
 def cmd_task_run(cfg: Config, a) -> None:
-    """Inside Fargate: pull docs from S3, run plan + extraction, push results back after each step."""
+    """Inside Fargate: pull runs/<id>/ from S3, run the stages, push back after each stage."""
     from . import aws
 
-    work = Path(tempfile.mkdtemp(prefix="ocrbench-"))
-    docs, out = work / "docs", work / "results" / a.tag
-    n = aws.s3_sync_down(cfg.bucket, "docs", docs)
-    print(f"synced {n} doc files", flush=True)
-    try:
-        if a.extract_only:
-            from .extract import run as extract_run
+    d = Path(tempfile.mkdtemp(prefix="ocrbench-")) / a.run
+    print(f"pulled {aws.s3_sync_down(cfg.bucket, f'runs/{a.run}', d)} files of run {a.run}", flush=True)
 
-            print(f"pulled {aws.s3_sync_down(cfg.bucket, f'results/{a.tag}', out)} existing result files", flush=True)
-            asyncio.run(extract_run(cfg, docs, out))
-        else:
-            _run_plan(cfg, docs, out, a.plan, extract=not a.no_extract)
+    def sync():
+        print(f"uploaded {aws.s3_sync_up(d, cfg.bucket, f'runs/{a.run}')} changed files", flush=True)
+
+    try:
+        execute_stages(cfg, d, _parse_stages(a.stages), sync)
     finally:
-        if out.exists():
-            print(f"uploaded {aws.s3_sync_up(out, cfg.bucket, f'results/{a.tag}')} result files", flush=True)
+        sync()
 
 
 def cmd_run(cfg: Config, a) -> None:
-    from . import aws
+    from . import aws, runs
 
-    docs = Path(a.docs)
-    if not (docs / "manifest.json").exists():
-        raise SystemExit(f"{docs}/manifest.json missing — run `ocrbench docs` first")
+    stages = _parse_stages(a.stages)
+    if a.id and runs.run_dir(a.id).exists():
+        d = runs.run_dir(a.id)
+        print(f"resuming run {a.id}: stages {stages}")
+    else:
+        if not a.plan:
+            raise SystemExit("--plan is required for a new run")
+        docs = Path(a.docs)
+        if not (docs / "manifest.json").exists():
+            raise SystemExit(f"{docs}/manifest.json missing: run `ocrbench docs` first")
+        d = runs.create(cfg, a.plan, docs, a.id)
+        print(f"new run {d.name}: {d}")
+    meta = runs.load(d)
+    if "transcribe" in stages and any(it["backend"] == "ocr" for it in meta.get("plan_items") or []):
+        runs.record_endpoint(cfg, d)
+        o = runs.load(d)["ocr"]
+        print(f"OCR host: {o.get('instance_type')} ({o.get('gpu')}), {o.get('price_per_hour_usd')} USD/h")
     if cfg["runner"]["mode"] == "local":
-        if a.extract_only:
-            from .extract import run as extract_run
-
-            asyncio.run(extract_run(cfg, docs, Path(a.out) / a.tag))
-        else:
-            _run_plan(cfg, docs, Path(a.out) / a.tag, a.plan, extract=not a.no_extract)
-        return
-    o = outputs(cfg)
-    print(f"docs -> s3://{cfg.bucket}/docs: {aws.s3_sync_up(docs, cfg.bucket, 'docs')} files uploaded")
-    import boto3
-
-    boto3.client("s3").upload_file(str(cfg.path), cfg.bucket, "config/bench.yaml")
-    args = ["--config", "s3://config/bench.yaml", "task-run", "--plan", a.plan, "--tag", a.tag]
-    if a.no_extract:
-        args.append("--no-extract")
-    if a.extract_only:
-        args.append("--extract-only")
-    _, code = aws.run_task(cfg, o, args)
-    cmd_fetch(cfg, a)
-    if code != 0:
-        raise SystemExit(f"bench task exited with {code}")
+        execute_stages(cfg, d, stages)
+    else:
+        o = outputs(cfg)
+        print(f"run -> s3://{cfg.bucket}/runs/{d.name}: {aws.s3_sync_up(d, cfg.bucket, f'runs/{d.name}')} files")
+        args = [
+            "--config",
+            f"s3://runs/{d.name}/config.yaml",
+            "task-run",
+            "--run",
+            d.name,
+            "--stages",
+            ",".join(stages),
+        ]
+        _, code = aws.run_task(cfg, o, args)
+        print(f"fetched {aws.s3_sync_down(cfg.bucket, f'runs/{d.name}', d)} files -> {d}")
+        if code != 0:
+            raise SystemExit(f"bench task exited with {code}")
+    _report(cfg, [d.name])
 
 
 def cmd_fetch(cfg: Config, a) -> None:
-    from . import aws
+    from . import aws, runs
 
-    n = aws.s3_sync_down(cfg.bucket, f"results/{a.tag}", Path(a.out) / a.tag)
-    print(f"fetched {n} files -> {Path(a.out) / a.tag}")
+    d = runs.run_dir(a.run)
+    print(f"fetched {aws.s3_sync_down(cfg.bucket, f'runs/{a.run}', d)} files -> {d}")
+
+
+def _report(cfg: Config, ids: list[str]) -> None:
+    from . import reporting, runs
+    from .report import build_experiments_index
+    from .score import score
+
+    site = ROOT / "site"
+    for rid in ids:
+        d = runs.run_dir(rid)
+        meta = runs.load(d)
+        if not (d / "transcripts.jsonl").exists():
+            print(f"{rid}: no transcripts yet, skipped")
+            continue
+        s = score(cfg, d / "docs", d, rid, gpu_hour=meta["ocr"].get("price_per_hour_usd"))
+        idx = reporting.write(meta, s, d, site)
+        print(f"{rid}: {d / 'report.md'}  |  {idx}")
+    items = []
+    for meta in runs.all_runs():
+        d = runs.run_dir(meta["id"])
+        sp = d / "scores.json"
+        if not sp.exists():
+            continue
+        s = json.loads(sp.read_text(encoding="utf-8"))
+        body, _ = reporting.read_summary(d)
+        bl = ""
+        if body:  # first paragraph under "## Bottom line"
+            parts = body.split("## Bottom line", 1)
+            bl = parts[1].split("\n## ", 1)[0].strip() if len(parts) == 2 else ""
+        items.append({"meta": meta, "headline": reporting.headline(meta, s), "bottom_line": bl})
+    print(f"experiments index: {build_experiments_index(items, site)}")
 
 
 def cmd_report(cfg: Config, a) -> None:
-    from . import aws, reporting
-    from .score import score
+    from . import runs
 
-    run_dir = Path(a.out) / a.tag
-    sm = cfg["ocr"].setdefault("sagemaker", {})
-    if sm.get("price_per_hour_usd") is None:
-        runs = run_dir / "runs.jsonl"
-        itype = (
-            next(
-                (
-                    json.loads(x).get("instance_type")
-                    for x in runs.read_text().splitlines()
-                    if x.strip() and json.loads(x).get("instance_type")
-                ),
-                None,
-            )
-            if runs.exists()
-            else None
-        )
-        if itype:
-            sm["price_per_hour_usd"] = aws.sagemaker_hourly_usd(cfg.region, itype)
-            print(f"GPU price: {itype} = {sm['price_per_hour_usd']} USD/h")
-    s = score(cfg, Path(a.docs), run_dir, a.tag)
-    findings = run_dir / "findings.md"
-    idx = reporting.write(
-        s, Path(a.docs), run_dir, Path(a.site) / a.tag, findings.read_text() if findings.exists() else ""
-    )
-    print(f"report: {run_dir / 'report.md'}\nsite:   {idx}")
+    _report(cfg, [a.run] if a.run else [m["id"] for m in runs.all_runs()])
+
+
+def cmd_list(cfg: Config, a) -> None:
+    from . import runs
+
+    for m in runs.all_runs():
+        o = m.get("ocr") or {}
+        done = ",".join(m.get("stages", {})) or "-"
+        print(f"{m['id']:32s} plan={m.get('plan'):8s} gpu={o.get('instance_type') or '-':16s} stages={done}")
+
+
+def cmd_probe_models(cfg: Config, a) -> None:
+    """List what each openai_compatible backend's gateway offers and try a 1-token call per candidate id."""
+    import httpx
+
+    from .backends import Request, get_backend
+
+    async def go():
+        for name, spec in cfg["llm_backends"].items():
+            if spec.get("provider") != "openai_compatible" or (a.backend and name not in a.backend):
+                continue
+            be = get_backend(cfg, name)
+            print(f"\n== {name} ({spec['base_url']})", flush=True)
+            try:
+                hdr = await be._auth(False)
+                r = await be.client.get(spec["base_url"].rstrip("/") + "/v1/models", headers=hdr)
+                ids = [m.get("id") for m in (r.json().get("data") or [])] if r.status_code < 400 else []
+                print(f"  /v1/models: HTTP {r.status_code}, {len(ids)} models")
+                for i in sorted(x for x in ids if x and (not a.filter or a.filter in x)):
+                    print(f"    {i}")
+            except (httpx.HTTPError, ValueError) as e:
+                print(f"  /v1/models failed: {e}")
+            for mid in a.model or [spec["model"]]:
+                be.model = mid
+                try:
+                    resp = await be.complete(Request("Reply with OK.", "Say OK.", max_tokens=5))
+                    print(f"  call {mid}: OK ({resp.text.strip()[:20]!r})", flush=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  call {mid}: FAILED {str(e)[:200]}", flush=True)
+
+    asyncio.run(go())
+
+
+def cmd_probe_task(cfg: Config, a) -> None:
+    """Run probe-models inside the VPC (Fargate), for gateways only reachable there."""
+    import boto3
+
+    from . import aws
+
+    boto3.client("s3").upload_file(str(cfg.path), cfg.bucket, "runs/_probe/config.yaml")
+    args = ["--config", "s3://runs/_probe/config.yaml", "probe-models"]
+    for m in a.model or []:
+        args += ["--model", m]
+    for b in a.backend or []:
+        args += ["--backend", b]
+    if a.filter:
+        args += ["--filter", a.filter]
+    aws.run_task(cfg, outputs(cfg), args)
 
 
 # ------------------------------------------------------------------ main
@@ -293,52 +390,52 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         prog="ocrbench", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--config", default=None, help="config YAML (default $OCRBENCH_CONFIG or config/example.yaml)")
+    ap.add_argument(
+        "--config", default=None, help="config YAML (default $CONFIG / $OCRBENCH_CONFIG / config/example.yaml)"
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    def common(p, out=True):
-        p.add_argument("--docs", default=str(ROOT / "docs-out"))
-        if out:
-            p.add_argument("--out", default=str(ROOT / "results"))
-        return p
-
-    p = common(sub.add_parser("docs"), out=False)
+    p = sub.add_parser("docs", help="generate the synthetic document set into docs-out/")
+    p.add_argument("--docs", default=str(ROOT / "docs-out"))
     p.add_argument("--per-type", type=int, default=0)
     p = sub.add_parser("tf-vars")
     p.add_argument("--with-model", action="store_true", help="also create the SageMaker model (weights + image ready)")
     p = sub.add_parser("upload-weights")
     p.add_argument("--from-dir", default=None, help="folder with browser-downloaded large files")
-    p = sub.add_parser("endpoint")
-    p.add_argument("action", choices=["up", "down", "wait", "status"])
     p = sub.add_parser("images")
     p.add_argument("which", choices=["ocr", "bench", "all"])
     p.add_argument("--skip-mirror", action="store_true", help="reuse the already-mirrored :mirror tag")
-    p = common(sub.add_parser("transcribe"))
+    p = sub.add_parser("endpoint")
+    p.add_argument("action", choices=["up", "down", "wait", "status"])
+    p = sub.add_parser("transcribe", help="low-level: one stage-1 run into an arbitrary folder")
+    p.add_argument("--docs", default=str(ROOT / "docs-out"))
+    p.add_argument("--out", required=True)
     p.add_argument("--backend", required=True)
     p.add_argument("--concurrency", type=int, default=1)
     p.add_argument("--variant", default="both", choices=["clean", "degraded", "both"])
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--no-warmup", action="store_true")
-    p = common(sub.add_parser("extract"))
-    p.add_argument("--pipeline", action="append")
-    p.add_argument("--variant", default="both", choices=["clean", "degraded", "both"])
-    p.add_argument("--limit", type=int, default=0)
-    for name in ("run", "task-run"):
-        p = common(sub.add_parser(name))
-        p.add_argument("--plan", required=True)
-        p.add_argument("--tag", required=True)
-        p.add_argument("--no-extract", action="store_true")
-        p.add_argument(
-            "--extract-only",
-            action="store_true",
-            help="skip stage 1; re-run stage 2 on the transcripts already in results/<tag>",
+    p = sub.add_parser("run", help="new run (or resume one with --id) through the given stages")
+    p.add_argument("--plan", default=None)
+    p.add_argument("--id", default=None, help="existing run id to resume, or a custom id for a new run")
+    p.add_argument("--stages", default="all", help="comma list of transcribe,extract,score,summarize or 'all'")
+    p.add_argument("--docs", default=str(ROOT / "docs-out"))
+    p = sub.add_parser("task-run", help="entrypoint inside the Fargate task")
+    p.add_argument("--run", required=True)
+    p.add_argument("--stages", default="all")
+    p = sub.add_parser("fetch")
+    p.add_argument("--run", required=True)
+    p = sub.add_parser("report", help="re-score + report.md + site for one run (or all) + experiments index")
+    p.add_argument("--run", default=None)
+    sub.add_parser("list", help="list runs")
+    for name in ("probe-models", "probe-task"):
+        p = sub.add_parser(
+            name, help="check which model ids a gateway accepts" + (" (from Fargate)" if name == "probe-task" else "")
         )
-    p = common(sub.add_parser("fetch"))
-    p.add_argument("--tag", required=True)
-    p = common(sub.add_parser("report"))
-    p.add_argument("--tag", required=True)
-    p.add_argument("--site", default=str(ROOT / "site"))
+        p.add_argument("--model", action="append", help="model id to try (repeatable); default: the configured one")
+        p.add_argument("--backend", action="append", help="limit to these llm_backends keys")
+        p.add_argument("--filter", default=None, help="only list /v1/models ids containing this")
 
     a = ap.parse_args(argv)
     cfg = _resolve_config(a.config)
@@ -346,14 +443,16 @@ def main(argv: list[str] | None = None) -> None:
         "docs": cmd_docs,
         "tf-vars": cmd_tf_vars,
         "upload-weights": cmd_upload_weights,
-        "endpoint": cmd_endpoint,
         "images": cmd_images,
+        "endpoint": cmd_endpoint,
         "transcribe": cmd_transcribe,
-        "extract": cmd_extract,
         "run": cmd_run,
         "task-run": cmd_task_run,
         "fetch": cmd_fetch,
         "report": cmd_report,
+        "list": cmd_list,
+        "probe-models": cmd_probe_models,
+        "probe-task": cmd_probe_task,
     }[a.cmd]
     try:
         handler(cfg, a)

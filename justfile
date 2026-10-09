@@ -5,8 +5,8 @@
 #   just deploy         # infra, images, weights, SageMaker model (idempotent)
 #   just endpoint-up    # start the GPU endpoint (~15 min; billed per hour from here)
 #   just docs           # generate the synthetic documents
-#   just run smoke      # stage 1 + 2 for plan "smoke" (Fargate or local per runner.mode)
-#   just report smoke   # score -> results/smoke/report.md + site/smoke/index.html
+#   just run smoke      # new run folder runs/<date>-smoke/: transcribe, extract, score, summarize
+#   just open           # experiments index -> drill down per run and per document
 #   just endpoint-down  # stop GPU billing
 #   just destroy        # remove everything
 
@@ -108,23 +108,31 @@ endpoint-logs:
 docs per_type="":
     {{ob}} docs {{ if per_type != "" { "--per-type " + per_type } else { "" } }}
 
-# Run a plan from bench.plans (stage 1) and the extraction pipelines (stage 2)
-run plan tag=plan:
-    {{ob}} run --plan {{plan}} --tag {{tag}}
+# New run of a plan: runs/<date>-<plan>/ through all stages, then report + site
+run plan:
+    {{ob}} run --plan {{plan}}
 
-# Re-run only stage 2 (extraction) on an existing run's transcripts
-extract tag:
-    {{ob}} run --plan none --tag {{tag}} --extract-only
+# Redo stages of an existing run, e.g. `just rerun 2026-10-09-suite summarize` or `extract,score,summarize`
+rerun id stages:
+    {{ob}} run --id {{id}} --stages {{stages}}
 
-fetch tag:
-    {{ob}} fetch --tag {{tag}}
+runs:
+    {{ob}} list
 
-report tag:
-    {{ob}} report --tag {{tag}}
+fetch id:
+    {{ob}} fetch --run {{id}}
 
-# Open the static viewer
-open tag:
-    open "site/{{tag}}/index.html" 2>/dev/null || xdg-open "site/{{tag}}/index.html"
+# Re-score + rebuild report.md and the site (one run, or all) and the experiments index
+report id="":
+    {{ob}} report {{ if id != "" { "--run " + id } else { "" } }}
+
+# Open the experiments index (or one run)
+open id="":
+    open "site/{{ if id != "" { id + "/" } else { "" } }}index.html" 2>/dev/null || xdg-open "site/{{ if id != "" { id + "/" } else { "" } }}index.html"
+
+# Which model ids does the gateway accept? Runs inside the VPC. e.g. `just probe --model some-id --filter haiku`
+probe *args:
+    {{ob}} probe-task {{args}}
 
 # ---- teardown ----
 

@@ -3,8 +3,9 @@ config/*.yaml
 !config/example.yaml
 .public-denylist
 
-# Generated data
+# Generated data (runs hold internal names: never commit)
 docs-out/
+runs/
 results/
 site/
 *.tfplan

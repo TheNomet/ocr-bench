@@ -226,9 +226,7 @@ resource "aws_iam_role_policy" "task" {
     Statement = concat(
       [
         { Effect = "Allow", Action = ["s3:ListBucket"], Resource = aws_s3_bucket.artifacts.arn },
-        { Effect = "Allow", Action = ["s3:GetObject"],
-        Resource = ["${aws_s3_bucket.artifacts.arn}/docs/*", "${aws_s3_bucket.artifacts.arn}/config/*"] },
-        { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject"], Resource = "${aws_s3_bucket.artifacts.arn}/results/*" },
+        { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject"], Resource = "${aws_s3_bucket.artifacts.arn}/runs/*" },
         { Effect = "Allow", Action = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"],
         Resource = "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/${local.endpoint_name}" },
       ],

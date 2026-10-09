@@ -32,6 +32,7 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `bench.transcribers` | Informational list of stage-1 backends |
 | `bench.extraction.agent` | `llm_backends` key used for stage 2 |
 | `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"` |
+| `bench.summary.agent` | `llm_backends` key that writes the findings in stage 4 (default: the extraction agent) |
 | `bench.plans.<name>` | List of `{backend, concurrency, variant?, limit?, repeat?, warmup?}` runs |
 | `bench.max_retries` | Retries on 429/5xx with exponential backoff |
 | `runner.mode` | `fargate` (in the VPC) or `local` |

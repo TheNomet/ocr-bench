@@ -102,12 +102,12 @@ def _price(cfg: Config, backend: str) -> dict | None:
     return None if backend == "ocr" else cfg["llm_backends"].get(backend, {}).get("price_per_mtok")
 
 
-def score(cfg: Config, docs: Path, run_dir: Path, tag: str) -> dict:
+def score(cfg: Config, docs: Path, run_dir: Path, tag: str, gpu_hour: float | None = None) -> dict:
     manifest = {d["id"]: d for d in load_manifest(docs)}
     transcripts = _jsonl(run_dir / "transcripts.jsonl")
     runs = _jsonl(run_dir / "runs.jsonl")
     strip = bool(cfg["ocr"].get("strip_grounding_tokens", True))
-    gpu_hour = cfg["ocr"].get("sagemaker", {}).get("price_per_hour_usd")
+    gpu_hour = gpu_hour or cfg["ocr"].get("sagemaker", {}).get("price_per_hour_usd")
 
     # ---- speed / cost per run ----
     speed = []

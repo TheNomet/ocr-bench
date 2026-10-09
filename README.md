@@ -6,9 +6,9 @@ ocr-bench compares a **self-hosted OCR model** (vLLM on a SageMaker GPU endpoint
 speed, accuracy and cost on synthetic Norwegian documents that come with exact ground truth.
 
 ```
-docs ──► stage 1: transcribe every page ──► stage 2: an agent extracts fields ──► score ──► report + static site
-         (OCR model, Sonnet, Haiku, …)       from each transcript, or straight
-                                             from the images (baseline)
+docs ─► 1 transcribe every page ─► 2 an agent extracts fields ─► 3 score ─► 4 an LLM writes the findings
+        (OCR model, Sonnet, Haiku…)     from each transcript, or straight
+                                        from the images (baseline)
 ```
 
 The **whole stack** (bucket, image repos, IAM, SageMaker model, Fargate runner, optionally a
@@ -23,9 +23,9 @@ just tools setup        # terraform + crane into .tools/, python env, git hooks
 just deploy             # infra -> images -> weights -> SageMaker model   (~20 min, mostly uploads)
 just endpoint-up        # GPU endpoint                                    (~15 min cold start)
 just docs               # 8 types x 6 docs, clean + degraded              (~100 pages)
-just run smoke          # quick check of every backend
-just run suite          # latency + batch sweep, then field extraction
-just report suite && just open suite
+just run smoke          # quick check of every backend      -> runs/<date>-smoke/
+just run suite          # latency + batch sweep, extraction, findings -> runs/<date>-suite/
+just open               # experiments index -> one run -> one document
 just endpoint-down      # stop GPU billing
 just destroy            # remove everything
 ```
@@ -36,12 +36,19 @@ don't need Docker: images are copied and layered registry-side with `crane`.
 
 ## What you get
 
-- `results/<tag>/report.md`: speed, transcription quality, field-extraction accuracy, and
-  cost tables.
-- `site/<tag>/index.html`: a static viewer. For each document it shows the page image
-  (clean and degraded), the ground truth, every backend's transcript with a word diff, and
-  the extracted fields marked ✓/✗.
-- `results/<tag>/*.jsonl`: raw per-request records. See [docs/data-formats.md](docs/data-formats.md).
+Every run is one self-contained folder, `runs/<date>-<plan>/`. It holds the setup
+(`run.json`: models, GPU host and price, documents, plan, git commit), a copy of the
+documents, every raw output, `scores.json`, the LLM-written `summary.md`, and `report.md`.
+`report.md` puts it all together: findings, setup, a legend of document types and pipelines,
+metric definitions and result tables. Runs stay local (and in your S3 bucket); they are
+gitignored because they contain deployment-specific names.
+
+`site/index.html` lists every experiment with its models, GPU and cost, and headline
+results. From a run page you drill down to each document: page image (clean and degraded),
+ground truth, every transcript with a word diff, and the extracted fields marked ✓/✗.
+
+Redo any stage of an old run without starting over, e.g. `just rerun <id> summarize` or
+`just rerun <id> extract,score,summarize`.
 
 ## Documentation
 
@@ -52,7 +59,6 @@ don't need Docker: images are copied and layered registry-side with `crane`.
 | [docs/configuration.md](docs/configuration.md) | Every config key |
 | [docs/data-formats.md](docs/data-formats.md) | File contracts between stages |
 | [docs/documents.md](docs/documents.md) | The synthetic document types and their fields |
-| [docs/findings.md](docs/findings.md) | Results and operational lessons from past runs |
 
 ## Without AWS GPU access
 
