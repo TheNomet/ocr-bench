@@ -113,6 +113,7 @@ class OpenAICompatBackend(Backend):
         self.name = name
         self.model = spec["model"]
         self.price_per_mtok = spec.get("price_per_mtok")
+        self._init_temperature(spec)
         self.url = spec["base_url"].rstrip("/") + "/v1/chat/completions"
         self.headers = dict(spec.get("headers") or {})
         self.cache_bust = bool(spec.get("cache_bust", False))
@@ -147,7 +148,7 @@ class OpenAICompatBackend(Backend):
         body = {
             "model": self.model,
             "max_tokens": req.max_tokens,
-            "temperature": req.temperature,
+            **({} if self.temperature(req) is None else {"temperature": self.temperature(req)}),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
             **self.extra_body,
         }

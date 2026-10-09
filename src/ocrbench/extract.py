@@ -75,8 +75,17 @@ async def run(
     cfg: Config, docs: Path, run_dir: Path, *, pipelines: list[str] | None = None, variant: str = "both", limit: int = 0
 ) -> None:
     ex = cfg["bench"]["extraction"]
-    agent = get_backend(cfg, ex["agent"])
-    await agent.warmup()
+    agents: dict = {}
+
+    async def agent_for(pipe: str):
+        """`<source>->agent` uses bench.extraction.agent; `<source>-><llm key>` uses that backend."""
+        key = pipe.split("->", 1)[1]
+        key = ex["agent"] if key == "agent" else key
+        if key not in agents:
+            agents[key] = get_backend(cfg, key)
+            await agents[key].warmup()
+        return agents[key]
+
     schemas = json.loads((docs / "schemas.json").read_text(encoding="utf-8"))
     manifest = load_manifest(docs)
     if limit:
@@ -91,6 +100,7 @@ async def run(
 
     for pipe in pipelines or ex["pipelines"]:
         source = pipe.split("->")[0]
+        agent = await agent_for(pipe)
         slug = pipe.replace("->", "__")
         texts = first_transcripts(run_dir, source) if source != "image" else {}
         jobs = []
@@ -124,7 +134,7 @@ async def run(
             continue
         print(f"[extract {pipe}] {len(jobs)} documents via {agent.name}", flush=True)
 
-        async def one(d, v, req, pipe=pipe, source=source, slug=slug):
+        async def one(d, v, req, pipe=pipe, source=source, slug=slug, agent=agent):
             async with sem:
                 t0 = time.perf_counter()
                 rec = {

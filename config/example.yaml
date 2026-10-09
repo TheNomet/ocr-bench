@@ -96,6 +96,7 @@ ocr:
 llm_backends:
   bedrock-sonnet:
     provider: bedrock
+    # temperature: 1               # optional override; some models accept only 1. null = don't send
     model_id: anthropic.claude-sonnet-4-5-20250929-v1:0   # or an inference profile id
     region: ${AWS_REGION:-eu-west-1}
     price_per_mtok: {input: 3.0, output: 15.0}            # USD, for the cost table only
@@ -139,6 +140,9 @@ bench:
     # Pipelines to score. "<transcriber>->agent" extracts from that transcriber's text;
     # "image->agent" sends the page images straight to the agent (one step).
     pipelines: ["ocr->agent", "bedrock-sonnet->agent", "image->agent"]
+    # Optional per-plan override. "<input>-><llm key>" makes that backend the extractor instead of `agent`:
+    # plan_pipelines:
+    #   compare: ["image->agent", "image->bedrock-haiku"]
     concurrency: 8
   # Stage 4: an LLM reads the setup + scored tables and writes the findings (runs/<id>/summary.md).
   summary:

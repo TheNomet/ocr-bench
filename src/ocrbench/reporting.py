@@ -29,34 +29,44 @@ def setup_md(meta: dict) -> str:
         "",
         "### Models",
         "",
-        "| role | name in tables | model | model id | served by | price |",
-        "|---|---|---|---|---|---|",
+        "| role | name in tables | model | model id | served by | temperature | price |",
+        "|---|---|---|---|---|---|---|",
     ]
     gpu_price = f"{_usd(o.get('price_per_hour_usd'))}/hour (on-demand)" if o.get("price_per_hour_usd") else "–"
-    out.append(
-        f"| transcriber (self-hosted) | `ocr` | {explain.ocr_label(o)} | `{o.get('served_model_name')}` | "
-        f"vLLM on {o.get('serving', 'SageMaker')} | {gpu_price} |"
-    )
+    uses_ocr = "ocr" in (meta.get("transcribers") or [])
+    if uses_ocr:
+        out.append(
+            f"| transcriber (self-hosted) | `ocr` | {explain.ocr_label(o)} | `{o.get('served_model_name')}` | "
+            f"vLLM on {o.get('serving', 'SageMaker')} | {o.get('request_temperature', 0):g} | {gpu_price} |"
+        )
     roles: dict[str, list[str]] = {}
     for t in meta.get("transcribers") or []:
         if t != "ocr":
             roles.setdefault(t, []).append("transcriber")
-    roles.setdefault(meta["extraction"]["agent"], []).append("extraction agent")
+    agents = meta["extraction"].get("agents") or {}
+    roles.setdefault(meta["extraction"]["agent"], []).append("extraction agent (default)")
+    for k in dict.fromkeys(v for v in agents.values() if v != meta["extraction"]["agent"]):
+        roles.setdefault(k, []).append("extractor")
     roles.setdefault(meta.get("summary", {}).get("agent") or meta["extraction"]["agent"], []).append("summary writer")
     for name, rs in roles.items():
         b = meta["llm_backends"].get(name, {})
         p = b.get("price_per_mtok") or {}
         price = f"${p.get('input')} in / ${p.get('output')} out per 1M tokens" if p else "–"
+        temp = b.get("temperature", 0.0)
         out.append(
             f"| {', '.join(rs)} | `{name}` | {explain.model_label(b.get('model'))} | `{b.get('model', '?')}` | "
-            f"{b.get('via', '?')} | {price} |"
+            f"{b.get('via', '?')} | {'default' if temp is None else f'{temp:g}'} | {price} |"
         )
-    agent_model = meta["llm_backends"].get(meta["extraction"]["agent"], {}).get("model")
-    out += ["", "### The extraction agent", "", explain.agent_note(agent_model)]
-    out += [
-        "",
-        "### GPU",
-        "",
+    a = meta["llm_backends"].get(meta["extraction"]["agent"], {})
+    others = [f"`{k}`" for k in dict.fromkeys(v for v in agents.values() if v != meta["extraction"]["agent"])]
+    out += ["", "### The extraction agent", "", explain.agent_note(a.get("model"), a.get("temperature", 0.0), others)]
+    if any((b.get("temperature") or 0) > 0 for b in meta["llm_backends"].values()):
+        out += [
+            "",
+            "Models with temperature above 0 sample their output, so their results vary slightly between "
+            "runs; differences of a point or two are within noise.",
+        ]
+    gpu_rows = [
         "| | |",
         "|---|---|",
         f"| instance | `{o.get('instance_type') or 'unknown'}` (picked from pools: {', '.join(o.get('instance_pools') or []) or '–'}) |",
@@ -67,6 +77,9 @@ def setup_md(meta: dict) -> str:
         f"| host image | `{o.get('inference_ami_version') or '–'}` |",
         f"| container | `{o.get('source_image')}` (digest `{(o.get('image_digest') or '–')[:19]}`) |",
         f"| serving flags | `{' '.join(o.get('serve_args') or [])}` |",
+    ]
+    out += ["", "### GPU", ""] + (gpu_rows if uses_ocr else ["No self-hosted model in this run, so no GPU was used."])
+    out += [
         "",
         "### Run",
         "",
@@ -94,7 +107,9 @@ def legend_md(meta: dict) -> str:
     out += [f"- **{a}**: {b}" for a, b in explain.STAGES]
     out += ["", "### Pipelines (the arrows)", "", explain.ARROW, "", "| pipeline | what the agent reads |", "|---|---|"]
     for p in meta["extraction"]["pipelines"]:
-        out.append(f"| `{p}` | {explain.pipeline_text(p, meta['ocr'].get('hf_repo', 'ocr'))} |")
+        ext = (meta["extraction"].get("agents") or {}).get(p) or meta["extraction"]["agent"]
+        label = explain.model_label(meta["llm_backends"].get(ext, {}).get("model"))
+        out.append(f"| `{p}` | {explain.pipeline_text(p, meta['ocr'].get('hf_repo', 'ocr'), f'`{ext}` ({label})')} |")
     out += ["", "### Page variants", ""] + [f"- **{k}**: {v}" for k, v in explain.VARIANTS.items()]
     out += [
         "",

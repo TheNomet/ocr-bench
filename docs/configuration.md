@@ -33,6 +33,8 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `bench.extraction.agent` | `llm_backends` key used for stage 2 |
 | `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"` |
 | `bench.summary.agent` | `llm_backends` key that writes the findings in stage 4 (default: the extraction agent) |
+| `bench.extraction.plan_pipelines.<plan>` | Pipelines for that plan instead of `pipelines`. `<input>-><llm key>` uses that backend as the extractor; `->agent` uses the default agent |
+| `llm_backends.<key>.temperature` | Overrides the request temperature (default 0). Some models accept only 1; `null` omits it. Recorded in the run and shown in the report |
 | `bench.plans.<name>` | List of `{backend, concurrency, variant?, limit?, repeat?, warmup?}` runs |
 | `bench.max_retries` | Retries on 429/5xx with exponential backoff |
 | `runner.mode` | `fargate` (in the VPC) or `local` |

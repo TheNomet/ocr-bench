@@ -110,6 +110,7 @@ def backends_summary(cfg: Config) -> dict:
             "provider": spec.get("provider"),
             "model": spec.get("model") or spec.get("model_id"),
             "price_per_mtok": spec.get("price_per_mtok"),
+            "temperature": spec.get("temperature", 0.0),
             "via": "AWS Bedrock" if spec.get("provider") == "bedrock" else "OpenAI-compatible gateway",
         }
     return out
@@ -121,7 +122,8 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     d.mkdir(parents=True)
     shutil.copytree(docs, d / "docs")
     shutil.copy2(cfg.path, d / "config.yaml")
-    o, ex = cfg["ocr"], cfg["bench"]["extraction"]
+    o, ex = cfg["ocr"], dict(cfg["bench"]["extraction"])
+    ex["pipelines"] = (ex.get("plan_pipelines") or {}).get(plan, ex["pipelines"])
     summ = cfg["bench"].get("summary") or {}
     meta = {
         "id": rid,
@@ -151,8 +153,16 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
             "image_digest": None,
         },
         "llm_backends": backends_summary(cfg),
-        "transcribers": cfg["bench"].get("transcribers"),
-        "extraction": {"agent": ex["agent"], "pipelines": ex["pipelines"]},
+        "transcribers": list(
+            dict.fromkeys(it["backend"] for it in (cfg.plan(plan) if plan in cfg["bench"]["plans"] else []))
+        ),
+        "extraction": {
+            "agent": ex["agent"],
+            "pipelines": ex["pipelines"],
+            "agents": {
+                p: (ex["agent"] if p.split("->", 1)[1] == "agent" else p.split("->", 1)[1]) for p in ex["pipelines"]
+            },
+        },
         "summary": {"agent": summ.get("agent", ex["agent"])},
         "stages": {},
     }

@@ -81,13 +81,15 @@ METRICS = [
 ]
 
 
-def pipeline_text(pipe: str, ocr_name: str = "ocr") -> str:
+def pipeline_text(pipe: str, ocr_name: str = "ocr", extractor: str | None = None) -> str:
     src = pipe.split("->")[0]
     if src == "image":
-        return PIPELINES["image"]
-    if src == "ocr":
-        return PIPELINES["ocr"].replace("self-hosted OCR model", f"self-hosted OCR model ({ocr_name})")
-    return PIPELINES["llm"].replace("this LLM", f"`{src}`")
+        t = PIPELINES["image"]
+    elif src == "ocr":
+        t = PIPELINES["ocr"].replace("self-hosted OCR model", f"self-hosted OCR model ({ocr_name})")
+    else:
+        t = PIPELINES["llm"].replace("this LLM", f"`{src}`")
+    return t + (f" Extractor: {extractor}." if extractor else "")
 
 
 # --------------------------------------------------------------------------- model names
@@ -115,11 +117,19 @@ AGENT_INPUT = (
     "the document type's field list (name, type, one-line description), plus either the page images "
     "(`image->agent`) or the text transcript of every page, in order (`<transcriber>->agent`)"
 )
-AGENT_OUTPUT = "one JSON object with the field values copied verbatim; temperature 0, max 2,048 output tokens"
 
 
-def agent_note(model_id: str | None) -> str:
+AGENT_OUTPUT = "one JSON object with the field values copied verbatim; max 2,048 output tokens"
+
+
+def agent_note(model_id: str | None, temperature: float | None = 0.0, others: list[str] | None = None) -> str:
+    t = "provider default" if temperature is None else f"{temperature:g}"
+    extra = (
+        f" Pipelines that name another extractor ({', '.join(others)}) use that model with the same input."
+        if others
+        else " It is the same model in every pipeline."
+    )
     return (
-        f"The **agent** is {model_label(model_id)} (`{model_id}`), the same model in every pipeline. "
-        f"It gets {AGENT_INPUT}, and returns {AGENT_OUTPUT}. It never sees the ground truth."
+        f"The **agent** (default extractor) is {model_label(model_id)} (`{model_id}`), temperature {t}. "
+        f"It gets {AGENT_INPUT}, and returns {AGENT_OUTPUT}. It never sees the ground truth.{extra}"
     )

@@ -41,10 +41,22 @@ def data_url(path: Path) -> str:
     return f"data:{mime(path)};base64,{base64.b64encode(path.read_bytes()).decode()}"
 
 
+_UNSET = object()
+
+
 class Backend:
     name: str
     model: str
     price_per_mtok: dict | None = None
+    # Config `temperature:` overrides the request's value (some models only accept 1); null = don't send it.
+    temperature_override: object = _UNSET
+
+    def temperature(self, req: Request) -> float | None:
+        return req.temperature if self.temperature_override is _UNSET else self.temperature_override  # type: ignore[return-value]
+
+    def _init_temperature(self, spec: dict) -> None:
+        if "temperature" in spec:
+            self.temperature_override = spec["temperature"]
 
     async def warmup(self) -> None:  # noqa: B027 — optional hook
         pass

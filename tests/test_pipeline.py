@@ -172,3 +172,34 @@ def test_unverified_numbers():
     src = "accuracy 98.8% at $7.44/1k docs, ~307 pages/hour, 1 686 pages"
     assert unverified_numbers("98.8% and 99% and $7.44 and 307 and 1,686", src) == []
     assert unverified_numbers("costs 3x more, 280 pages/hour", src) == ["280"]
+
+
+def test_temperature_override():
+    from ocrbench.backends.base import Backend, Request
+
+    b = Backend()
+    assert b.temperature(Request("s", "p")) == 0.0
+    b._init_temperature({"temperature": 1})
+    assert b.temperature(Request("s", "p")) == 1
+    b2 = Backend()
+    b2._init_temperature({"temperature": None})
+    assert b2.temperature(Request("s", "p")) is None
+
+
+def test_named_extractor_pipeline(tiny_docs, tmp_path, monkeypatch):
+    import asyncio
+
+    from ocrbench import extract
+
+    cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    used = []
+
+    def get(c, n):
+        used.append(n)
+        return GroundTruthBackend(n, tiny_docs)
+
+    monkeypatch.setattr(extract, "get_backend", get)
+    asyncio.run(extract.run(cfg, tiny_docs, tmp_path, pipelines=["image->agent", "image->bedrock-haiku"]))
+    recs = [json.loads(x) for x in (tmp_path / "extractions.jsonl").read_text().splitlines()]
+    assert {r["agent"] for r in recs} == {cfg["bench"]["extraction"]["agent"], "bedrock-haiku"}
+    assert sorted(set(used)) == sorted({cfg["bench"]["extraction"]["agent"], "bedrock-haiku"})

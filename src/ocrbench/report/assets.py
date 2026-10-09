@@ -37,6 +37,7 @@ section th, section td, .summary th, .summary td { border: 1px solid var(--borde
 .run-id { font-size: 1.35rem; font-weight: 650; letter-spacing: -.01em; }
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
 .chip { font-size: .78rem; background: #eef2f7; color: #445; border-radius: 999px; padding: .15rem .65rem; }
+.warmchip { background: #fff4e5; color: #8a4b00; margin-bottom: .25rem; display: inline-block; }
 .open { font-size: .9rem; color: #2f6feb; white-space: nowrap; }
 .bottom-line { margin: 1rem 0 .25rem; padding: .75rem 1rem; background: #f3f7ff; border-left: 4px solid #2f6feb;
   border-radius: 0 8px 8px 0; font-size: .95rem; line-height: 1.55; }

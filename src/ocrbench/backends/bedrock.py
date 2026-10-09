@@ -15,6 +15,7 @@ class BedrockBackend(Backend):
         self.name = name
         self.model = spec["model_id"]
         self.price_per_mtok = spec.get("price_per_mtok")
+        self._init_temperature(spec)
         self.client = boto3.client(
             "bedrock-runtime",
             region_name=spec.get("region"),
@@ -33,7 +34,10 @@ class BedrockBackend(Backend):
                     modelId=self.model,
                     system=[{"text": req.system}] if req.system else [],
                     messages=[{"role": "user", "content": content}],
-                    inferenceConfig={"maxTokens": req.max_tokens, "temperature": req.temperature},
+                    inferenceConfig={
+                        "maxTokens": req.max_tokens,
+                        **({} if self.temperature(req) is None else {"temperature": self.temperature(req)}),
+                    },
                 )
             except self.client.exceptions.ThrottlingException as e:
                 raise HTTPError(429, str(e)) from e

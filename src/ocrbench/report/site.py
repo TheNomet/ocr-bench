@@ -793,14 +793,17 @@ def build_experiments_index(runs: list[dict], out_dir: Path) -> Path:
 
         price = o.get("price_per_hour_usd")
         price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
-        gpu = (
-            f'<div class="kv"><span>Instance</span><code>{e(o.get("instance_type") or "?")}</code></div>'
-            f'<div class="kv"><span>GPU</span><span>{e(o.get("gpu") or "?")}</span></div>'
-            f'<div class="kv"><span>Host</span><span>{e(o.get("host") or "?")}</span></div>'
-            f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
-            '<span class="muted">on-demand, billed while idle too</span></span></div>'
-            f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
-        )
+        if "ocr" not in (m.get("transcribers") or []):
+            gpu = '<p class="muted">No self-hosted model in this run.</p>'
+        else:
+            gpu = (
+                f'<div class="kv"><span>Instance</span><code>{e(o.get("instance_type") or "?")}</code></div>'
+                f'<div class="kv"><span>GPU</span><span>{e(o.get("gpu") or "?")}</span></div>'
+                f'<div class="kv"><span>Host</span><span>{e(o.get("host") or "?")}</span></div>'
+                f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
+                '<span class="muted">on-demand, billed while idle too</span></span></div>'
+                f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
+            )
 
         pipes = h.get("pipelines") or {}
         best = {v: (h.get("best") or {}).get(v, {}).get("pipeline") for v in ("clean", "degraded")}
