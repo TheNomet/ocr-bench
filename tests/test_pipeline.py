@@ -158,7 +158,7 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
     assert "What is this?" in index and 'id="guide"' in index and "Document types" in index
     assert "extraction agent" in index and "Reads the document type" in index
     run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()
-    assert "all experiments" in run_page and 'id="legend"' not in run_page and "index.html#guide" in run_page
+    assert "Experiments</a>" in run_page and 'id="legend"' not in run_page and "index.html#guide" in run_page
 
     # resume: only re-summarize
     class B:

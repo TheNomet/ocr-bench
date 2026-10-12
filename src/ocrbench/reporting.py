@@ -327,11 +327,11 @@ def comparison_md(c: dict) -> str:
     out = [
         "## Compare runs",
         "",
-        "Same metric, side by side. Rows are matched on the actual model, not the config name.",
+        "The same metric across runs. Rows are matched on the model actually used, and pipelines where one model both reads and extracts are hidden.",
         "",
         "### Field accuracy (clean / degraded)",
         "",
-        "| input -> extractor | " + " | ".join(f"`{r}`" for r in runs_) + " |",
+        "| input → extractor | " + " | ".join(r for r in runs_) + " |",
         "|---" * (len(runs_) + 1) + "|",
     ]
     for label, per in sorted(c["extraction"].items()):
@@ -344,7 +344,7 @@ def comparison_md(c: dict) -> str:
         "",
         "### Transcription, degraded pages (CER median / number recall)",
         "",
-        "| reader | " + " | ".join(f"`{r}`" for r in runs_) + " |",
+        "| reader | " + " | ".join(r for r in runs_) + " |",
         "|---" * (len(runs_) + 1) + "|",
     ]
     for model, per in sorted(c["reading"].items()):
