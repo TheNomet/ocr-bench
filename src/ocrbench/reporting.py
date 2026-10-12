@@ -85,7 +85,7 @@ def setup_md(meta: dict) -> str:
         "",
         "| | |",
         "|---|---|",
-        f"| plan | `{meta['plan']}`: {len(meta.get('plan_items') or [])} transcription runs |",
+        f"| plan | `{meta['plan']}`: {meta.get('plan_description') or ''} ({len(meta.get('plan_items') or [])} transcription runs) |",
         f"| documents | {docs['count']} documents, {docs['pages']} pages, {docs['page_images']} page images (clean + degraded), seed {docs.get('seed')} |",
         f"| runner | {meta['runner'].get('mode')} ({meta['runner'].get('cpu')} CPU units / {meta['runner'].get('memory')} MB) |",
         f"| code | git `{meta.get('git_commit') or '?'}` |",
@@ -280,6 +280,7 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
         "findings_author": author.split(";")[0],
         "findings_unverified": unverified(author),
         "setup_md": setup_md(meta),
+        "plan_description": meta.get("plan_description", ""),
         "pipeline_labels": {p: explain.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
     }
     return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], sections=sections)

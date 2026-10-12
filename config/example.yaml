@@ -150,6 +150,10 @@ bench:
   # Stage 4: an LLM reads the setup + scored tables and writes the findings (runs/<id>/summary.md).
   summary:
     agent: bedrock-sonnet                 # llm_backends key; defaults to the extraction agent
+  # One-line description per plan, shown on every run of it (the run id is <date>-<plan>).
+  plan_descriptions:
+    smoke: "Quick health check: a couple of pages per backend."
+    suite: "Self-hosted OCR vs hosted LLMs, single requests and batch load."
   # Named run plans: each item is one transcription run.
   plans:
     smoke:

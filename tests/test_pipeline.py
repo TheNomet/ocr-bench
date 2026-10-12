@@ -154,6 +154,7 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
         assert needle in report, needle
     index = (tmp_path / "site" / "index.html").read_text()
     assert meta["id"] in index and "Use image-&gt;agent" in index and "input → extractor</th>" in index
+    assert '<details class="run-card">' in index and index.index('id="guide"') < index.index('id="runs"')
     assert "What is this?" in index and 'id="guide"' in index and "Document types" in index
     assert "extraction agent" in index and "Reads the document type" in index
     run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()

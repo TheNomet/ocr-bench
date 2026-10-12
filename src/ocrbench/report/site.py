@@ -407,6 +407,8 @@ class _Site:
         if sec:
             parts.append('<p class="small"><a href="../index.html">&larr; all experiments</a></p>')
         parts.append(f"<h1>ocr-bench &mdash; {e(self.tag)}</h1>")
+        if self.sections.get("plan_description"):
+            parts.append(f'<p class="plan-desc">{markdown_lite.inline(self.sections["plan_description"])}</p>')
         gen = self.scores.get("generated")
         if gen:
             parts.append(f'<p class="muted">Scored {e(gen)}</p>')
@@ -842,12 +844,18 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
         bl = r.get("bottom_line") or ""
         created = (m.get("created") or "")[:16].replace("T", " ")
         cards.append(
-            f'<a class="run-card" href="{quote(m["id"])}/index.html">'
-            f'<div class="run-head"><div><div class="run-id">{e(m["id"])}</div>'
-            f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
+            '<details class="run-card">'
+            '<summary><span class="chev" aria-hidden="true"></span>'
+            f'<div class="run-sum"><div class="run-id">{e(m["id"])}</div>'
+            + (
+                f'<div class="plan-desc">{markdown_lite.inline(m.get("plan_description") or "")}</div>'
+                if m.get("plan_description")
+                else ""
+            )
+            + f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
             f'<span class="chip">{e(docs.get("count"))} docs &middot; {e(docs.get("page_images"))} page images</span>'
             f'<span class="chip">{e(created)}</span></div></div>'
-            '<span class="open">Open run &rarr;</span></div>'
+            f'<a class="open" href="{quote(m["id"])}/index.html">Open run &rarr;</a></summary>'
             + (
                 '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'
                 f"{markdown_lite.render(bl)}</div>"
@@ -858,7 +866,7 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
             f'<div class="block wide"><h4>Models</h4><table class="models">{"".join(rows)}</table></div>'
             f'<div class="block"><h4>GPU (OCR model)</h4>{gpu}</div>'
             f'<div class="block"><h4>Results</h4>{results}</div>'
-            "</div></a>"
+            "</div></details>"
         )
     body = (
         "<h1>ocr-bench experiments</h1>"
@@ -867,11 +875,8 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
             if guide_md
             else ""
         )
-        + '<nav class="toc small">Jump to: <a href="#runs">Experiments</a> &middot; <a href="#compare">Compare runs</a>'
-        ' &middot; <a href="#guide">How the benchmark works</a></nav>'
-        f'<h2 id="runs">Experiments</h2><p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}. '
-        "Click one for its setup, results, recommendation and every document.</p>"
-        + ("".join(cards) or '<p class="empty">No runs yet.</p>')
+        + '<nav class="toc small">Jump to: <a href="#compare">Compare runs</a> &middot; '
+        '<a href="#guide">How the benchmark works</a> &middot; <a href="#runs">Experiments</a></nav>'
         + (
             f'<section id="compare" class="compare">{markdown_lite.render(comparison_md)}</section>'
             if comparison_md
@@ -883,6 +888,9 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
             if "## How the benchmark works" in guide_md
             else ""
         )
+        + f'<h2 id="runs">Experiments</h2><p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}, '
+        "newest first. Click a row to expand it, or open the run for its documents.</p>"
+        + ("".join(cards) or '<p class="empty">No runs yet.</p>')
     )
     idx = out_dir / "index.html"
     idx.write_text(_page("ocr-bench experiments", body, ""), encoding="utf-8")

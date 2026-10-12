@@ -34,6 +34,17 @@ section table, .summary table { border-collapse: collapse; margin: .5rem 0; font
 section th, section td, .summary th, .summary td { border: 1px solid var(--border); padding: .3rem .55rem; text-align: left; vertical-align: top; }
 .run-card { display: block; border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.5rem;
   margin: 1.25rem 0; color: inherit; text-decoration: none; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+details.run-card { padding: 0; }
+details.run-card > summary { list-style: none; display: flex; align-items: flex-start; gap: .9rem; cursor: pointer;
+  padding: 1rem 1.5rem; }
+details.run-card > summary::-webkit-details-marker { display: none; }
+details.run-card > :not(summary) { margin-left: 1.5rem; margin-right: 1.5rem; }
+details.run-card[open] { padding-bottom: 1.25rem; }
+.chev { flex: 0 0 auto; width: .6rem; height: .6rem; margin-top: .55rem; border-right: 2px solid #667;
+  border-bottom: 2px solid #667; transform: rotate(-45deg); transition: transform .15s ease; }
+details.run-card[open] .chev { transform: rotate(45deg); }
+.run-sum { flex: 1; min-width: 0; }
+.plan-desc { color: #445; font-size: .92rem; margin-top: .2rem; }
 .run-card:hover { border-color: #8aa4c8; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 .run-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .run-id { font-size: 1.35rem; font-weight: 650; letter-spacing: -.01em; }

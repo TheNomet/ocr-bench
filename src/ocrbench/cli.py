@@ -238,6 +238,9 @@ def cmd_run(cfg: Config, a) -> None:
     if a.id and runs.run_dir(a.id).exists():
         d = runs.run_dir(a.id)
         print(f"resuming run {a.id}: stages {stages}")
+        if "summarize" in stages:
+            runs.refresh_summary_setup(cfg, d)
+            print(f"summary model: {runs.load(d)['summary']['agent']}")
     else:
         if not a.plan:
             raise SystemExit("--plan is required for a new run")

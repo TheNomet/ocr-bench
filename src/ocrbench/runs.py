@@ -129,6 +129,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     meta = {
         "id": rid,
         "plan": plan,
+        "plan_description": (cfg["bench"].get("plan_descriptions") or {}).get(plan, ""),
         "plan_items": cfg.plan(plan) if plan in cfg["bench"]["plans"] else [],
         "created": datetime.now().isoformat(timespec="seconds"),
         "git_commit": _git_commit(),
@@ -202,3 +203,25 @@ def all_runs() -> list[dict]:
         if (p / "run.json").exists():
             out.append(load(p))
     return out
+
+
+def refresh_summary_setup(cfg: Config, d: Path) -> None:
+    """Re-summarising an old run uses the *current* config's summary model (and plan description).
+
+    The run's config.yaml snapshot is patched so the Fargate task, which reads it, sees the same thing.
+    Nothing that affected stages 1-3 is changed.
+    """
+    import yaml
+
+    meta = load(d)
+    key = (cfg["bench"].get("summary") or {}).get("agent") or cfg["bench"]["extraction"]["agent"]
+    snap = yaml.safe_load((d / "config.yaml").read_text(encoding="utf-8"))
+    snap.setdefault("llm_backends", {})[key] = cfg["llm_backends"][key]
+    snap.setdefault("bench", {})["summary"] = {"agent": key}
+    (d / "config.yaml").write_text(yaml.safe_dump(snap, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    meta["summary"] = {"agent": key}
+    meta["llm_backends"][key] = backends_summary(cfg)[key]
+    desc = (cfg["bench"].get("plan_descriptions") or {}).get(meta["plan"])
+    if desc:
+        meta["plan_description"] = desc
+    save(d, meta)
