@@ -1,0 +1,20 @@
+{
+ "name": "Marte Sørensen",
+ "destination": "Roma",
+ "date_from": "08.01.2026",
+ "date_to": "23.01.2026",
+ "travellers": "5",
+ "budget_per_person": "16 000,00",
+ "activities": [
+  "Bading",
+  "Sykkeltur",
+  "Fjelltur",
+  "Dykking"
+ ],
+ "accommodation": [
+  "Leilighet",
+  "Bed & Breakfast"
+ ],
+ "pets": "Nei",
+ "signed_date": "20.09.2025"
+}

@@ -1,0 +1,25 @@
+Maja Lie
+Bjørnstjerne Bjørnssons gate 47
+2317 Hamar
+
+Mohammed Asheim
+Trollhaugen 131
+9008 Tromsø
+
+Hamar, 08.07.2026
+
+Vannlekkasje på badet
+
+Hei Mohammed,
+
+Jeg skriver for å melde fra om en vannlekkasje i leiligheten i Bjørnstjerne Bjørnssons gate 47. Natt til 06.07.2026 oppdaget jeg at det dryppet fra røret under vasken på badet, og gulvet rundt lokalitetet var våt da jeg så opp. Jeg har stengt hovedkranen og satt ut en bøtte.
+
+En rørlegger kom innom dagen etter og anslø at reparasjonen vil koste rundt kr 1 563,00. I tillegg har jeg betalt kr 885,00 for leie av avfukter, og kvitteringen legger jeg ved.
+
+Jeg ber om at dere tar kontakt så snart som mulig slik at vi kan avtale når arbeidet kan gjøres. Jeg er hjemme de fleste ettermiddager etter klokken 16:00.
+
+Med vennlig hilsen
+
+Maja Lie
+Maja Lie
+Telefon: 856 36 545

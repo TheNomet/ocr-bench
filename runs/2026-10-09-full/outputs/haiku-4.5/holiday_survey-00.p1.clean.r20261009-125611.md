@@ -1,0 +1,60 @@
+# Ferieundersøkelse 2026
+
+Reiseklubben Sololett
+Skjema nr. 7522
+
+Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige.
+
+## 1. Om deg og reisen
+
+| | |
+|---|---|
+| Navn | Agnieszka Flotten |
+| Adresse | Fjordveien 98, 1606 Fredrikstad |
+| Ønsket reisemål | Tromsø |
+| Reise fra (dato) | 03.07.2026 |
+| Reise til (dato) | 12.07.2026 |
+| Antall reisende | 2 |
+| Budsjett per person (NOK) | 7 000,00 |
+
+## 2. Hvilke aktiviteter er du interessert i?
+
+Kryss av for alt som passer.
+
+☐ Bading
+☒ Skiferie
+☐ Sykkeltur
+☐ Spa
+
+☐ Fjelltur
+☒ Cruise
+☒ Fisketur
+☒ Matopplevelser
+
+☐ Museum
+☐ Storbyferier
+☐ Konsert
+☐ Dykking
+
+## 3. Foretrukket overnatting
+
+☐ Hotell
+☐ Camping
+
+☐ Leilighet
+☒ Bed & Breakfast
+
+☐ Hytte
+☒ Bobil
+
+Reiser du med kjæledyr?     ☐ Ja  ☒ Nei
+
+## 4. Samtykke
+
+Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer onskenes mine. Opplysningene slettes etter at planleggingen er ferdig.
+
+Fredrikstad, 09.08.2026                    Agnieszka Flotten
+
+Sted og dato                                          Underskrift
+
+Takk for svaret! Spørsmål kan rettes til styret på telefon 499 71 185.

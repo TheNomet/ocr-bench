@@ -1,0 +1,38 @@
+# Nytt fra Elvebredden Borettslag
+
+Nr. 3 - 2026
+
+Utgitt 07.05.2026
+
+## Vårdugnad
+
+Styret inviterer til dugnad 27.05.2026 fra klokken 10:00. Vi skal rake løv, feie benker og rydde i sykkelboden. Styret sørger for pølser, kaffe og boller når arbeidet er gjort. Og barna får egne oppgaver ved lekeplassen.
+
+Oversikt over hvem som har ansvar for de ulike områdene:
+
+| Område | Ansvar | Tid |
+|--------|--------|-----|
+| Grasplenen | Knut | 10:00-12:00 |
+| Stisystemet | Inger | 10:00-12:00 |
+| Lekeplassen | Oppgang D | 11:00-13:00 |
+| Fellesrommet | Oppgang A | 12:00-14:00 |
+
+Containere for hagesvavfall og grovavfall står ved inngangspartiene. Farlig avfall som maling og batterier skal ikke kastes i containeren.
+
+## Nye parkeringsregler
+
+Fra neste måned blir gjesteparkering ved blokk B avgiftsbelagt med kr 35,00 per døgn. Fast plasser i garasjeanlegget koster kr 525,00 per måned, og det vil bli bortslept for eiers regning.
+
+## Booking av vaskeriet
+
+Det nye vaskeriet i kjelleren er nå klart. Maskinene booker du via tavlen ved døren eller i boboeappen, i tidsrom på 1 time tavlen ved døren eller i boboeappen, i tidsrom på 1 time mellom klokken 07:00 og 22:00. Her leilighet kan ha inntil tre bookinger per uke. Husk å bruke trommelen og tørrime løftifiteret etter bruk.
+
+## Felleskostnader og årsmøte
+
+Fra 01.07.2026 øker felleskostnadene med kr 525,00 per måned. Økningen skyldes høyere kommunale avgifter og forsikring.
+
+Nye felleskostnader for en foroms leilighet: kr 6 655,00 per måned.
+
+Det ordinære årsmøtet holdes 29.06.2026 klokken 19:00 i fellesrommet. Saker som ønskes behandlet må være levert til styret senest fire uker før møtet.
+
+Hisen i Elvebredden Borettslag. Henvendelser kan sendes til styreleier på telefon 902 49 565.

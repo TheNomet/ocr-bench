@@ -1,0 +1,13 @@
+{
+  "type": "letter",
+  "fields": {
+    "recipient": "Sjøsprøyt Svømmeklubb",
+    "sender_name": "Sigrid Popescu",
+    "date": "01.07.2026",
+    "amounts": [
+      "1 750,00",
+      "800,00"
+    ],
+    "phone": "489 46 723"
+  }
+}

@@ -1,0 +1,47 @@
+§ 7 Vedlikehold og bruk
+
+Leietaker skal behandle boligen med tilbørlig aktsomhet og sørge for vanlig renhold, utskifting av lyspærer og sikringer, rensing av sluk og vannlåser samt testing av røykvarslere. Skader som oppstår skal meldes til utleier uten ugrunnet opphold, slik at større følgeskader kan unngås.
+
+Utleier holder boligen i forsvarlig stand og sørger for vedlikehold av tak, vegger, vinduer, varmtvannsbereder og faste installasjoner. Utleier skal varsle i rimelig tid før arbeid i boligen, med mindre det haster for å avverge skade.
+
+§ 8 Husdyr og røyking
+
+Det er ikke tillatt å røyke innendørs. Husdyr kan bare holdes etter skriftlig samtykke fra utleier, og leietaker er ansvarlig for skader og ekstra rengjøring som skyldes dyreholdet.
+
+§ 9 Fremleie
+
+Leietaker kan ikke fremleie hele eller deler av boligen uten utleiers skriftlige samtykke. Leietakers ektefelle, samboer og nærmeste familie kan likevel bo i boligen sammen med leietaker.
+
+§ 10 Tilbakelevering
+
+Ved leieforholdets slutt skal boligen tilbakeleveres ryddet, rengjort og i samme stand som ved overtakelsen, bortsett fra vanlig slitasje. Alle nøkler skal leveres tilbake, også kopier som leietaker selv har fått laget. Partene gjennomgår boligen sammen før endelig oppgjør.
+
+§ 11 Øvrige bestemmelser
+
+Ordensreglene for eiendommen er vedlagt og gjelder som en del av kontrakten. For øvrig gjelder husleieloven. Kontrakten er utstedt i to eksemplarer, ett til hver av partene.
+
+§ 12 Forsikring
+
+Utleier holder bygningen forsikret. Leietaker er selv ansvarlig for å forsikre eget innbo og løsøre, og oppfordres til å ha en innboforsikring som også dekker ansvar overfor utleier.
+
+§ 13 Tvister
+
+Uenighet om forståelsen av kontrakten skal partene først forsøke å løse ved forhandlinger. Fører ikke dette frem, kan hver av partene bringe saken inn for Husleietvistutvalget eller de alminnelige domstolene etter reglene i husleieloven.
+
+Sted og dato: Ålesund, 13.02.2026
+
+Agnieszka Odegård
+
+Utleier
+
+Agnieszka Ødegård
+
+Sted og dato: Ålesund, 13.02.2026
+
+Aurora Bakke
+
+Leietaker
+
+Aurora Bakke
+
+Side 2 av 2

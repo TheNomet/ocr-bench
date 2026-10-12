@@ -1,0 +1,17 @@
+<|det|>title [120, 59, 298, 82]<|/det|>Kontoutskrift
+<|det|>text [119, 96, 235, 111]<|/det|>Linnea Asheim
+<|det|>text [119, 113, 267, 129]<|/det|>Kongens gate 88 A
+<|det|>text [119, 130, 218, 144]<|/det|>5003 Bergen
+<|det|>text [744, 70, 917, 88]<|/det|>Elevadalen Sparebank
+<|det|>text [803, 89, 916, 103]<|/det|>Kundeservice
+<|det|>text [799, 105, 916, 120]<|/det|>Tlf. 454 27 143
+<|det|>table [113, 152, 914, 768]<|/det|><table><tr><td colspan="4">Kontonummer</td></tr><tr><td colspan="4">KontotypepériodeIngaende saldo</td></tr><tr><td>Dato</td><td>Forklaring</td><td>Inn</td><td>Ut</td></tr><tr><td>02.04.2026</td><td>Varekjop Apoetik Sentrum</td><td></td><td>481,79</td></tr><tr><td>02.04.2026</td><td>Varekjop Jernvare Sorlandet</td><td></td><td>1 033,64</td></tr><tr><td>03.04.2026</td><td>Husleie</td><td></td><td>11 909,00</td></tr><tr><td>05.04.2026</td><td>Varekjop Narbutikken</td><td></td><td>1 658,66</td></tr><tr><td>07.04.2026</td><td>Vipps Erik</td><td></td><td>238,58</td></tr><tr><td>08.04.2026</td><td>Overføring til sparekonto</td><td></td><td>1 483,20</td></tr><tr><td>11.04.2026</td><td>Vipps Pål</td><td></td><td>178,33</td></tr><tr><td>13.04.2026</td><td>Varekjop Bakneret</td><td></td><td>1 526,50</td></tr><tr><td>14.04.2026</td><td>Lønn Solberg Barnehage</td><td>30 977,75</td><td></td></tr><tr><td>14.04.2026</td><td>Vipps Sigrid</td><td></td><td>174,45</td></tr><tr><td>14.04.2026</td><td>Vipps Almend</td><td></td><td>278,46</td></tr><tr><td>15.04.2026</td><td>Varekjop Bokhandelen</td><td></td><td>1 324,85</td></tr><tr><td>20.04.2026</td><td>Treningssenter Plus</td><td></td><td>480,73</td></tr><tr><td>20.04.2026</td><td>Varekjop Sportshuset</td><td></td><td>964,23</td></tr><tr><td>21.04.2026</td><td>Forskling Trygghjem</td><td></td><td>468,59</td></tr><tr><td>21.04.2026</td><td>Varekjop Bakairet</td><td></td><td>1 752,16</td></tr><tr><td>21.04.2026</td><td>Varekjop Matrikolan</td><td></td><td>391,67</td></tr><tr><td>21.04.2026</td><td>Bluss malmeskort</td><td></td><td>564,89</td></tr><tr><td>22.04.2026</td><td>Mobilabommenent Prat</td><td></td><td>310,29</td></tr><tr><td>23.04.2026</td><td>Varekjop Matrikolan</td><td></td><td>299,86</td></tr><tr><td>24.04.2026</td><td>Varekjop Sportshuset</td><td></td><td>337,32</td></tr><tr><td>25.04.2026</td><td>Minibank uttak</td><td></td><td>795,64</td></tr><tr><td>25.04.2026</td><td>Varekjop Bokhandelen</td><td></td><td>772,38</td></tr><tr><td>26.04.2026</td><td>Varekjop Sportshuset</td><td></td><td>1 744,64</td></tr><tr><td>26.04.2026</td><td>Vipps "Sigrid</td><td></td><td>176,51</td></tr><tr><td>27.04.2026</td><td>Strom Lysglint Energi</td><td></td><td>2 471,65</td></tr></table>
+<|det|>text [111, 763, 260, 779]<|/det|>Antall transaksjoner
+<|det|>text [108, 782, 174, 796]<|/det|>Sum inn
+<|det|>text [107, 801, 166, 815]<|/det|>Sum ut
+<|det|>text [106, 820, 236, 836]<|/det|>Utgående saldo
+<|det|>text [842, 781, 866, 794]<|/det|>26
+<|det|>text [786, 799, 865, 814]<|/det|>30 977,75
+<|det|>text [785, 818, 864, 832]<|/det|>31 818,22
+<|det|>text [784, 837, 862, 852]<|/det|>24 030,11
+<|det|>footer [84, 858, 733, 881]<|/det|>Kontoutskriften er laget 01.05.2026. Ta kontakt med oss innen rimelig tid diensom du finner feil i overvikten.

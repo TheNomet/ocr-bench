@@ -1,0 +1,13 @@
+{
+  "type": "letter",
+  "fields": {
+    "recipient": "Mohammed Åsheim",
+    "sender_name": "Maja Lie",
+    "date": "08.07.2026",
+    "amounts": [
+      "1 563,00",
+      "885,00"
+    ],
+    "phone": "956 36 545"
+  }
+}

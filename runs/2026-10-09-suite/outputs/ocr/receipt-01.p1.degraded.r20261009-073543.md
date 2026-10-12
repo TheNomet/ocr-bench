@@ -1,0 +1,8 @@
+<|det|>text [162, 36, 843, 60]<|/det|>BAKERIET PÅ HJ∅RNET
+<|det|>text [318, 70, 686, 89]<|/det|>Trollhaugen 77
+<|det|>text [296, 91, 717, 108]<|/det|>1606 Fredrikstad
+<|det|>text [202, 111, 812, 130]<|/det|>Org.nr. 984 747 306 MVA
+<|det|>table [73, 136, 928, 771]<|/det|><table><tr><td>Dato 19.10.2026</td><td>Kl. 19:02</td></tr><tr><td>Kvittering nr. 43002</td><td>Kasse 2</td></tr><tr><td>Appelsinjulce 1 1</td><td>27,80</td></tr><tr><td>Kjettdeig 400 g</td><td>44,80</td></tr><tr><td>Bananer</td><td>22,60</td></tr><tr><td>Tomater 500 g</td><td></td></tr><tr><td>2 x 27,20</td><td>54,40</td></tr><tr><td>Rundstykker 6 stk</td><td></td></tr><tr><td>3 x 30,10</td><td>90,30</td></tr><tr><td>Havregryn 1 kg</td><td></td></tr><tr><td>2 x 28,10</td><td>56,20</td></tr><tr><td>Egg 12 stk</td><td></td></tr><tr><td>3 x 53,00</td><td>159,00</td></tr><tr><td>Meiklett 1,75 1</td><td>23,40</td></tr><tr><td>Smer 250 g</td><td></td></tr><tr><td>2 x 35,70</td><td>71,40</td></tr><tr><td>Antall varer</td><td>16</td></tr><tr><td>TOTALt</td><td>549,90</td></tr><tr><td>Berav MVA 15 %</td><td>71,73</td></tr><tr><td>Grunlag</td><td>478,17</td></tr><tr><td>Betalt med</td><td>Visa</td></tr><tr><td>Kort</td><td>8877</td></tr><tr><td>Kontaktla</td><td>Godkent</td></tr><tr><td>Ref.</td><td>220307</td></tr></table>
+<|det|>text [255, 786, 731, 805]<|/det|>Takk for handelen!
+<|det|>text [235, 807, 786, 826]<|/det|>Agent alle dager 07-23
+<|det|>text [258, 828, 731, 848]<|/det|>Bytterett 30 dager

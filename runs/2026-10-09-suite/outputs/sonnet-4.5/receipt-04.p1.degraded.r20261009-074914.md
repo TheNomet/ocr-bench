@@ -1,0 +1,32 @@
+# NÆRBUTIKKEN SOLSIDEN
+
+Kirkevelen 28  
+4615 Kristiansand  
+Org.nr. 946 317 651 MVA
+
+Dato 18.07.2026     Kl. 16:16  
+Ekspeditør 5050     Kasse 4
+
+Smør 250 g                    54,70  
+2 Skivekjøtt 400 g            24,90  
+Havregyn 1 kg                 30,00  
+Appelsinjuice 1 l  
+à 19,70                      113,10
+
+Antall varer  
+TOTALT                       232,10
+
+Herav MVA 15 %                30,27  
+Grunnlag                     201,83
+
+Betalt med  
+Kort                **** **** **** 5527  
+Kontaktløs                   Godkjent  
+Ref.                         ********
+
+Takk for handelen!  
+Åpent alle dager 07-23  
+Bytterett 30 dager
+
+
+[end a51b4fb560f3]

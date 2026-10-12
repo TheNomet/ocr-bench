@@ -1,0 +1,13 @@
+{
+  "type": "payslip",
+  "fields": {
+    "employer": "Lysgården Hotell AS",
+    "employee": "Jørgen Kowalski",
+    "period": "01.07.2026 - 31.07.2026",
+    "gross_pay": "49 481,60",
+    "tax_withheld": "13 855,00",
+    "net_pay": "34 636,97",
+    "payment_date": "25.07.2026",
+    "account_number": "9855.28.64603"
+  }
+}

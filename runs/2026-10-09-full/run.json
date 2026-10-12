@@ -1,0 +1,309 @@
+{
+ "id": "2026-10-09-full",
+ "plan": "full",
+ "plan_items": [
+  {
+   "backend": "ocr",
+   "concurrency": 1
+  },
+  {
+   "backend": "ocr",
+   "concurrency": 4
+  },
+  {
+   "backend": "ocr",
+   "concurrency": 16
+  },
+  {
+   "backend": "sonnet-4.5",
+   "concurrency": 1
+  },
+  {
+   "backend": "haiku-4.5",
+   "concurrency": 1
+  },
+  {
+   "backend": "sonnet-5.5",
+   "concurrency": 1
+  },
+  {
+   "backend": "haiku-5.5",
+   "concurrency": 1
+  },
+  {
+   "backend": "sonnet-4.5",
+   "concurrency": 16
+  },
+  {
+   "backend": "haiku-4.5",
+   "concurrency": 16
+  },
+  {
+   "backend": "sonnet-5.5",
+   "concurrency": 16
+  },
+  {
+   "backend": "haiku-5.5",
+   "concurrency": 16
+  }
+ ],
+ "created": "2026-10-09T14:05:02",
+ "git_commit": "5cdc563",
+ "region": "eu-north-1",
+ "runner": {
+  "mode": "fargate",
+  "cpu": 2048,
+  "memory": 4096
+ },
+ "documents": {
+  "count": 48,
+  "pages": 54,
+  "page_images": 108,
+  "types": {
+   "letter": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Personal letter written by a private person",
+    "fields": [
+     "sender_name",
+     "date",
+     "recipient",
+     "amounts",
+     "phone"
+    ]
+   },
+   "receipt": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Shop receipt (kvittering) from a store",
+    "fields": [
+     "merchant",
+     "date",
+     "time",
+     "total",
+     "vat",
+     "card_last4",
+     "item_count"
+    ]
+   },
+   "bank_statement": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Monthly bank account statement for a private customer",
+    "fields": [
+     "account_number",
+     "period_start",
+     "period_end",
+     "opening_balance",
+     "closing_balance",
+     "transaction_count"
+    ]
+   },
+   "holiday_survey": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Filled-in holiday preferences questionnaire (ferieundersøkelse)",
+    "fields": [
+     "name",
+     "destination",
+     "date_from",
+     "date_to",
+     "travellers",
+     "budget_per_person",
+     "activities",
+     "accommodation",
+     "pets",
+     "signed_date"
+    ]
+   },
+   "invoice": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Invoice from a company to a private customer",
+    "fields": [
+     "invoice_number",
+     "invoice_date",
+     "due_date",
+     "kid",
+     "account_number",
+     "subtotal",
+     "vat",
+     "total_due"
+    ]
+   },
+   "payslip": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Monthly payslip from an employer to an employee",
+    "fields": [
+     "employer",
+     "employee",
+     "period",
+     "gross_pay",
+     "tax_withheld",
+     "net_pay",
+     "payment_date",
+     "account_number"
+    ]
+   },
+   "rental_contract": {
+    "docs": 6,
+    "pages": 12,
+    "description": "Residential tenancy agreement between a landlord and a tenant (2 pages)",
+    "fields": [
+     "landlord",
+     "tenant",
+     "property_address",
+     "start_date",
+     "monthly_rent",
+     "deposit",
+     "notice_period"
+    ]
+   },
+   "newsletter": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Newsletter from a housing co-op board to residents",
+    "fields": [
+     "issue_date",
+     "meeting_date",
+     "new_fee",
+     "dugnad_date"
+    ]
+   }
+  },
+  "seed": 7,
+  "per_type": 6
+ },
+ "ocr": {
+  "name": "unlimited-ocr",
+  "hf_repo": "baidu/Unlimited-OCR",
+  "hf_revision": "07dea832e22aefee32ad281d4b80551282e1c168",
+  "served_model_name": "baidu/Unlimited-OCR",
+  "source_image": "docker.io/vllm/vllm-openai:unlimited-ocr",
+  "serving": "SageMaker real-time endpoint",
+  "inference_ami_version": "al2023-ami-sagemaker-inference-gpu-4-1",
+  "instance_pools": [
+   "ml.g6.xlarge",
+   "ml.g6e.xlarge",
+   "ml.g5.xlarge",
+   "ml.g5.2xlarge"
+  ],
+  "serve_args": [
+   "--trust-remote-code",
+   "--logits_processors",
+   "vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor",
+   "--no-enable-prefix-caching",
+   "--mm-processor-cache-gb",
+   "0",
+   "--max-num-seqs",
+   "64",
+   "--max-model-len",
+   "32768",
+   "--gpu-memory-utilization",
+   "0.90"
+  ],
+  "prompt": "<image>document parsing.",
+  "instance_type": "ml.g5.xlarge",
+  "price_per_hour_usd": 1.4938,
+  "image_digest": "sha256:f86770951a9d1d28f9115867627144a96417dfdbb7d8d72aef70c5f61ea8002f",
+  "gpu": "NVIDIA A10G, 24 GB",
+  "host": "4 vCPU, 16 GB RAM"
+ },
+ "llm_backends": {
+  "sonnet-4.5": {
+   "provider": "openai_compatible",
+   "model": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+   "price_per_mtok": {
+    "input": 3.0,
+    "output": 15.0
+   },
+   "temperature": 0.0,
+   "via": "OpenAI-compatible gateway"
+  },
+  "haiku-4.5": {
+   "provider": "openai_compatible",
+   "model": "anthropic.claude-haiku-4-5-20251001-v1:0",
+   "price_per_mtok": {
+    "input": 1.0,
+    "output": 5.0
+   },
+   "temperature": 0.0,
+   "via": "OpenAI-compatible gateway"
+  },
+  "sonnet-5.5": {
+   "provider": "openai_compatible",
+   "model": "anthropic.claude-sonnet-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "via": "OpenAI-compatible gateway"
+  },
+  "haiku-5.5": {
+   "provider": "openai_compatible",
+   "model": "anthropic.claude-haiku-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "via": "OpenAI-compatible gateway"
+  },
+  "opus-5.5": {
+   "provider": "openai_compatible",
+   "model": "anthropic.claude-opus-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "reasoning_effort": "medium",
+   "via": "OpenAI-compatible gateway"
+  }
+ },
+ "transcribers": [
+  "ocr",
+  "sonnet-4.5",
+  "haiku-4.5",
+  "sonnet-5.5",
+  "haiku-5.5"
+ ],
+ "extraction": {
+  "agent": "sonnet-4.5",
+  "pipelines": [
+   "ocr->agent",
+   "sonnet-4.5->agent",
+   "image->agent",
+   "ocr->sonnet-5.5",
+   "sonnet-5.5->sonnet-5.5",
+   "image->sonnet-5.5",
+   "image->haiku-4.5",
+   "image->haiku-5.5"
+  ],
+  "agents": {
+   "ocr->agent": "sonnet-4.5",
+   "sonnet-4.5->agent": "sonnet-4.5",
+   "image->agent": "sonnet-4.5",
+   "ocr->sonnet-5.5": "sonnet-5.5",
+   "sonnet-5.5->sonnet-5.5": "sonnet-5.5",
+   "image->sonnet-5.5": "sonnet-5.5",
+   "image->haiku-4.5": "haiku-4.5",
+   "image->haiku-5.5": "haiku-5.5"
+  }
+ },
+ "summary": {
+  "agent": "opus-5.5"
+ },
+ "stages": {
+  "transcribe": {
+   "finished": "2026-10-09T13:34:28",
+   "seconds": 5299.6
+  },
+  "extract": {
+   "finished": "2026-10-09T13:38:30",
+   "seconds": 198.8
+  },
+  "score": {
+   "finished": "2026-10-09T13:38:58",
+   "seconds": 0.5
+  },
+  "summarize": {
+   "finished": "2026-10-09T13:39:17",
+   "seconds": 18.3
+  }
+ },
+ "plan_description": "Independent repeat of `suite` (same GPU model, same documents) to check reproducibility, plus the new Claude Sonnet 5.5 and Haiku 5.5."
+}

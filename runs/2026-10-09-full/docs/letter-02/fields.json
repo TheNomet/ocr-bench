@@ -1,0 +1,12 @@
+{
+  "type": "letter",
+  "fields": {
+    "sender_name": "Bjørn Bakke",
+    "date": "17.06.2026",
+    "amounts": [
+      "150,00",
+      "1 741,00"
+    ],
+    "phone": "447 10 982"
+  }
+}

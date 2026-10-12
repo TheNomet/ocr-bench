@@ -1,0 +1,18 @@
+<|det|>title [84, 56, 267, 76]<|/det|>Kontoutskrift
+<|det|>text [767, 54, 917, 70]<|/det|>Kystbanken Nord
+<|det|>text [799, 72, 916, 86]<|/det|>Kundeservice
+<|det|>text [794, 88, 916, 101]<|/det|>Tlf. 948 23 130
+<|det|>text [82, 95, 160, 109]<|/det|>Jonas Ali
+<|det|>text [84, 112, 225, 126]<|/det|>Bekkestien 123 A
+<|det|>text [84, 128, 195, 143]<|/det|>6002 Ålesund
+<|det|>table [84, 154, 917, 244]<|/det|><table><tr><td>Kontonummer</td><td>4403.65.87544</td></tr><tr><td>Kontotype</td><td>Brukskonto</td></tr><tr><td>Periode</td><td>01.08.2026 - 31.08.2026</td></tr><tr><td>Inngående saldo</td><td>34 312,39</td></tr></table>
+<|det|>table [84, 262, 917, 721]<|/det|><table><tr><td>Dato</td><td>Forklaring</td><td>Inn</td><td>Ut</td><td>Saldo</td></tr><tr><td>01.08.2026</td><td>Varekjop Sportshuset</td><td></td><td>1 023,07</td><td>33 289,32</td></tr><tr><td>02.08.2026</td><td>Husleie</td><td></td><td>8 430,00</td><td>24 859,32</td></tr><tr><td>02.08.2026</td><td>Mobilabonnement Prat</td><td></td><td>433,06</td><td>24 426,26</td></tr><tr><td>04.08.2026</td><td>Strømmetjeneste Kino+</td><td></td><td>122,12</td><td>24 304,14</td></tr><tr><td>05.08.2026</td><td>Varekjop Bokhandelen</td><td></td><td>596,48</td><td>23 707,66</td></tr><tr><td>07.08.2026</td><td>Treningssenter Puls</td><td></td><td>657,47</td><td>23 050,19</td></tr><tr><td>08.08.2026</td><td>Varekjop Matkroken</td><td></td><td>680,29</td><td>22 369,90</td></tr><tr><td>10.08.2026</td><td>Varekjop Apotek Sentrum</td><td></td><td>737,76</td><td>21 632,14</td></tr><tr><td>12.08.2026</td><td>Vipps *Mohammed</td><td></td><td>489,00</td><td>21 143,14</td></tr><tr><td>12.08.2026</td><td>Vipps fra Ingrid</td><td>932,00</td><td></td><td>22 075,14</td></tr><tr><td>13.08.2026</td><td>Lønns Solberg Barnehage</td><td>32 051,61</td><td></td><td>54 126,75</td></tr><tr><td>14.08.2026</td><td>Vipps fra Mirela</td><td>918,00</td><td></td><td>55 044,75</td></tr><tr><td>17.08.2026</td><td>Varekjop Bokhandelen</td><td></td><td>1 691,84</td><td>53 352,91</td></tr><tr><td>18.08.2026</td><td>Buss månedskort</td><td></td><td>780,64</td><td>52 572,27</td></tr><tr><td>18.08.2026</td><td>Varekjop Sportshuset</td><td></td><td>55,52</td><td>52 516,75</td></tr><tr><td>18.08.2026</td><td>Varekjop Jernvare Sørlandet</td><td></td><td>838,04</td><td>51 678,71</td></tr><tr><td>19.08.2026</td><td>Varekjop Matkroken</td><td></td><td>104,82</td><td>51 573,89</td></tr><tr><td>21.08.2026</td><td>Varekjop Bakeriet</td><td></td><td>1 509,83</td><td>50 064,06</td></tr><tr><td>22.08.2026</td><td>Minibank uttak</td><td></td><td>959,11</td><td>49 104,95</td></tr><tr><td>25.08.2026</td><td>Varekjop Nærbutikken</td><td></td><td>881,99</td><td>48 222,96</td></tr><tr><td>26.08.2026</td><td>Strøm Lysglimt Energi</td><td></td><td>2 511,85</td><td>45 711,11</td></tr><tr><td>28.08.2026</td><td>Varekjop Bakeriet</td><td></td><td>1 499,15</td><td>44 211,96</td></tr><tr><td>28.08.2026</td><td>Varekjop Jernvare Sørlandet</td><td></td><td>229,27</td><td>43 982,69</td></tr><tr><td>30.08.2026</td><td>Vipps *Linnea</td><td></td><td>430,76</td><td>43 551,93</td></tr></table>
+<|det|>text [102, 743, 262, 758]<|/det|>Antall transaksjoner
+<|det|>text [102, 763, 171, 776]<|/det|>Sum inn
+<|det|>text [102, 781, 163, 794]<|/det|>Sum ut
+<|det|>text [102, 800, 239, 815]<|/det|>Utgående saldo
+<|det|>text [872, 743, 895, 756]<|/det|>24
+<|det|>text [814, 763, 895, 776]<|/det|>33 901,61
+<|det|>text [814, 781, 895, 794]<|/det|>24 662,07
+<|det|>text [814, 800, 895, 814]<|/det|>43 551,93
+<|det|>footer [82, 839, 763, 852]<|/det|>Kontoutskriften er laget 01.09.2026. Ta kontakt med oss innen rimelig tid dersom du finner feil i oversikten.
