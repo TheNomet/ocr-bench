@@ -117,7 +117,9 @@ class OpenAICompatBackend(Backend):
         self.url = spec["base_url"].rstrip("/") + "/v1/chat/completions"
         self.headers = dict(spec.get("headers") or {})
         self.cache_bust = bool(spec.get("cache_bust", False))
-        self.extra_body = spec.get("extra_body") or {}
+        self.extra_body = dict(spec.get("extra_body") or {})
+        if spec.get("reasoning_effort"):  # low | medium | high (gateway/provider maps it to a thinking budget)
+            self.extra_body["reasoning_effort"] = spec["reasoning_effort"]
         verify = ssl_context(spec.get("ca_bundle"))
         self.client = httpx.AsyncClient(
             verify=verify, timeout=httpx.Timeout(600.0), limits=httpx.Limits(max_connections=256)

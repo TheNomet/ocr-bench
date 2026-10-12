@@ -153,10 +153,11 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
     ):
         assert needle in report, needle
     index = (tmp_path / "site" / "index.html").read_text()
-    assert meta["id"] in index and "Use image-&gt;agent" in index and "pipeline</th>" in index
+    assert meta["id"] in index and "Use image-&gt;agent" in index and "input → extractor</th>" in index
+    assert "What is this?" in index and 'id="guide"' in index and "Document types" in index
     assert "extraction agent" in index and "Reads the document type" in index
     run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()
-    assert "all experiments" in run_page and 'id="legend"' in run_page
+    assert "all experiments" in run_page and 'id="legend"' not in run_page and "index.html#guide" in run_page
 
     # resume: only re-summarize
     class B:
@@ -226,5 +227,24 @@ def test_comparison_matches_on_model_not_key():
         [run("r2", "anthropic.claude-sonnet-5-5", 0.99), run("r1", "anthropic.claude-sonnet-4-5-20250929-v1:0", 0.97)]
     )
     md = reporting.comparison_md(c)
-    assert "image -> Claude Sonnet 5.5" in md and "image -> Claude Sonnet 4.5 (2025-09-29)" in md
+    assert "page images → Claude Sonnet 5.5" in md and "page images → Claude Sonnet 4.5 (2025-09-29)" in md
     assert "ml.g5.xlarge" in md
+
+
+def test_same_model_pipelines_hidden():
+    from ocrbench import explain, reporting
+
+    meta = {
+        "ocr": {"hf_repo": "x/Unlimited-OCR"},
+        "llm_backends": {"s": {"model": "anthropic.claude-sonnet-5-5"}, "h": {"model": "anthropic.claude-haiku-5-5"}},
+        "extraction": {
+            "agent": "s",
+            "pipelines": ["s->agent", "h->agent", "image->agent", "ocr->h"],
+            "agents": {"s->agent": "s", "h->agent": "s", "image->agent": "s", "ocr->h": "h"},
+        },
+    }
+    assert explain.same_model(meta, "s->agent") and not explain.same_model(meta, "h->agent")
+    assert explain.pipeline_label(meta, "ocr->h") == "Unlimited-OCR text → Claude Haiku 5.5"
+    agg = [{"pipeline": p, "variant": "clean"} for p in meta["extraction"]["pipelines"]]
+    vis = reporting.visible(meta, {"extraction": {"aggregate": agg, "docs": []}})
+    assert [a["pipeline"] for a in vis["extraction"]["aggregate"]] == ["h->agent", "image->agent", "ocr->h"]

@@ -111,6 +111,7 @@ def backends_summary(cfg: Config) -> dict:
             "model": spec.get("model") or spec.get("model_id"),
             "price_per_mtok": spec.get("price_per_mtok"),
             "temperature": spec.get("temperature", 0.0),
+            "reasoning_effort": spec.get("reasoning_effort"),
             "via": "AWS Bedrock" if spec.get("provider") == "bedrock" else "OpenAI-compatible gateway",
         }
     return out

@@ -133,3 +133,44 @@ def agent_note(model_id: str | None, temperature: float | None = 0.0, others: li
         f"The **agent** (default extractor) is {model_label(model_id)} (`{model_id}`), temperature {t}. "
         f"It gets {AGENT_INPUT}, and returns {AGENT_OUTPUT}. It never sees the ground truth.{extra}"
     )
+
+
+# --------------------------------------------------------------------------- pipeline identity
+def _extractor(meta: dict, pipe: str) -> str:
+    ex = meta.get("extraction") or {}
+    return (ex.get("agents") or {}).get(pipe) or ex.get("agent")
+
+
+def same_model(meta: dict, pipe: str) -> bool:
+    """True for `X->Y` where X's transcript is extracted by the same model X (it only measures itself)."""
+    src = pipe.split("->")[0]
+    if src in ("image", "ocr"):
+        return False
+    be = meta.get("llm_backends") or {}
+    return be.get(src, {}).get("model") == be.get(_extractor(meta, pipe), {}).get("model")
+
+
+def pipeline_label(meta: dict, pipe: str) -> str:
+    """Readable form: 'page images → Claude Haiku 5.5', 'Unlimited-OCR text → Claude Sonnet 4.5 (…)'."""
+    be = meta.get("llm_backends") or {}
+    src = pipe.split("->")[0]
+    if src == "image":
+        inp = "page images"
+    elif src == "ocr":
+        inp = f"{(meta.get('ocr') or {}).get('hf_repo', 'OCR').split('/')[-1]} text"
+    else:
+        inp = f"{model_label(be.get(src, {}).get('model'))} text"
+    return f"{inp} → {model_label(be.get(_extractor(meta, pipe), {}).get('model'))}"
+
+
+INTRO = """**What is this?** ocr-bench answers a practical question: *what is the best way to read documents
+automatically and pull out the data we need (amounts, dates, names, checked boxes)?* There are two families of
+approaches:
+
+- **Send the page image straight to an LLM** and ask it for the fields (one step).
+- **First turn the page into text**, with a self-hosted OCR model running on our own GPU or with an LLM, and then
+  let an LLM extract the fields from that text (two steps).
+
+Each experiment below runs the same set of synthetic documents through several of these setups and measures
+**accuracy** (against exact ground truth), **speed** and **cost**. A run page shows the setup, the results, an
+LLM-written recommendation, and every single document with what each model read."""

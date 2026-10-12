@@ -124,7 +124,8 @@ TRANSCRIPTION_COLS = [
 ]
 
 EXTRACTION_COLS = [
-    Col("pipeline", "Pipeline"),
+    Col("label", "Input → extractor"),
+    Col("pipeline", "Pipeline id"),
     Col("variant", "Variant"),
     Col("docs", "Docs", "int"),
     Col("field_accuracy", "Field accuracy", "pct", "high"),
@@ -296,6 +297,14 @@ class _Site:
         self, docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, sections: dict | None = None
     ) -> None:
         self.sections = sections or {}
+        labels = self.sections.get("pipeline_labels") or {}
+        if labels:
+            scores = {**(scores or {})}
+            ex = dict(scores.get("extraction") or {})
+            ex["aggregate"] = [
+                {**a, "label": labels.get(a.get("pipeline"), a.get("pipeline"))} for a in ex.get("aggregate") or []
+            ]
+            scores["extraction"] = ex
         self.docs_dir = Path(docs_dir)
         self.run_dir = Path(run_dir)
         self.scores = scores or {}
@@ -403,13 +412,15 @@ class _Site:
             parts.append(f'<p class="muted">Scored {e(gen)}</p>')
         if sec:
             parts.append(
-                '<nav class="toc small">Jump to: <a href="#facts">Key facts</a> &middot; <a href="#findings">Findings</a> &middot; '
-                '<a href="#setup">Setup</a> &middot; <a href="#legend">How to read</a> &middot; '
+                '<p class="muted">One experiment. New here? The <a href="../index.html#guide">main page</a> explains '
+                "what the benchmark does, what the pipelines and metrics mean, and the document types.</p>"
+                '<nav class="toc small">Jump to: <a href="#facts">Key facts</a> &middot; '
+                '<a href="#findings">Recommendation</a> &middot; <a href="#setup">Setup</a> &middot; '
                 '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
             )
             if sec.get("facts_md"):
                 parts.append(f'<section id="facts" class="facts">{markdown_lite.render(sec["facts_md"])}</section>')
-            parts.append('<h2 id="findings">Findings</h2>')
+            parts.append('<h2 id="findings">Recommendation</h2>')
             if sec.get("findings"):
                 parts.append(
                     (
@@ -424,7 +435,6 @@ class _Site:
             else:
                 parts.append('<p class="empty">No LLM summary yet: run the summarize stage.</p>')
             parts.append(f'<section id="setup">{markdown_lite.render(sec.get("setup_md", ""))}</section>')
-            parts.append(f'<section id="legend">{markdown_lite.render(sec.get("legend_md", ""))}</section>')
         else:
             summary = markdown_lite.render(str(self.scores.get("summary_md") or ""))
             if summary:
@@ -742,7 +752,7 @@ def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, secti
     return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir), sections).build()
 
 
-def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str = "") -> Path:
+def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str = "", guide_md: str = "") -> Path:
     """site/index.html: one row per run with models, GPU, cost and headline results, linking to the run page.
 
     Each item: {"meta": run.json dict, "headline": reporting.headline(...), "bottom_line": str}.
@@ -815,12 +825,14 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
                 cls = ' class="win"' if x and best.get(v) == p else ""
                 cells.append(f"<td{cls}>{e(fmt(x['acc'], 'pct')) if x else '&ndash;'}</td>")
             c = vs.get("clean") or vs.get("degraded") or {}
+            from ..explain import pipeline_label
+
             prow.append(
-                f"<tr><td><code>{e(p)}</code></td>{''.join(cells)}"
+                f'<tr><td title="{e(p)}">{e(pipeline_label(m, p))}</td>{"".join(cells)}'
                 f"<td>{e(fmt(c.get('s'), 'sec'))} s</td><td>{e(fmt(c.get('cost'), 'usd'))}</td></tr>"
             )
         results = (
-            '<table class="mini"><thead><tr><th>pipeline</th><th>clean</th><th>degraded</th>'
+            '<table class="mini"><thead><tr><th>input → extractor</th><th>clean</th><th>degraded</th>'
             "<th>time / doc</th><th>$ / 1k docs</th></tr></thead><tbody>" + "".join(prow) + "</tbody></table>"
             '<p class="muted small">Field accuracy; best per variant in green. Time and cost: clean pages.</p>'
             if prow
@@ -850,10 +862,27 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
         )
     body = (
         "<h1>ocr-bench experiments</h1>"
-        f'<p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}. Click one for findings, setup, '
-        "results and every document.</p>"
-        + (f'<section class="compare">{markdown_lite.render(comparison_md)}</section>' if comparison_md else "")
+        + (
+            f'<div class="intro">{markdown_lite.render(guide_md.split("## How the benchmark works")[0])}</div>'
+            if guide_md
+            else ""
+        )
+        + '<nav class="toc small">Jump to: <a href="#runs">Experiments</a> &middot; <a href="#compare">Compare runs</a>'
+        ' &middot; <a href="#guide">How the benchmark works</a></nav>'
+        f'<h2 id="runs">Experiments</h2><p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}. '
+        "Click one for its setup, results, recommendation and every document.</p>"
         + ("".join(cards) or '<p class="empty">No runs yet.</p>')
+        + (
+            f'<section id="compare" class="compare">{markdown_lite.render(comparison_md)}</section>'
+            if comparison_md
+            else ""
+        )
+        + (
+            f'<section id="guide" class="guide"><h2>How the benchmark works</h2>'
+            f"{markdown_lite.render(guide_md.split('## How the benchmark works', 1)[1])}</section>"
+            if "## How the benchmark works" in guide_md
+            else ""
+        )
     )
     idx = out_dir / "index.html"
     idx.write_text(_page("ocr-bench experiments", body, ""), encoding="utf-8")

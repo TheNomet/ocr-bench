@@ -25,6 +25,8 @@ code { background: var(--panel); padding: .1em .3em; border-radius: 4px; }
 pre { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: .75rem;
       white-space: pre-wrap; word-break: break-word; margin: .5rem 0; max-height: 70vh; overflow: auto; }
 .toc { margin: .5rem 0 1rem; }
+.intro { font-size: 1rem; line-height: 1.6; max-width: 62rem; }
+.intro p { margin: .5rem 0; }
 .warn { background: #fff4e5; border-left: 4px solid #d97706; padding: .4rem .8rem; }
 .facts { border-left: 4px solid #2f6feb; padding-left: 1rem; }
 section { margin: 1.5rem 0; }

@@ -50,6 +50,9 @@ Rules:
 
 
 def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
+    from .reporting import visible
+
+    scores = visible(meta, scores)
     facts_md = to_md(compute(meta, scores))
     be, o = meta["llm_backends"], meta["ocr"]
     agent = meta["extraction"]["agent"]
@@ -125,7 +128,7 @@ def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
     async def go():
         await be.warmup()
         resp, _ = await call_with_retries(
-            lambda: be.complete(Request(SYSTEM, prompt, max_tokens=2000, temperature=0.2)),
+            lambda: be.complete(Request(SYSTEM, prompt, max_tokens=12000, temperature=0.2)),
             cfg["bench"].get("max_retries", 4),
         )
         return resp

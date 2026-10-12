@@ -212,6 +212,7 @@ def read_summary(run_dir: Path) -> tuple[str, str]:
 
 def headline(meta: dict, scores: dict) -> dict:
     """Short facts for the experiments index."""
+    scores = visible(meta, scores)
     ea = scores["extraction"]["aggregate"]
     best = {}
     for v in ("clean", "degraded"):
@@ -237,6 +238,7 @@ def headline(meta: dict, scores: dict) -> dict:
 
 
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
+    scores = visible(meta, scores)
     body, author = read_summary(run_dir)
     findings = (
         ["## Findings", "", f"*{author.split(';')[0]}. It interprets the key facts above.*", ""]
@@ -271,15 +273,16 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
     from .facts import compute, to_md
 
     body, author = read_summary(run_dir)
+    vis = visible(meta, scores)
     sections = {
-        "facts_md": to_md(compute(meta, scores)),
+        "facts_md": to_md(compute(meta, vis)),
         "findings": body,
         "findings_author": author.split(";")[0],
         "findings_unverified": unverified(author),
         "setup_md": setup_md(meta),
-        "legend_md": legend_md(meta),
+        "pipeline_labels": {p: explain.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
     }
-    return build_site(run_dir / "docs", run_dir, scores, site_root / meta["id"], sections=sections)
+    return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], sections=sections)
 
 
 def comparison(items: list[dict]) -> dict:
@@ -295,12 +298,11 @@ def comparison(items: list[dict]) -> dict:
     reading: dict[str, dict] = {}
     speed: dict[str, dict] = {}
     for it in items:
-        m, s, rid = it["meta"], it["scores"], it["meta"]["id"]
+        m, rid = it["meta"], it["meta"]["id"]
+        s = visible(m, it["scores"])
         be = m.get("llm_backends") or {}
-        ex = m.get("extraction") or {}
         for a in s["extraction"]["aggregate"]:
-            ext = (ex.get("agents") or {}).get(a["pipeline"]) or ex.get("agent")
-            label = f"{a['pipeline'].split('->')[0]} -> {explain.model_label(be.get(ext, {}).get('model'))}"
+            label = explain.pipeline_label(m, a["pipeline"])
             extraction.setdefault(label, {}).setdefault(rid, {})[a["variant"]] = a["field_accuracy"]
         for a in s["transcription"]["aggregate"]:
             model = (
@@ -366,4 +368,64 @@ def comparison_md(c: dict) -> str:
                     + " | ".join(f"{sp[k]:.1f}" if k in sp else "–" for k in (1, 4, 16, 32))
                     + " |"
                 )
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------------- shared guide (main page)
+def visible(meta: dict, scores: dict) -> dict:
+    """Scores without `X->X` pipelines (same model reading and extracting): kept on disk, hidden in reports."""
+    hide = {p for p in (meta.get("extraction") or {}).get("pipelines", []) if explain.same_model(meta, p)}
+    hide |= {a["pipeline"] for a in scores["extraction"]["aggregate"] if explain.same_model(meta, a["pipeline"])}
+    if not hide:
+        return scores
+    ex = scores["extraction"]
+    return {
+        **scores,
+        "extraction": {
+            "aggregate": [a for a in ex["aggregate"] if a["pipeline"] not in hide],
+            "docs": [d for d in ex["docs"] if d["pipeline"] not in hide],
+        },
+    }
+
+
+def guide_md(latest: dict | None) -> str:
+    out = [explain.INTRO, "", "## How the benchmark works", ""]
+    out += [f"- **{a}**: {b}" for a, b in explain.STAGES]
+    out += [
+        "",
+        "### Pipelines",
+        "",
+        "A pipeline is written **input → extractor**. The input is what the extracting model gets to read:",
+        "",
+        "- **page images**: the extractor looks at the images itself (one step).",
+        "- **<OCR model> text**: our self-hosted OCR model first transcribes every page; the extractor gets only "
+        "that text.",
+        "- **<LLM> text**: an LLM first transcribes every page; a *different* LLM extracts from the text.",
+        "",
+        "Pipelines where the same model both transcribes and extracts are not shown: they only measure a model "
+        "against itself.",
+        "",
+        "### The extractor",
+        "",
+        f"Whatever model extracts, it gets {explain.AGENT_INPUT}, and returns {explain.AGENT_OUTPUT}. "
+        "It never sees the ground truth. Run pages list the exact model and settings.",
+        "",
+        "### Pages",
+        "",
+    ]
+    out += [f"- **{k}**: {v}" for k, v in explain.VARIANTS.items()]
+    if latest:
+        out += [
+            "",
+            "### Document types",
+            "",
+            "Synthetic Norwegian (bokmål) everyday paperwork with fictional "
+            "names and numbers, generated with exact ground truth.",
+            "",
+            "| type | what it is | hard part | fields extracted |",
+            "|---|---|---|---|",
+        ]
+        for t, d in latest["documents"]["types"].items():
+            out.append(f"| `{t}` | {d['description']} | {explain.CHALLENGES.get(t, '')} | {', '.join(d['fields'])} |")
+    out += ["", "### Metrics", ""] + [f"- **{k}**: {v}" for k, v in explain.METRICS]
     return "\n".join(out)
