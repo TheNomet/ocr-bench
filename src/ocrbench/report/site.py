@@ -802,6 +802,29 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
                 f"Reads {AGENT_INPUT}; returns the fields as JSON.",
             )
         )
+        ex = m.get("extraction") or {}
+        for k in dict.fromkeys(v for v in (ex.get("agents") or {}).values() if v != agent):
+            mid = be.get(k, {}).get("model")
+            rows.append(model_row("extractor", k, model_label(mid), mid))
+        sk = (m.get("summary") or {}).get("agent")
+        if sk:
+            mid = be.get(sk, {}).get("model")
+            effort = be.get(sk, {}).get("reasoning_effort")
+            rows.append(
+                model_row(
+                    "recommendation writer",
+                    sk,
+                    model_label(mid),
+                    mid,
+                    "Writes the bottom line and recommendation from the computed key facts"
+                    + (f"; reasoning effort {effort}." if effort else "."),
+                )
+            )
+        for k, spec in be.items():  # flag sampling models: their results vary between runs
+            t = spec.get("temperature")
+            if t:
+                tag = f"<code>{e(k)}</code></td><td>"
+                rows = [r.replace(tag, tag + f'<span class="chip warmchip">temperature {t:g}</span>', 1) for r in rows]
 
         price = o.get("price_per_hour_usd")
         price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
