@@ -30,6 +30,7 @@ def compute(meta: dict, scores: dict) -> dict:
             _min(rows, "end_to_end_latency_s"),
         )
         pipelines[v] = {
+            "unpriced": sorted(a["pipeline"] for a in rows if a.get("cost_per_1k_docs_usd") is None),
             "most_accurate": {"pipeline": acc["pipeline"], "field_accuracy": acc["field_accuracy"]},
             "cheapest": cheap
             and {"pipeline": cheap["pipeline"], "cost_per_1k_docs_usd": cheap["cost_per_1k_docs_usd"]},
@@ -115,7 +116,18 @@ def to_md(f: dict) -> str:
         ("fastest pipeline", "fastest", lambda d: f"`{d['pipeline']}` {d['end_to_end_latency_s']:.1f} s/doc"),
     ):
         cells = [fmt(p[v][key]) if v in p and p[v].get(key) else "–" for v in ("clean", "degraded")]
+        if key == "cheapest" and any(p[v].get("unpriced") for v in p):
+            label = "cheapest pipeline (among priced, see note)"
         out.append(f"| {label} | {cells[0]} | {cells[1]} |")
+    unpriced = sorted({x for v in p for x in p[v].get("unpriced", [])})
+    if unpriced:
+        out += [
+            "",
+            "**Cost note:** no price is configured for "
+            + ", ".join(f"`{x}`" for x in unpriced)
+            + ", so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those "
+            "backends to include them.",
+        ]
     out += [
         "",
         "| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |",

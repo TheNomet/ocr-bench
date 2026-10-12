@@ -45,27 +45,45 @@ fastest pipeline from the key facts.
 Rules:
 - Do not compute, estimate or derive numbers. You may quote a number only if it appears verbatim in the key facts
   or setup below; prefer naming the pipeline and saying "most accurate", "cheapest", etc.
+- A pipeline without a price is not "cheap": its cost is unknown. Say so instead of ranking it.
 - Use the exact pipeline and backend names. Under 400 words."""
 
 
 def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
     facts_md = to_md(compute(meta, scores))
     be, o = meta["llm_backends"], meta["ocr"]
-    lines = [
-        f"- `ocr`: self-hosted {explain.ocr_label(o)} on {o.get('instance_type')} ({o.get('gpu')}, {o.get('host')})"
-    ]
-    for t in meta.get("transcribers") or []:
-        if t != "ocr":
-            lines.append(f"- `{t}`: {explain.model_label(be.get(t, {}).get('model'))} (transcriber)")
     agent = meta["extraction"]["agent"]
-    lines.append(f"- {explain.agent_note(be.get(agent, {}).get('model'))}")
+    agents = meta["extraction"].get("agents") or {}
+    lines = []
+    for t in meta.get("transcribers") or []:
+        if t == "ocr":
+            lines.append(
+                f"- `ocr`: self-hosted {explain.ocr_label(o)} on {o.get('instance_type')} "
+                f"({o.get('gpu')}, {o.get('host')})"
+            )
+        else:
+            b = be.get(t, {})
+            lines.append(
+                f"- `{t}`: {explain.model_label(b.get('model'))}, temperature {b.get('temperature', 0.0)} (transcriber)"
+            )
+    others = sorted({v for v in agents.values() if v != agent})
+    a = be.get(agent, {})
+    lines.append(f"- {explain.agent_note(a.get('model'), a.get('temperature', 0.0), others)}")
+    lines.append(
+        "- Extractor per pipeline (the model after the arrow): "
+        + "; ".join(
+            f"`{p}` -> {explain.model_label(be.get(agents.get(p, agent), {}).get('model'))}"
+            for p in meta["extraction"]["pipelines"]
+        )
+    )
     d = meta["documents"]
     lines.append(
         f"- documents: {d['count']} synthetic Norwegian documents, {d['page_images']} page images, "
         f"types: {', '.join(d['types'])}; each page clean and degraded (simulated phone photo)"
     )
     pipes = "\n".join(
-        f"- `{p}`: {explain.pipeline_text(p, o.get('hf_repo', 'ocr'))}" for p in meta["extraction"]["pipelines"]
+        f"- `{p}`: {explain.pipeline_text(p, o.get('hf_repo', 'ocr'), agents.get(p, agent))}"
+        for p in meta["extraction"]["pipelines"]
     )
     setup = "\n".join(lines)
     prompt = f"{INSTRUCTIONS}\n\n# Setup\n{setup}\n\n# Pipelines\n{explain.ARROW}\n{pipes}\n\n# Key facts\n{facts_md}"
