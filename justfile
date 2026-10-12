@@ -141,3 +141,24 @@ destroy:
     -{{ob}} endpoint down
     just _tfinit --with-model
     {{tf}} destroy -input=false -auto-approve -var-file="$PWD/{{state}}/terraform.tfvars.json"
+
+# ---- public site ----
+
+# Rebuild the site, scan it with the public guard, push it to the gh-pages branch and deploy Pages
+publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ob}} report
+    scripts/public_guard.sh dir site
+    tmp=$(mktemp -d)
+    cp -R site/. "$tmp/"
+    touch "$tmp/.nojekyll"
+    url=$(git remote get-url origin)
+    name=$(git config user.name); email=$(git config user.email)
+    git -C "$tmp" init -q -b gh-pages
+    git -C "$tmp" -c user.name="$name" -c user.email="$email" add -A
+    git -C "$tmp" -c user.name="$name" -c user.email="$email" commit -q -m "site: $(date +%Y-%m-%d) from $(git rev-parse --short HEAD)"
+    git -C "$tmp" push -q --force "$url" gh-pages
+    rm -rf "$tmp"
+    gh workflow run pages.yml --ref main
+    echo "deploying: $(gh api repos/{owner}/{repo}/pages --jq .html_url 2>/dev/null || echo 'see repo Settings > Pages')"

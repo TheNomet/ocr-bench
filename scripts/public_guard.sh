@@ -7,6 +7,7 @@
 #   scripts/public_guard.sh staged        # scan the staged diff (pre-commit)
 #   scripts/public_guard.sh range A..B    # scan commits in a range (pre-push)
 #   scripts/public_guard.sh tree          # scan every tracked file
+#   scripts/public_guard.sh dir site      # scan a directory (text files)
 #
 # Install hooks once per clone:  scripts/install_hooks.sh
 set -euo pipefail
@@ -19,8 +20,9 @@ patterns=$(grep -vE '^\s*(#|$)' "$deny" | paste -sd'|' -)
 case "${1:-staged}" in
   staged) content=$(git diff --cached -U0 --no-color | grep -E '^\+' | grep -vE '^\+\+\+ ' || true) ;;
   range)  content=$(git log -p --no-color "$2" | grep -E '^(\+|Author:|Commit:)' | grep -vE '^\+\+\+ ' || true) ;;
-  tree)   content=$(git ls-files -z | xargs -0 cat 2>/dev/null || true) ;;
-  *) echo "usage: $0 staged|range A..B|tree"; exit 2 ;;
+  tree)   content=$(git ls-files -z | xargs -0 grep -I -h "" 2>/dev/null || true) ;;
+  dir)    content=$(grep -rIh "" "$2" 2>/dev/null || true) ;;   # e.g. the site before publishing
+  *) echo "usage: $0 staged|range A..B|tree|dir PATH"; exit 2 ;;
 esac
 
 hits=$(printf '%s\n' "$content" | grep -inE "$patterns" || true)

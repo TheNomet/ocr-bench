@@ -942,7 +942,7 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
         '<a href="#guide">How the benchmark works</a> &middot; <a href="#runs">Experiments</a></nav>'
         + (
             '<section id="compare" class="compare"><h2>Compare runs</h2>'
-            f'{markdown_lite.render(comparison_md.replace("## Compare runs", "", 1))}</section>'
+            f"{markdown_lite.render(comparison_md.replace('## Compare runs', '', 1))}</section>"
             if comparison_md
             else ""
         )

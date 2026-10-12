@@ -27,13 +27,14 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `ocr.sagemaker.inference_ami_version` | Host image, which sets the NVIDIA driver |
 | `ocr.sagemaker.price_per_hour_usd` | Optional. When unset, `report` looks up the deployed instance's price in the AWS Pricing API |
 | `ocr.direct_url` | Use a running vLLM server instead of SageMaker |
-| `llm_backends.<key>` | Named backends (see below) |
+| `llm_backends.<key>` | Named backends (see below). Use neutral model names as keys (`sonnet-5.5`): they appear in every record and on the public site |
 | `bench.docs.per_type/seed/scale` | Document generation |
 | `bench.transcribers` | Informational list of stage-1 backends |
 | `bench.extraction.agent` | `llm_backends` key used for stage 2 |
 | `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"` |
-| `bench.summary.agent` | `llm_backends` key that writes the findings in stage 4 (default: the extraction agent) |
+| `bench.summary.agent` | `llm_backends` key that writes the recommendation in stage 4 (default: the extraction agent). A strong reasoning model works best, e.g. Opus 5.5 with `reasoning_effort: medium` |
 | `bench.extraction.plan_pipelines.<plan>` | Pipelines for that plan instead of `pipelines`. `<input>-><llm key>` uses that backend as the extractor; `->agent` uses the default agent |
+| `llm_backends.<key>.reasoning_effort` | `low` / `medium` / `high` for models with extended thinking (sent as `reasoning_effort`) |
 | `llm_backends.<key>.temperature` | Overrides the request temperature (default 0). Some models accept only 1; `null` omits it. Recorded in the run and shown in the report |
 | `bench.plan_descriptions.<plan>` | One line shown on every run of that plan (run ids are `<date>-<plan>`) |
 | `bench.plans.<name>` | List of `{backend, concurrency, variant?, limit?, repeat?, warmup?}` runs |

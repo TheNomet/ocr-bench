@@ -25,7 +25,8 @@ src/ocrbench/
   extract.py               stage 2 runner (pipelines "<transcriber>->agent" and "image->agent")
   score.py                 stage 3: metrics + aggregation -> scores dict
   summarize.py             stage 4: LLM writes the findings (summary.md) from setup + scores
-  explain.py               legend/glossary text shared by report.md and the site
+  explain.py               intro, legend/glossary, model and pipeline labels (shared by report.md and the site)
+  facts.py                 computed key facts: the source of truth for every comparison
   reporting.py, report/    report.md, per-run site, experiments index
   images.py                crane-based image builds (OCR SageMaker wrapper, bench runner)
   weights.py               HF snapshot -> S3, SHA-256 verified
@@ -33,9 +34,10 @@ src/ocrbench/
 infra/terraform/           one root module; network/ submodule for network.mode=create
 justfile                   deploy / run / report / destroy
 .state/<prefix>/           LOCAL: tfvars, outputs.json, local tf state (gitignored)
+scripts/rename_backends.py rename backend keys across a config and old runs
 docs-out/                  LOCAL current document set (a run copies it into runs/<id>/docs)
-runs/<id>/                 LOCAL one folder per run, mirrored to s3://<bucket>/runs/<id>/ (gitignored)
-site/                      LOCAL experiments index + one site per run (gitignored)
+runs/<id>/                 one folder per run, committed (except config.yaml), mirrored to s3://<bucket>/runs/<id>/
+site/                      LOCAL build of the site (gitignored); published to the gh-pages branch
 ```
 
 ## Lifecycle (see README for commands)
@@ -73,10 +75,22 @@ site/                      LOCAL experiments index + one site per run (gitignore
   through `Config`.
 - **Resource names** come from `name_prefix`. If you change a name, change it in both
   `config.py` and `infra/terraform/main.tf` `locals`.
-- **Runs are never committed.** They contain backend keys, model ids and region, which can
-  identify the deployment. Publish findings only by hand, after redacting them.
-- **The LLM summary is labelled as LLM-written** and is instructed to use only the numbers
-  provided. If you change `summarize.py`, keep both properties.
+- **Runs are committed, their `config.yaml` is not.** Everything else in `runs/<id>/` is meant
+  to be public: backend keys are neutral model names (`sonnet-5.5`), and SageMaker endpoint
+  names are kept out of records (`model@sagemaker`). If you add a field to `run.json` or the
+  records, make sure it can't carry hosts, account ids or client ids. The guard (`scripts/public_guard.sh`)
+  runs on every commit/push and on the site in `just publish`.
+- **The site is published from a `gh-pages` branch**, never from `main`. `just publish` builds,
+  scans and pushes it; `.github/workflows/pages.yml` only deploys that branch.
+- **Numbers are computed, the LLM only comments.** `facts.py` computes the key facts (best,
+  cheapest, fastest pipeline, break-even rates...). `summarize.py` gives only those facts and a
+  setup description to the recommendation model (`bench.summary.agent`, Opus 5.5 at medium reasoning
+  effort in our runs), and every number in its text is checked against them; misses are
+  flagged as "unverified". Keep both properties if you change it.
+- **Pipelines where one model both transcribes and extracts are hidden** (`reporting.visible`):
+  they only measure the model against itself. Don't add `X->X` to plans.
+- **Re-summarising an old run** (`just rerun <id> summarize`) uses the *current* summary model;
+  `runs.refresh_summary_setup` patches the run's snapshot. Nothing from stages 1-3 changes.
 - **Cost.** The SageMaker endpoint bills per hour while it exists. Always finish with
   `just endpoint-down` (or `just destroy`).
 - **Scoring is by design not formatting-sensitive.** CER/WER are computed on normalised text
@@ -85,6 +99,12 @@ site/                      LOCAL experiments index + one site per run (gitignore
   normalisation. Change `score.py` deliberately and update the tests.
 
 ## Gotchas found the hard way
+
+- **Edit with care after `ruff format`.** Several string-replace edits silently missed because the
+  formatter had re-wrapped the target code. After a scripted edit, grep that it landed.
+- Newer Claude models (5.5) accept only temperature 1 through the gateway; set `temperature: 1`
+  on that backend. It is recorded in the run and shown in the report, because results then vary
+  slightly between runs.
 
 - Some LLM gateways **cache identical requests**, so a repeated benchmark returns in about
   60 ms. Set `cache_bust: true` on `openai_compatible` backends; it adds a nonce to the

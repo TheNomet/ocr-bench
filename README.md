@@ -36,14 +36,17 @@ don't need Docker: images are copied and layered registry-side with `crane`.
 
 ## What you get
 
-Every run is one self-contained folder, `runs/<date>-<plan>/`. It holds the setup
+Every run is one self-contained folder, `runs/<date>-<plan>/`, committed to this repo. It holds the setup
 (`run.json`: models, GPU host and price, documents, plan, git commit), a copy of the
 documents, every raw output, `scores.json`, the LLM-written `summary.md`, and `report.md`.
 `report.md` puts it all together: findings, setup, a legend of document types and pipelines,
-metric definitions and result tables. Runs stay local (and in your S3 bucket); they are
-gitignored because they contain deployment-specific names.
+metric definitions and result tables. The one exception is each run's `config.yaml`
+snapshot: it holds deployment details (account, endpoints, client ids), so it stays local
+and is gitignored.
 
-`site/index.html` lists every experiment with its models, GPU and cost, and headline
+**Published results:** <https://thenomet.github.io/ocr-bench/> (updated with `just publish`).
+
+`site/index.html` explains the benchmark for a newcomer, compares runs, and lists every experiment with its models, GPU and cost, and headline
 results. From a run page you drill down to each document: page image (clean and degraded),
 ground truth, every transcript with a word diff, and the extracted fields marked ✓/✗.
 
@@ -59,6 +62,17 @@ Redo any stage of an old run without starting over, e.g. `just rerun <id> summar
 | [docs/configuration.md](docs/configuration.md) | Every config key |
 | [docs/data-formats.md](docs/data-formats.md) | File contracts between stages |
 | [docs/documents.md](docs/documents.md) | The synthetic document types and their fields |
+
+## Naming backends
+
+Backend keys appear in every record, report and the public site, so name them after the
+model, not the provider or your organisation: `sonnet-5.5`, `haiku-4.5`, `opus-5.5`. If you
+renamed keys after a run, `scripts/rename_backends.py` rewrites old runs consistently.
+
+## Publishing
+
+`just publish` rebuilds the site, scans every file with the public guard, force-pushes it to the
+`gh-pages` branch and starts the `pages` workflow. Pages must use "GitHub Actions" as its source.
 
 ## Without AWS GPU access
 

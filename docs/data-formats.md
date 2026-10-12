@@ -73,7 +73,7 @@ These are the per-type extraction schemas given to the extraction agent:
 ```
 runs/<id>/
   run.json                  setup + stage timings (below)
-  config.yaml               snapshot of the config used
+  config.yaml               snapshot of the config used (LOCAL ONLY: gitignored, never published)
   docs/                     copy of the document set (section 1 layout)
   runs.jsonl transcripts.jsonl extractions.jsonl outputs/     (sections 2-3)
   scores.json               stage 3 (section 4)
@@ -114,7 +114,7 @@ runs/<id>/
 ### runs.jsonl
 
 ```json
-{"run_id": "20261008-141236", "backend": "ocr", "model": "baidu/Unlimited-OCR@sagemaker:x",
+{"run_id": "20261008-141236", "backend": "ocr", "model": "baidu/Unlimited-OCR@sagemaker",
  "concurrency": 16, "pages": 96, "wall_s": 120.4, "started": 1791462025.1}
 ```
 

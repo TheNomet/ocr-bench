@@ -85,7 +85,7 @@ class SageMakerOcr(_VllmOcr):
         super().__init__(cfg)
         self.boto3, self.region, self.instance_type = boto3, cfg.region, None
         self.endpoint = cfg.endpoint_name
-        self.model = f"{self.served}@sagemaker:{self.endpoint}"
+        self.model = f"{self.served}@sagemaker"  # endpoint name stays out of records
         self.rt = boto3.client(
             "sagemaker-runtime",
             region_name=cfg.region,

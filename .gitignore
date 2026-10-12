@@ -3,9 +3,10 @@ config/*.yaml
 !config/example.yaml
 .public-denylist
 
-# Generated data (runs hold internal names: never commit)
+# Generated data. Runs ARE committed (neutral backend names), but each run's config snapshot
+# holds deployment details (account, endpoints, client ids) and never leaves this machine.
 docs-out/
-runs/
+runs/*/config.yaml
 results/
 site/
 *.tfplan
