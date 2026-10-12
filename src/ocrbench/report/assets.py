@@ -46,7 +46,7 @@ section th, section td, .summary th, .summary td { border: 1px solid var(--borde
 .bottom-line p { margin: .2rem 0; }
 .bottom-line .label, .block h4 { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: #667;
   margin: 0 0 .5rem; font-weight: 600; }
-.run-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1.25rem 2.5rem; margin-top: 1.25rem; }
+.run-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 1.25rem 2.5rem; margin-top: 1.25rem; }
 .run-grid .block.wide { grid-row: span 2; }
 @media (max-width: 900px) { .run-grid { grid-template-columns: 1fr; } .run-grid .block.wide { grid-row: auto; } }
 .run-card table, .run-card th, .run-card td { border: 0; background: none; }
@@ -64,6 +64,7 @@ table.mini { border-collapse: collapse; width: 100%; font-size: .85rem; }
 table.mini th { text-align: left; font-weight: 600; color: #667; font-size: .74rem; padding: .25rem .6rem .3rem 0;
   border-bottom: 1px solid var(--border) !important; white-space: nowrap; }
 table.mini td { padding: .35rem .6rem .35rem 0; border-bottom: 1px solid #eef0f3 !important; white-space: nowrap; }
+table.mini td:first-child { white-space: normal; min-width: 11rem; }
 table.mini td.win { font-weight: 700; color: #0a6b2d; }
 .summary { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .25rem 1rem; margin: 1rem 0; }
 .table-wrap { overflow-x: auto; }

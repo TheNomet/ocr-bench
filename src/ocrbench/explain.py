@@ -163,14 +163,18 @@ def pipeline_label(meta: dict, pipe: str) -> str:
     return f"{inp} → {model_label(be.get(_extractor(meta, pipe), {}).get('model'))}"
 
 
-INTRO = """**What is this?** ocr-bench answers a practical question: *what is the best way to read documents
-automatically and pull out the data we need (amounts, dates, names, checked boxes)?* There are two families of
-approaches:
-
-- **Send the page image straight to an LLM** and ask it for the fields (one step).
-- **First turn the page into text**, with a self-hosted OCR model running on our own GPU or with an LLM, and then
-  let an LLM extract the fields from that text (two steps).
-
-Each experiment below runs the same set of synthetic documents through several of these setups and measures
-**accuracy** (against exact ground truth), **speed** and **cost**. A run page shows the setup, the results, an
-LLM-written recommendation, and every single document with what each model read."""
+INTRO = "\n".join(
+    [
+        "**What is this?** ocr-bench answers a practical question: what is the best way to read documents "
+        "automatically and pull out the data we need (amounts, dates, names, checked boxes)? There are two families "
+        "of approaches:",
+        "",
+        "- **Send the page image straight to an LLM** and ask it for the fields (one step).",
+        "- **First turn the page into text**, with a self-hosted OCR model on our own GPU or with an LLM, and then let "
+        "an LLM extract the fields from that text (two steps).",
+        "",
+        "Each experiment below runs the same synthetic documents through several of these setups and measures "
+        "**accuracy** (against exact ground truth), **speed** and **cost**. A run page shows the setup, the results, "
+        "an LLM-written recommendation, and every document with what each model read.",
+    ]
+)

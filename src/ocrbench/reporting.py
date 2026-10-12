@@ -400,7 +400,7 @@ def guide_md(latest: dict | None) -> str:
         "- **page images**: the extractor looks at the images itself (one step).",
         "- **<OCR model> text**: our self-hosted OCR model first transcribes every page; the extractor gets only "
         "that text.",
-        "- **<LLM> text**: an LLM first transcribes every page; a *different* LLM extracts from the text.",
+        "- **<LLM> text**: an LLM first transcribes every page; a **different** LLM extracts from the text.",
         "",
         "Pipelines where the same model both transcribes and extracts are not shown: they only measure a model "
         "against itself.",
