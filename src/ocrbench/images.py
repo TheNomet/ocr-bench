@@ -103,8 +103,12 @@ def build_ocr(cfg: Config, skip_mirror: bool = False) -> None:
     if "@" not in src:
         print(f"note: {src} is a tag; pin it in the config as {src.split(':')[0]}@{digest} for reproducible builds")
     mirror = f"{repo}:mirror-{digest.split(':')[1][:12]}"
+    legacy = f"{repo}:mirror"  # older builds kept one moving tag; reuse it if it holds the same image
     if _exists(c, mirror):
         print(f"source {digest} already mirrored as {mirror}")
+    elif _exists(c, legacy) and _sh(c, "digest", "--platform", platform, legacy) == digest:
+        _sh(c, "tag", legacy, mirror.rsplit(":", 1)[1])
+        print(f"source {digest} already mirrored; tagged {mirror}")
     else:
         print(f"mirroring {src} ({digest}) -> {mirror} (streams through this machine)")
         _sh(c, "copy", "--platform", platform, pinned(src, digest), mirror)

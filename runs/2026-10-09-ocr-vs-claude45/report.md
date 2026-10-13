@@ -10,6 +10,13 @@
 | cheapest pipeline | `ocr->agent` $5.87/1k docs | `ocr->agent` $5.88/1k docs |
 | fastest pipeline | `image->agent` 3.4 s/doc | `image->agent` 3.6 s/doc |
 
+Every pipeline (field accuracy, time per document, cost per 1,000 documents):
+
+| pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
+|---|---|---|---|---|
+| `image->agent` | 97.0% | 83.0% | 3.4 | $7.44 |
+| `ocr->agent` | 95.7% | 81.5% | 9.0 | $5.87 |
+
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
 |---|---|---|---|---|---|
 | `haiku-4.5` | clean | 0.033 | 99.3% | 3 | 0 |
@@ -42,34 +49,29 @@ Fields missed most often (count over clean + degraded documents):
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->agent`. It is the most accurate, cheapest and fastest pipeline on both clean pages (97.0%, $7.44/1k docs, 3.4 s/doc) and degraded pages (83.0%, $6.75/1k docs, 3.6 s/doc). A separate OCR step adds a stage without adding measured value.
+Choose `image->agent` as the default: it is the most accurate pipeline on both clean (97.0%) and degraded (83.0%) pages and also the fastest. `ocr->agent` is the cheapest pipeline, but only if the GPU stays busy. Its accuracy is slightly lower and it is markedly slower.
 
 ## What the facts say
-- All pipelines use the same extractor, so the differences come only from the input. Letting the agent see the page images directly beats feeding it a transcript, because transcription can lose layout and visual cues.
-- The `ocr->agent` misses cluster on `holiday_survey` fields (`activities`, `accommodation`, `pets`) and on `receipt.merchant`. This suggests that form marks such as checkboxes, and header or logo text, get lost in transcription.
-- The `image->agent` misses (`newsletter.new_fee`, `rental_contract.property_address`) look more like interpretation problems than reading problems.
-- On degraded pages, `ocr` is the strongest reader:
-  - lowest CER median (0.044)
-  - highest number recall (92.6%)
-  - fewest invented numbers
-  - no runaway pages, while `sonnet-4.5` and `haiku-4.5` each had one
-- On clean pages, `sonnet-4.5` transcribes best (CER median 0.002). However, every reader is near-perfect on clean pages, so reader choice matters mainly on degraded input.
-- Degraded pages are the real weakness of this benchmark. Accuracy drops for the best pipeline, and the LLM readers invent many numbers.
+- **Transcription quality is not the bottleneck.** The `ocr` reader produces strong transcripts: lowest degraded CER, best degraded number recall, fewest invented numbers and no runaway pages. Even so, `ocr->agent` trails `image->agent`. Converting pages to text appears to discard information the agent uses when it sees the image.
+- **The missed fields support this.** `ocr->agent` misses mostly `holiday_survey` fields (`activities`, `accommodation`, `pets`) and `receipt.merchant`. These look like form selections and header or logo content, where layout carries meaning that plain text loses.
+- **`image->agent` fails differently.** Its top misses are `newsletter.new_fee` and `rental_contract.property_address`. This suggests the two pipelines' errors are not identical, which makes `ocr->agent` useful as a cross-check.
+- **Degraded pages hurt every pipeline.** Accuracy falls sharply for both, and the LLM readers (`sonnet-4.5`, `haiku-4.5`) invent many more numbers on degraded pages and each had a runaway page. On noisy input, `ocr` is the more trustworthy transcriber.
+- **The self-hosted model's cost advantage depends on utilisation.** The `ocr` price is $1.49/hour whether busy or idle. Pipeline costs assume the best sustained throughput ($0.89/1k pages). Sending one request at a time costs $2.64/1k pages, so the "cheapest" ranking holds only under sustained load.
 
 ## Recommendation
 | Goal | Choice | Why |
 |---|---|---|
 | Highest accuracy | `image->agent` | Most accurate on clean and degraded pages |
-| Lowest latency | `image->agent` | Fastest pipeline; it has no transcription stage |
-| Lowest cost | `image->agent` | Cheapest pipeline. `ocr->agent` and `sonnet-4.5->agent` have no pipeline price in the facts, so their cost is unknown, not low |
-| Checking / second opinion | `ocr` transcript alongside `image->agent` | Most faithful reader of numbers on degraded pages, with no runaway pages |
-| Self-host the OCR model | Only if you need transcripts anyway, at sustained volume | `ocr` costs $1.49/hour busy or idle. It beats `sonnet-4.5` transcription above ~95 pages/hour sustained and `haiku-4.5` above ~307 pages/hour. One GPU handled at most ~1686 pages/hour |
+| Lowest latency | `image->agent` | Fastest pipeline (3.4 s/doc clean); one step with no OCR stage |
+| Lowest cost | `ocr->agent` | Cheapest pipeline ($5.87/1k docs clean), assuming the GPU is kept busy |
+| Checking / second opinion | `ocr->agent` alongside `image->agent` | Different miss patterns; `ocr` transcripts invent the fewest numbers on degraded pages |
+| When to self-host OCR | Sustained volume, cost-driven | Beats `haiku-4.5` transcription above ~307 pages/hour and `sonnet-4.5` above ~95 pages/hour; below that, idle GPU time removes the saving |
 
 ## Caveats
-- The data is 48 synthetic Norwegian documents across 8 types, and the "degraded" pages are simulated phone photos. Real scans, handwriting or other languages may change the ranking.
-- The key facts do not include accuracy, cost or latency for `ocr->agent` or `sonnet-4.5->agent`, so we cannot say how far behind those pipelines are.
-- Results come from one run with fixed model versions (Claude Sonnet 4.5 2025-09-29, `ocr` @ 07dea832) on ml.g5.xlarge. Changes in price, model or hardware could move the break-even points.
-- The most-missed field counts are small, so treat the failure patterns as hints rather than established causes.
+- The documents are synthetic and Norwegian: 48 documents across eight types. Real layouts, languages and handwriting may shift the results.
+- "Degraded" means a simulated phone photo. Real capture noise such as glare, folds or skew may behave differently.
+- Throughput and cost come from a single ml.g5.xlarge in this run. Other hardware, batching or pricing changes would move the break-even points.
+- The accuracy gaps between the pipelines are modest. With this sample size, field-level miss counts are small and should be read as indicative rather than definitive.
 
 ## Setup
 
@@ -130,16 +132,15 @@ Transcription runs in this plan:
 - **1. Transcribe**: Every page image (clean and degraded) is sent to each transcriber, at several concurrency levels. This measures how well and how fast each backend reads.
 - **2. Extract**: The extraction agent pulls each document type's fields (totals, dates, names, checked boxes…) out of each pipeline's input. Scored field by field against the ground truth.
 - **3. Score**: Transcripts and fields are compared with the ground truth; latency and cost are aggregated.
-- **4. Summarise**: An LLM reads the setup and all result tables and writes the findings below. It is told to use only the numbers provided; check them against the tables.
+- **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers; every number it writes is checked against the facts, and any it cannot find there is flagged as unverified.
 
 ### Pipelines (the arrows)
 
-Pipeline names read `<what produces the input> -> agent`. The left side is what the extraction agent gets to read: `image` = the page images themselves, anything else = the text transcript produced by that backend in stage 1. The agent is the same model in every pipeline, so the pipelines differ only in the input it sees.
+Pipeline names read `<input> -> <extractor>`. The left side is what the extracting model gets to read: `image` = the page images themselves, anything else = the text transcript produced by that backend in stage 1. The right side is the model that extracts the fields: `agent` = the run's default extraction agent, otherwise the named backend.
 
 | pipeline | what the agent reads |
 |---|---|
 | `ocr->agent` | Two steps: the self-hosted OCR model (baidu/Unlimited-OCR) transcribes every page to text, then the extraction agent reads that text (not the images) and returns the fields. Extractor: `sonnet-4.5` (Claude Sonnet 4.5 (2025-09-29)). |
-| `sonnet-4.5->agent` | Two steps: `sonnet-4.5` transcribes every page to text, then the extraction agent reads that text and returns the fields. Extractor: `sonnet-4.5` (Claude Sonnet 4.5 (2025-09-29)). |
 | `image->agent` | One step: the extraction agent reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `sonnet-4.5` (Claude Sonnet 4.5 (2025-09-29)). |
 
 ### Page variants

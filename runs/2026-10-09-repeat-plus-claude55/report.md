@@ -12,6 +12,14 @@
 
 **Cost note:** no price is configured for `image->haiku-5.5`, `image->sonnet-5.5`, `ocr->sonnet-5.5`, so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
 
+Every pipeline (field accuracy, time per document, cost per 1,000 documents):
+
+| pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
+|---|---|---|---|---|
+| `image->haiku-5.5` | 100.0% | 98.2% | 1.5 | – |
+| `image->sonnet-5.5` | 99.7% | 99.1% | 2.1 | – |
+| `ocr->sonnet-5.5` | 95.1% | 78.7% | 8.1 | – |
+
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
 |---|---|---|---|---|---|
 | `haiku-5.5` | clean | 0.000 | 100.0% | 0 | 0 |
@@ -23,9 +31,9 @@
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `sonnet-5.5` | 5.3 | 175 (16) |
 | `ocr` | 6.1 | 29 (16) |
 | `haiku-5.5` | 4.3 | 136 (16) |
+| `sonnet-5.5` | 5.3 | 175 (16) |
 
 Fields missed most often (count over clean + degraded documents):
 
@@ -38,35 +46,30 @@ Fields missed most often (count over clean + degraded documents):
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->sonnet-5.5`: it is the most accurate pipeline on degraded pages (99.1%) and the fastest there (1.7 s/doc), and real-world input looks more like degraded phone photos than clean scans. `image->haiku-5.5` is a strong alternative on clean pages. None of the pipelines in the cost note has a price, so cost cannot decide the choice yet.
+Choose `image->sonnet-5.5`. It is the most accurate pipeline on degraded pages (99.1%) and stays near-perfect on clean pages (99.7%), so it is the most robust choice when input quality varies. `image->haiku-5.5` is a close alternative for clean scans. Costs are unknown for all three pipelines.
 
 ## What the facts say
-- **Reading images directly works best.** Both image pipelines beat the OCR route because the agent sees the page itself. A separate transcription step can only lose information.
-- **The self-hosted `ocr` reader degrades badly on phone-photo pages.** On degraded pages, compared with the Claude readers, it has:
-  - a higher CER median (0.044),
-  - lower number recall (92.6%),
-  - far more invented numbers (82).
-
-  Invented numbers are the most dangerous failure, because they look plausible in extracted fields.
-- **`ocr->sonnet-5.5` misses fields in a clear pattern.** Its misses cluster on `holiday_survey` fields (`activities`, `accommodation`, `pets`) and on `receipt.merchant`. This suggests the transcript loses layout cues such as checkboxes and stylised merchant headers. The agent cannot recover these from text alone.
-- **Both image pipelines miss `newsletter.new_fee`.** A miss shared by both models points to an ambiguous field definition or label, not to a reading problem. It is worth checking the field description and ground truth.
-- **No reader produced runaway pages.** The `ocr` reader also has the lowest throughput (29 pages/min at concurrency 16, against 175 for `sonnet-5.5`). Self-hosting brings no speed benefit here.
+- **Reading images directly beats transcribing first.** Both `image->` pipelines stay near-perfect. `ocr->sonnet-5.5` drops to 95.1% on clean pages and 78.7% on degraded ones. The loss comes from the `ocr` stage, not from the extractor.
+- **`ocr` breaks down on phone-photo pages.** On degraded pages its CER median rises to 0.044 and number recall falls to 90.8%. It also invents 85 numbers, against 7 for `haiku-5.5` and 3 for `sonnet-5.5`. Wrong digits that look plausible are the costliest kind of error in invoices and payslips.
+- **The transcript loses layout.** `ocr->sonnet-5.5` misses mostly `holiday_survey` fields (`activities`, `accommodation`, `pets`) and `receipt.merchant`. That pattern suggests checkboxes, form structure and header or logo text are lost in plain-text transcription.
+- **The image pipelines share one weak spot.** Both miss `newsletter.new_fee` (3 each). That points to an ambiguous field definition or ground-truth label rather than a reading problem.
+- **No runaway pages occurred for any reader.** The failures are degraded transcription quality, not output that runs out of control.
+- **The self-hosted model gives no speed advantage.** `ocr` has the slowest p50 (6.1 s/page) and by far the lowest throughput (29 pages/min, against 136 and 175).
 
 ## Recommendation
-
 | Goal | Choice | Why |
 |---|---|---|
-| Highest accuracy | `image->sonnet-5.5` (degraded); `image->haiku-5.5` (clean) | Most accurate on each page variant: 99.1% degraded, 100.0% clean |
-| Lowest latency | `image->haiku-5.5` (clean, 1.5 s/doc); `image->sonnet-5.5` (degraded, 1.7 s/doc) | Fastest pipeline on each variant |
-| Lowest cost | No pipeline can be named | No priced pipeline exists; cost is unknown for `image->haiku-5.5`, `image->sonnet-5.5` and `ocr->sonnet-5.5`. Set `price_per_mtok` and rerun before ranking. |
-| Checking / second opinion | Run `image->haiku-5.5` alongside `image->sonnet-5.5` and flag disagreements | Two independent strong readers with mostly different misses; not `ocr->sonnet-5.5`, given its invented numbers |
-| Self-host the OCR model | Only if data must stay on your own infrastructure | It is less accurate and slower than the image pipelines; any cost advantage is unproven without pricing |
+| Highest accuracy | `image->sonnet-5.5` | Best on degraded pages (99.1%) and 99.7% on clean pages. `image->haiku-5.5` leads on clean pages only (100.0%). |
+| Lowest latency | `image->haiku-5.5` (clean); `image->sonnet-5.5` (degraded) | Fastest per the key facts: 1.5 s/doc clean, 1.7 s/doc degraded. |
+| Lowest cost | Unknown; cannot rank | No pipeline has a price configured. Set `price_per_mtok` before deciding on cost. |
+| Checking / second opinion | Run `image->haiku-5.5` alongside `image->sonnet-5.5` | Both are highly accurate, and disagreements flag fields to review. Do not use `ocr->sonnet-5.5` here; its invented numbers would create noise. |
+| Self-host OCR | Only if images cannot leave your infrastructure, and only for clean pages | It is less accurate, slower and has lower throughput. Its cost is also unconfirmed. |
 
 ## Caveats
-- The benchmark uses 48 synthetic Norwegian documents. Real scans, other languages and handwriting may behave differently.
-- "Degraded" is a simulated phone photo. Real capture problems (glare, folds, skew) may hurt every reader more.
-- All models ran at temperature 1, so single-run results carry sampling noise. The small miss counts may not be stable.
-- The facts give no accuracy figures for `sonnet-5.5->sonnet-5.5`. It cannot be judged here.
+- The documents are synthetic: 48 Norwegian documents across 8 types. Real scans, handwriting and other languages may behave differently.
+- "Degraded" means simulated phone photos. Real-world damage such as glare, folds and skew may be harsher.
+- With small samples, a single missed field shifts accuracy. The near-100% scores among the `image->` pipelines are effectively tied.
+- Everything ran at temperature 1 with a single checkpoint of `ocr` (07dea832) on one instance type. Results may vary between runs and model versions.
 
 ## Setup
 
@@ -127,16 +130,15 @@ Transcription runs in this plan:
 - **1. Transcribe**: Every page image (clean and degraded) is sent to each transcriber, at several concurrency levels. This measures how well and how fast each backend reads.
 - **2. Extract**: The extraction agent pulls each document type's fields (totals, dates, names, checked boxes…) out of each pipeline's input. Scored field by field against the ground truth.
 - **3. Score**: Transcripts and fields are compared with the ground truth; latency and cost are aggregated.
-- **4. Summarise**: An LLM reads the setup and all result tables and writes the findings below. It is told to use only the numbers provided; check them against the tables.
+- **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers; every number it writes is checked against the facts, and any it cannot find there is flagged as unverified.
 
 ### Pipelines (the arrows)
 
-Pipeline names read `<what produces the input> -> agent`. The left side is what the extraction agent gets to read: `image` = the page images themselves, anything else = the text transcript produced by that backend in stage 1. The agent is the same model in every pipeline, so the pipelines differ only in the input it sees.
+Pipeline names read `<input> -> <extractor>`. The left side is what the extracting model gets to read: `image` = the page images themselves, anything else = the text transcript produced by that backend in stage 1. The right side is the model that extracts the fields: `agent` = the run's default extraction agent, otherwise the named backend.
 
 | pipeline | what the agent reads |
 |---|---|
 | `ocr->sonnet-5.5` | Two steps: the self-hosted OCR model (baidu/Unlimited-OCR) transcribes every page to text, then the extraction agent reads that text (not the images) and returns the fields. Extractor: `sonnet-5.5` (Claude Sonnet 5.5). |
-| `sonnet-5.5->sonnet-5.5` | Two steps: `sonnet-5.5` transcribes every page to text, then the extraction agent reads that text and returns the fields. Extractor: `sonnet-5.5` (Claude Sonnet 5.5). |
 | `image->sonnet-5.5` | One step: the extraction agent reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `sonnet-5.5` (Claude Sonnet 5.5). |
 | `image->haiku-5.5` | One step: the extraction agent reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `haiku-5.5` (Claude Haiku 5.5). |
 

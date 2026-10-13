@@ -18,10 +18,10 @@ PIPELINES = {
 }
 
 ARROW = (
-    "Pipeline names read `<what produces the input> -> agent`. The left side is what the extraction "
-    "agent gets to read: `image` = the page images themselves, anything else = the text transcript "
-    "produced by that backend in stage 1. The agent is the same model in every pipeline, so the "
-    "pipelines differ only in the input it sees."
+    "Pipeline names read `<input> -> <extractor>`. The left side is what the extracting model gets to "
+    "read: `image` = the page images themselves, anything else = the text transcript produced by that "
+    "backend in stage 1. The right side is the model that extracts the fields: `agent` = the run's "
+    "default extraction agent, otherwise the named backend."
 )
 
 STAGES = [
@@ -37,9 +37,10 @@ STAGES = [
     ),
     ("3. Score", "Transcripts and fields are compared with the ground truth; latency and cost are aggregated."),
     (
-        "4. Summarise",
-        "An LLM reads the setup and all result tables and writes the findings below. It is told to "
-        "use only the numbers provided; check them against the tables.",
+        "4. Recommend",
+        "An LLM reads the computed key facts and a short description of the setup, and writes a "
+        "recommendation. It may not compute numbers; every number it writes is checked against the "
+        "facts, and any it cannot find there is flagged as unverified.",
     ),
 ]
 

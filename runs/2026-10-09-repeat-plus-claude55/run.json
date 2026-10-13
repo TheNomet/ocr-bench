@@ -297,12 +297,12 @@
    "seconds": 198.8
   },
   "score": {
-   "finished": "2026-10-09T13:38:58",
-   "seconds": 0.5
+   "finished": "2026-10-13T08:38:41",
+   "seconds": 0.8
   },
   "summarize": {
-   "finished": "2026-10-09T13:39:17",
-   "seconds": 18.3
+   "finished": "2026-10-13T08:48:32",
+   "seconds": 16.1
   }
  },
  "plan_description": "Re-check of the OCR model on the same GPU, and the new Claude Sonnet 5.5 and Haiku 5.5. The Claude 4.5 models were also re-run as a reproducibility check; that comparison is in Compare runs.",

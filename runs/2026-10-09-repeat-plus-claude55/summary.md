@@ -1,30 +1,25 @@
 ## Bottom line
-Choose `image->sonnet-5.5`: it is the most accurate pipeline on degraded pages (99.1%) and the fastest there (1.7 s/doc), and real-world input looks more like degraded phone photos than clean scans. `image->haiku-5.5` is a strong alternative on clean pages. None of the pipelines in the cost note has a price, so cost cannot decide the choice yet.
+Choose `image->sonnet-5.5`. It is the most accurate pipeline on degraded pages (99.1%) and stays near-perfect on clean pages (99.7%), so it is the most robust choice when input quality varies. `image->haiku-5.5` is a close alternative for clean scans. Costs are unknown for all three pipelines.
 
 ## What the facts say
-- **Reading images directly works best.** Both image pipelines beat the OCR route because the agent sees the page itself. A separate transcription step can only lose information.
-- **The self-hosted `ocr` reader degrades badly on phone-photo pages.** On degraded pages, compared with the Claude readers, it has:
-  - a higher CER median (0.044),
-  - lower number recall (92.6%),
-  - far more invented numbers (82).
-
-  Invented numbers are the most dangerous failure, because they look plausible in extracted fields.
-- **`ocr->sonnet-5.5` misses fields in a clear pattern.** Its misses cluster on `holiday_survey` fields (`activities`, `accommodation`, `pets`) and on `receipt.merchant`. This suggests the transcript loses layout cues such as checkboxes and stylised merchant headers. The agent cannot recover these from text alone.
-- **Both image pipelines miss `newsletter.new_fee`.** A miss shared by both models points to an ambiguous field definition or label, not to a reading problem. It is worth checking the field description and ground truth.
-- **No reader produced runaway pages.** The `ocr` reader also has the lowest throughput (29 pages/min at concurrency 16, against 175 for `sonnet-5.5`). Self-hosting brings no speed benefit here.
+- **Reading images directly beats transcribing first.** Both `image->` pipelines stay near-perfect. `ocr->sonnet-5.5` drops to 95.1% on clean pages and 78.7% on degraded ones. The loss comes from the `ocr` stage, not from the extractor.
+- **`ocr` breaks down on phone-photo pages.** On degraded pages its CER median rises to 0.044 and number recall falls to 90.8%. It also invents 85 numbers, against 7 for `haiku-5.5` and 3 for `sonnet-5.5`. Wrong digits that look plausible are the costliest kind of error in invoices and payslips.
+- **The transcript loses layout.** `ocr->sonnet-5.5` misses mostly `holiday_survey` fields (`activities`, `accommodation`, `pets`) and `receipt.merchant`. That pattern suggests checkboxes, form structure and header or logo text are lost in plain-text transcription.
+- **The image pipelines share one weak spot.** Both miss `newsletter.new_fee` (3 each). That points to an ambiguous field definition or ground-truth label rather than a reading problem.
+- **No runaway pages occurred for any reader.** The failures are degraded transcription quality, not output that runs out of control.
+- **The self-hosted model gives no speed advantage.** `ocr` has the slowest p50 (6.1 s/page) and by far the lowest throughput (29 pages/min, against 136 and 175).
 
 ## Recommendation
-
 | Goal | Choice | Why |
 |---|---|---|
-| Highest accuracy | `image->sonnet-5.5` (degraded); `image->haiku-5.5` (clean) | Most accurate on each page variant: 99.1% degraded, 100.0% clean |
-| Lowest latency | `image->haiku-5.5` (clean, 1.5 s/doc); `image->sonnet-5.5` (degraded, 1.7 s/doc) | Fastest pipeline on each variant |
-| Lowest cost | No pipeline can be named | No priced pipeline exists; cost is unknown for `image->haiku-5.5`, `image->sonnet-5.5` and `ocr->sonnet-5.5`. Set `price_per_mtok` and rerun before ranking. |
-| Checking / second opinion | Run `image->haiku-5.5` alongside `image->sonnet-5.5` and flag disagreements | Two independent strong readers with mostly different misses; not `ocr->sonnet-5.5`, given its invented numbers |
-| Self-host the OCR model | Only if data must stay on your own infrastructure | It is less accurate and slower than the image pipelines; any cost advantage is unproven without pricing |
+| Highest accuracy | `image->sonnet-5.5` | Best on degraded pages (99.1%) and 99.7% on clean pages. `image->haiku-5.5` leads on clean pages only (100.0%). |
+| Lowest latency | `image->haiku-5.5` (clean); `image->sonnet-5.5` (degraded) | Fastest per the key facts: 1.5 s/doc clean, 1.7 s/doc degraded. |
+| Lowest cost | Unknown; cannot rank | No pipeline has a price configured. Set `price_per_mtok` before deciding on cost. |
+| Checking / second opinion | Run `image->haiku-5.5` alongside `image->sonnet-5.5` | Both are highly accurate, and disagreements flag fields to review. Do not use `ocr->sonnet-5.5` here; its invented numbers would create noise. |
+| Self-host OCR | Only if images cannot leave your infrastructure, and only for clean pages | It is less accurate, slower and has lower throughput. Its cost is also unconfirmed. |
 
 ## Caveats
-- The benchmark uses 48 synthetic Norwegian documents. Real scans, other languages and handwriting may behave differently.
-- "Degraded" is a simulated phone photo. Real capture problems (glare, folds, skew) may hurt every reader more.
-- All models ran at temperature 1, so single-run results carry sampling noise. The small miss counts may not be stable.
-- The facts give no accuracy figures for `sonnet-5.5->sonnet-5.5`. It cannot be judged here.
+- The documents are synthetic: 48 Norwegian documents across 8 types. Real scans, handwriting and other languages may behave differently.
+- "Degraded" means simulated phone photos. Real-world damage such as glare, folds and skew may be harsher.
+- With small samples, a single missed field shifts accuracy. The near-100% scores among the `image->` pipelines are effectively tied.
+- Everything ran at temperature 1 with a single checkpoint of `ocr` (07dea832) on one instance type. Results may vary between runs and model versions.

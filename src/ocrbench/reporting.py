@@ -403,14 +403,14 @@ def focused_meta(meta: dict) -> dict:
     """run.json as a run page should describe it: hidden backends removed from transcribers and pipelines,
     and the default agent replaced by a shown extractor if it was hidden."""
     hidden = focus_backends(meta)
-    if not hidden:
-        return meta
     ex = dict(meta.get("extraction") or {})
     agents = ex.get("agents") or {}
     keep = [
         p
         for p in ex.get("pipelines", [])
-        if p.split("->")[0] not in hidden and agents.get(p, ex.get("agent")) not in hidden
+        if p.split("->")[0] not in hidden
+        and agents.get(p, ex.get("agent")) not in hidden
+        and not explain.same_model(meta, p)  # hidden everywhere: one model reading and extracting
     ]
     ex["pipelines"] = keep
     if ex.get("agent") in hidden:

@@ -129,6 +129,25 @@ def to_md(f: dict) -> str:
             + ", so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those "
             "backends to include them.",
         ]
+    names = sorted({n for v in p.values() for n in v.get("all", {})})
+    if names:
+        out += [
+            "",
+            "Every pipeline (field accuracy, time per document, cost per 1,000 documents):",
+            "",
+            "| pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |",
+            "|---|---|---|---|---|",
+        ]
+        for n in names:
+            c, dg = (
+                (p.get("clean") or {}).get("all", {}).get(n, {}),
+                (p.get("degraded") or {}).get("all", {}).get(n, {}),
+            )
+            sec = c.get("end_to_end_latency_s")
+            out.append(
+                f"| `{n}` | {pct(c.get('field_accuracy'))} | {pct(dg.get('field_accuracy'))} | "
+                f"{'–' if sec is None else f'{sec:.1f}'} | {usd(c.get('cost_per_1k_docs_usd'))} |"
+            )
     out += [
         "",
         "| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |",
