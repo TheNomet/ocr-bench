@@ -23,9 +23,9 @@
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `ocr` | 6.1 | 29 (16) |
-| `haiku-5.5` | 4.3 | 136 (16) |
 | `sonnet-5.5` | 5.3 | 175 (16) |
+| `haiku-5.5` | 4.3 | 136 (16) |
+| `ocr` | 6.1 | 29 (16) |
 
 Fields missed most often (count over clean + degraded documents):
 
@@ -38,29 +38,35 @@ Fields missed most often (count over clean + degraded documents):
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->sonnet-5.5` for accuracy. It is the most accurate pipeline on degraded pages (99.1%), and its reader barely degrades on phone photos. Its cost is unknown because no price is configured, so if a priced, predictable budget matters, `image->haiku-4.5` is the cheapest and fastest pipeline.
+Choose `image->sonnet-5.5`: it is the most accurate pipeline on degraded pages (99.1%) and the fastest there (1.7 s/doc), and real-world input looks more like degraded phone photos than clean scans. `image->haiku-5.5` is a strong alternative on clean pages. None of the pipelines in the cost note has a price, so cost cannot decide the choice yet.
 
 ## What the facts say
-- **Degradation separates the readers.** `sonnet-5.5` and `haiku-5.5` stay near-perfect on degraded pages. `sonnet-4.5` and `haiku-4.5` lose number recall and invent many numbers. Only these two older readers produced runaway pages, so input quality matters far more for them.
-- **The self-hosted `ocr` falls in the middle.** On degraded pages it beats `sonnet-4.5` and `haiku-4.5` on number recall and runaway pages. It is clearly worse than the 5.5 readers.
-- **OCR pipelines miss layout-dependent fields.** `ocr->agent` and `ocr->sonnet-5.5` miss nearly the same fields: `holiday_survey.activities`, `.accommodation`, `.pets` and `receipt.merchant`. Swapping in a stronger extractor didn't fix this, so the information (likely checkboxes and logo-style merchant names) is lost at the transcription step.
-- **One field is missed by every image pipeline.** `newsletter.new_fee` appears in all of their missed lists. That points to an ambiguous field definition or document design rather than a reading failure, and it is worth reviewing the field description.
-- **Self-hosting is only cheap at sustained volume.** It undercuts `sonnet-4.5` transcription above ~90 pages/hour and `haiku-4.5` above ~307 pages/hour, because it bills $1.49/hour even when idle. Its peak throughput at concurrency was also the lowest of all readers.
+- **Reading images directly works best.** Both image pipelines beat the OCR route because the agent sees the page itself. A separate transcription step can only lose information.
+- **The self-hosted `ocr` reader degrades badly on phone-photo pages.** On degraded pages, compared with the Claude readers, it has:
+  - a higher CER median (0.044),
+  - lower number recall (92.6%),
+  - far more invented numbers (82).
+
+  Invented numbers are the most dangerous failure, because they look plausible in extracted fields.
+- **`ocr->sonnet-5.5` misses fields in a clear pattern.** Its misses cluster on `holiday_survey` fields (`activities`, `accommodation`, `pets`) and on `receipt.merchant`. This suggests the transcript loses layout cues such as checkboxes and stylised merchant headers. The agent cannot recover these from text alone.
+- **Both image pipelines miss `newsletter.new_fee`.** A miss shared by both models points to an ambiguous field definition or label, not to a reading problem. It is worth checking the field description and ground truth.
+- **No reader produced runaway pages.** The `ocr` reader also has the lowest throughput (29 pages/min at concurrency 16, against 175 for `sonnet-5.5`). Self-hosting brings no speed benefit here.
 
 ## Recommendation
+
 | Goal | Choice | Why |
 |---|---|---|
-| Highest accuracy | `image->sonnet-5.5` (degraded); `image->haiku-5.5` (clean, 100.0%) | Most accurate in the key facts; cost unknown (unpriced) |
-| Lowest latency | `image->haiku-4.5` | Fastest pipeline, 1.3 s/doc |
-| Lowest cost | `image->haiku-4.5` | Cheapest priced pipeline; the 5.5 pipelines are unpriced, not cheap |
-| Checking / second opinion | `image->haiku-5.5` alongside `image->sonnet-5.5` | Both readers are strong but differ slightly in missed fields; disagreements flag fields for review |
-| Self-hosting `ocr` | Only with sustained volume above ~307 pages/hour, or a hard data-residency requirement | Idle cost, lower throughput, and systematic misses on holiday_survey and receipt fields |
+| Highest accuracy | `image->sonnet-5.5` (degraded); `image->haiku-5.5` (clean) | Most accurate on each page variant: 99.1% degraded, 100.0% clean |
+| Lowest latency | `image->haiku-5.5` (clean, 1.5 s/doc); `image->sonnet-5.5` (degraded, 1.7 s/doc) | Fastest pipeline on each variant |
+| Lowest cost | No pipeline can be named | No priced pipeline exists; cost is unknown for `image->haiku-5.5`, `image->sonnet-5.5` and `ocr->sonnet-5.5`. Set `price_per_mtok` and rerun before ranking. |
+| Checking / second opinion | Run `image->haiku-5.5` alongside `image->sonnet-5.5` and flag disagreements | Two independent strong readers with mostly different misses; not `ocr->sonnet-5.5`, given its invented numbers |
+| Self-host the OCR model | Only if data must stay on your own infrastructure | It is less accurate and slower than the image pipelines; any cost advantage is unproven without pricing |
 
 ## Caveats
-- The data is 48 synthetic Norwegian documents. Real scans, handwriting and other languages may behave differently.
-- The 5.5 models ran at temperature 1, so their results may vary between runs. Repeat the runs before committing.
-- The "degraded" variant is a simulated phone photo and may not match real capture artefacts.
-- Cost rankings will change once `price_per_mtok` is set for `sonnet-5.5` and `haiku-5.5`.
+- The benchmark uses 48 synthetic Norwegian documents. Real scans, other languages and handwriting may behave differently.
+- "Degraded" is a simulated phone photo. Real capture problems (glare, folds, skew) may hurt every reader more.
+- All models ran at temperature 1, so single-run results carry sampling noise. The small miss counts may not be stable.
+- The facts give no accuracy figures for `sonnet-5.5->sonnet-5.5`. It cannot be judged here.
 
 ## Setup
 
