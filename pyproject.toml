@@ -41,3 +41,5 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Chrome rendering tests are slow and need a working headless Chrome: `just test-all` runs them.
+addopts = "-m 'not chrome'"

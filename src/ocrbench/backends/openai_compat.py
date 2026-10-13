@@ -156,7 +156,10 @@ class OpenAICompatBackend(Backend):
         }
         for attempt in (1, 2):
             headers = {**self.headers, **await self._auth(force=attempt == 2)}
-            r = await self.client.post(self.url, json=body, headers=headers)
+            try:
+                r = await self.client.post(self.url, json=body, headers=headers)
+            except httpx.TransportError as e:  # connect/read timeouts, resets: retryable
+                raise HTTPError(503, f"{type(e).__name__}: {e}") from e
             if r.status_code == 401 and attempt == 1 and self.kms_auth:
                 continue
             break

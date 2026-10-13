@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from datetime import datetime
 from pathlib import Path
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 
 from .config import Config
 
@@ -18,34 +20,59 @@ SM_POOL_NOTE = (
 
 
 # ---------------------------------------------------------------------------- S3
+# Files are uploaded in one part (up to 256 MB), so an object's ETag is the MD5 of its content and a sync can
+# compare content, not just size. Larger (multipart) objects fall back to comparing size.
+_SINGLE_PART = TransferConfig(multipart_threshold=256 * 1024 * 1024)
+
+
+def _md5(path: Path) -> str:
+    h = hashlib.md5()  # noqa: S324 — content fingerprint matching S3 ETags, not security
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _same(path: Path, obj: dict) -> bool:
+    if not path.exists() or path.stat().st_size != obj["Size"]:
+        return False
+    etag = obj["ETag"].strip('"')
+    return "-" in etag or _md5(path) == etag
+
+
+def _objects(s3, bucket: str, prefix: str) -> dict[str, dict]:
+    out = {}
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix.rstrip("/") + "/"):
+        for o in page.get("Contents", []):
+            out[o["Key"]] = o
+    return out
+
+
 def s3_sync_up(local: Path, bucket: str, prefix: str) -> int:
     s3 = boto3.client("s3")
-    existing = {}
-    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix + "/"):
-        for o in page.get("Contents", []):
-            existing[o["Key"]] = o["Size"]
+    existing = _objects(s3, bucket, prefix)
     n = 0
     for f in sorted(local.rglob("*")):
         if not f.is_file():
             continue
         key = f"{prefix}/{f.relative_to(local).as_posix()}"
-        if existing.get(key) != f.stat().st_size:
-            s3.upload_file(str(f), bucket, key)
-            n += 1
+        if key in existing and _same(f, existing[key]):
+            continue
+        s3.upload_file(str(f), bucket, key, Config=_SINGLE_PART)
+        n += 1
     return n
 
 
 def s3_sync_down(bucket: str, prefix: str, local: Path) -> int:
     s3 = boto3.client("s3")
     n = 0
-    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix.rstrip("/") + "/"):
-        for o in page.get("Contents", []):
-            dst = local / o["Key"][len(prefix.rstrip("/")) + 1 :]
-            if dst.exists() and dst.stat().st_size == o["Size"]:
-                continue
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            s3.download_file(bucket, o["Key"], str(dst))
-            n += 1
+    for key, o in _objects(s3, bucket, prefix).items():
+        dst = local / key[len(prefix.rstrip("/")) + 1 :]
+        if _same(dst, o):
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        s3.download_file(bucket, key, str(dst))
+        n += 1
     return n
 
 

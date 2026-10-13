@@ -1,4 +1,3 @@
-<!-- LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts; 2205 in / 1709 out tokens; unverified numbers: none -->
 ## Bottom line
 Choose `image->agent`. It is the most accurate, cheapest and fastest pipeline on both clean pages (97.0%, $7.44/1k docs, 3.4 s/doc) and degraded pages (83.0%, $6.75/1k docs, 3.6 s/doc). A separate OCR step adds a stage without adding measured value.
 

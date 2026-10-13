@@ -203,19 +203,29 @@ def results_md(scores: dict) -> str:
     return "\n".join(out)
 
 
-def unverified(author: str) -> list[str]:
-    m = re.search(r"unverified numbers: (.*)$", author or "")
-    return [] if not m or m.group(1).strip() == "none" else [x.strip() for x in m.group(1).split(",")]
+def read_summary(run_dir: Path) -> tuple[str, dict]:
+    """(markdown body, info) of the LLM recommendation; info from summary.json.
 
-
-def read_summary(run_dir: Path) -> tuple[str, str]:
-    """(body, author line) of summary.md, or ("", "")."""
+    Older runs kept the info in an HTML comment on the first line of summary.md; that is still read.
+    """
     p = run_dir / "summary.md"
     if not p.exists():
-        return "", ""
+        return "", {}
     text = p.read_text(encoding="utf-8")
-    m = re.match(r"<!--\s*(.*?)\s*-->\n?", text)
-    return (text[m.end() :] if m else text).strip(), (m.group(1) if m else "")
+    info_p = run_dir / "summary.json"
+    if info_p.exists():
+        return text.strip(), json.loads(info_p.read_text(encoding="utf-8"))
+    m = re.match(r"<!--\s*LLM comment by (\S+) \((.*?)\).*?unverified numbers: (.*?)\s*-->\n?", text)
+    if not m:
+        return text.strip(), {}
+    bad = [] if m.group(3).strip() == "none" else [x.strip() for x in m.group(3).split(",")]
+    return text[m.end() :].strip(), {"backend": m.group(1), "model": m.group(2), "unverified_numbers": bad}
+
+
+def author_line(info: dict) -> str:
+    if not info:
+        return "LLM-written"
+    return f"LLM comment by {info.get('backend')} ({info.get('model')}) on the computed key facts"
 
 
 def headline(meta: dict, scores: dict) -> dict:
@@ -249,17 +259,14 @@ def headline(meta: dict, scores: dict) -> dict:
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     scores = visible(meta, scores)
     meta = focused_meta(meta)
-    body, author = read_summary(run_dir)
+    body, info = read_summary(run_dir)
+    bad = info.get("unverified_numbers") or []
     findings = (
-        ["## Findings", "", f"*{author.split(';')[0]}. It interprets the key facts above.*", ""]
-        + (
-            [f"> **Unverified numbers** (not found in the key facts): {', '.join(unverified(author))}", ""]
-            if unverified(author)
-            else []
-        )
+        ["## Recommendation", "", f"*{author_line(info)}. It interprets the key facts above.*", ""]
+        + ([f"> **Unverified numbers** (not found in the key facts): {', '.join(bad)}", ""] if bad else [])
         + [body]
         if body
-        else ["## Findings", "", "*No LLM summary yet. Run the `summarize` stage.*"]
+        else ["## Recommendation", "", "*No LLM recommendation yet. Run the `summarize` stage.*"]
     )
     from .facts import compute, to_md
 
@@ -276,20 +283,21 @@ def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
 
 
 def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
+    from .fileio import write_if_changed
     from .report import build_site
 
-    (run_dir / "scores.json").write_text(json.dumps(scores, ensure_ascii=False, indent=1), encoding="utf-8")
-    (run_dir / "report.md").write_text(report_md(meta, scores, run_dir), encoding="utf-8")
+    write_if_changed(run_dir / "scores.json", json.dumps(scores, ensure_ascii=False, indent=1))
+    write_if_changed(run_dir / "report.md", report_md(meta, scores, run_dir))
     from .facts import compute, to_md
 
-    body, author = read_summary(run_dir)
+    body, info = read_summary(run_dir)
     vis = visible(meta, scores)
     meta = focused_meta(meta)
     sections = {
         "facts_md": to_md(compute(meta, vis)),
         "findings": body,
-        "findings_author": author.split(";")[0],
-        "findings_unverified": unverified(author),
+        "findings_author": author_line(info),
+        "findings_unverified": info.get("unverified_numbers") or [],
         "setup_md": setup_md(meta),
         "plan_description": meta.get("plan_description", ""),
         "hide_backends": sorted(focus_backends(meta)),

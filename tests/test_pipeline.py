@@ -90,20 +90,7 @@ class GroundTruthBackend:
         return Response(json.dumps(json.loads(f.read_text())["fields"]), 10, 5)
 
 
-@pytest.fixture(scope="module")
-def tiny_docs(tmp_path_factory):
-    from ocrbench.docgen.render import find_chrome
-
-    if not find_chrome():
-        pytest.skip("Chrome not available")
-    from ocrbench.docgen import generate
-
-    d = tmp_path_factory.mktemp("docs")
-    generate(d, per_type=1, types=["invoice", "holiday_survey"])
-    return d
-
-
-def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
+def test_end_to_end_run_folder(fake_docs, tmp_path, monkeypatch):
     """A full run in runs/<id>/: transcribe -> extract -> score -> summarize, then report + experiments index."""
     from ocrbench import cli, extract, runs, summarize, transcribe
 
@@ -116,7 +103,7 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
     fake = {}
 
     def get(c, n):
-        return fake.setdefault(n, GroundTruthBackend(n, tiny_docs))
+        return fake.setdefault(n, GroundTruthBackend(n, fake_docs))
 
     monkeypatch.setattr(transcribe, "get_backend", get)
     monkeypatch.setattr(extract, "get_backend", get)
@@ -126,11 +113,11 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
             assert "## Bottom line" in req.prompt and "# Key facts" in req.prompt and "cheapest pipeline" in req.prompt
             return Response("## Bottom line\nUse image->agent, 1234 is made up.\n\n## Caveats\nx", 900, 40)
 
-    monkeypatch.setattr(summarize, "get_backend", lambda c, n: Writer(n, tiny_docs))
+    monkeypatch.setattr(summarize, "get_backend", lambda c, n: Writer(n, fake_docs))
     monkeypatch.setattr(runs, "record_endpoint", lambda c, d: None)
 
     class A:
-        plan, id, stages, docs = "t", None, "all", str(tiny_docs)
+        plan, id, stages, docs = "t", None, "all", str(fake_docs)
 
     cli.cmd_run(cfg, A())
     (d,) = (tmp_path / "runs").iterdir()
@@ -141,7 +128,7 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
     assert all(a["field_accuracy"] == 1 for a in s["extraction"]["aggregate"])
     report = (d / "report.md").read_text()
     for needle in (
-        "## Findings",
+        "## Recommendation",
         "LLM-written",
         "## Setup",
         "### GPU",
@@ -164,7 +151,7 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
 
     # resume: only re-summarize
     class B:
-        plan, id, stages, docs = None, meta["id"], "summarize", str(tiny_docs)
+        plan, id, stages, docs = None, meta["id"], "summarize", str(fake_docs)
 
     cli.cmd_run(cfg, B())
     assert "summarize" in runs.load(d)["stages"]
@@ -173,9 +160,13 @@ def test_end_to_end_run_folder(tiny_docs, tmp_path, monkeypatch):
 def test_unverified_numbers():
     from ocrbench.summarize import unverified_numbers
 
-    src = "accuracy 98.8% at $7.44/1k docs, ~307 pages/hour, 1 686 pages"
-    assert unverified_numbers("98.8% and 99% and $7.44 and 307 and 1,686", src) == []
-    assert unverified_numbers("costs 3x more, 280 pages/hour", src) == ["280"]
+    src = "accuracy 98.8% at $7.44/1k docs, ~307 pages/hour, 1 686 pages, CER 0.044"
+    assert unverified_numbers("98.8% and 99% and $7.44 and 307 and 1,686 and 1 686 and 0.04", src) == []
+    assert unverified_numbers("costs 3x more, 280 pages/hour", src) == ["280", "3"]
+    assert unverified_numbers("4 runs, 2 bullets", src) == []  # small counts are not claims
+    assert unverified_numbers("98,8 %", src) == []  # Norwegian decimal comma
+    assert unverified_numbers("16\n32", "16 and 32") == []  # a newline never joins numbers
+    assert unverified_numbers("99.5%", src) == ["99.5"]  # not a rounding of 98.8
 
 
 def test_temperature_override():
@@ -190,7 +181,7 @@ def test_temperature_override():
     assert b2.temperature(Request("s", "p")) is None
 
 
-def test_named_extractor_pipeline(tiny_docs, tmp_path, monkeypatch):
+def test_named_extractor_pipeline(fake_docs, tmp_path, monkeypatch):
     import asyncio
 
     from ocrbench import extract
@@ -200,10 +191,10 @@ def test_named_extractor_pipeline(tiny_docs, tmp_path, monkeypatch):
 
     def get(c, n):
         used.append(n)
-        return GroundTruthBackend(n, tiny_docs)
+        return GroundTruthBackend(n, fake_docs)
 
     monkeypatch.setattr(extract, "get_backend", get)
-    asyncio.run(extract.run(cfg, tiny_docs, tmp_path, pipelines=["image->agent", "image->bedrock-haiku"]))
+    asyncio.run(extract.run(cfg, fake_docs, tmp_path, pipelines=["image->agent", "image->bedrock-haiku"]))
     recs = [json.loads(x) for x in (tmp_path / "extractions.jsonl").read_text().splitlines()]
     assert {r["agent"] for r in recs} == {cfg["bench"]["extraction"]["agent"], "bedrock-haiku"}
     assert sorted(set(used)) == sorted({cfg["bench"]["extraction"]["agent"], "bedrock-haiku"})

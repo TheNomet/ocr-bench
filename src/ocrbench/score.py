@@ -1,4 +1,18 @@
-"""Score transcripts and extractions against ground truth; aggregate speed and cost."""
+"""Stage 3: score a run folder against its ground truth. A pure function of runs/<id>/.
+
+Everything comes from the run itself: documents (runs/<id>/docs), records (*.jsonl), and the setup
+in run.json (prices, GPU price, post-processing). The live config is never consulted, so a run scores
+the same on any machine, today or later.
+
+Choices that affect comparisons, all reported in scores["method"]:
+- Failed requests count. A page with no successful transcript scores CER=1 and recall 0; an extraction
+  that failed (or had no transcript to read) scores 0 on every field. `coverage` shows how many succeeded.
+- One transcript per (backend, page, variant) is scored: the successful one from the lowest-concurrency run,
+  the latest if there are several (so a deliberate re-run replaces it).
+- Per-page cost of a self-hosted model = GPU price per hour / pages per hour at its best *sustained*
+  throughput (the fastest run with <=1% errors), i.e. assuming the GPU is kept busy. The cost at
+  concurrency 1 is reported next to it.
+"""
 
 from __future__ import annotations
 
@@ -7,17 +21,21 @@ import re
 import statistics as st
 import unicodedata
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 
+from rapidfuzz.distance import Levenshtein
+
 from .backends.vllm_ocr import strip_grounding
-from .config import Config
-from .transcribe import load_manifest
 
 _TAGS = re.compile(r"</?[a-zA-Z][^>]*>")
-_NUM = re.compile(r"\d[\d.,:/\-]*\d|\d")
+# One number token: digits joined by . , : / - (dates, decimals, account numbers). Spaces separate tokens;
+# numbers printed with space separators ("1 250,00", "455 46 959") are matched as token sequences.
+_TOK = re.compile(r"\d+(?:[.,:/\-]\d+)*")
+RUNAWAY_RATIO = 3.0  # output more than 3x the page length = repetition loop
+SUSTAINED_MAX_ERROR_RATE = 0.01
 
 
+# --------------------------------------------------------------------------- text metrics
 def normalise(text: str) -> str:
     """Compare content, not formatting: drop markdown/HTML syntax, unify whitespace and checkbox glyphs."""
     t = unicodedata.normalize("NFC", text or "")
@@ -30,29 +48,35 @@ def normalise(text: str) -> str:
 
 
 def levenshtein(a, b) -> int:
-    try:
-        from rapidfuzz.distance import Levenshtein
+    return Levenshtein.distance(a, b)  # works on str and on lists of words
 
-        return Levenshtein.distance(a, b)  # works on str and on lists of words
-    except ImportError:
-        pass
-    if len(a) < len(b):
-        a, b = b, a
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
+
+def _tokens(text: str) -> list[tuple[str, int, int]]:
+    return [(m.group(), m.start(), m.end()) for m in _TOK.finditer(text)]
+
+
+def number_found(number: str, text: str, toks: list[tuple[str, int, int]] | None = None) -> bool:
+    """`number` (e.g. "1 250,00") appears in `text` as whole tokens: "12" is not found in "1234"."""
+    want = [t for t, _, _ in _tokens(number)]
+    if not want:
+        return False
+    toks = toks if toks is not None else _tokens(text)
+    for i in range(len(toks) - len(want) + 1):
+        if [t for t, _, _ in toks[i : i + len(want)]] != want:
+            continue
+        gaps = [text[toks[j][2] : toks[j + 1][1]] for j in range(i, i + len(want) - 1)]
+        if all(g.strip(" ") == "" and g for g in gaps):  # consecutive, separated only by spaces
+            return True
+    return False
 
 
 def page_metrics(gt_text: str, gt_numbers: list[str], hyp: str) -> dict:
     g, h = normalise(gt_text), normalise(hyp)
     gw, hw = g.split(), h.split()
-    nh, ng = re.sub(r"\s", "", h), re.sub(r"\s", "", g)
-    missing = [n for n in gt_numbers if re.sub(r"\s", "", n) not in nh]
-    halluc = [t for t in _NUM.findall(h) if len(t) >= 3 and t not in ng]
+    htoks = _tokens(h)
+    missing = [n for n in gt_numbers if not number_found(n, h, htoks)]
+    gt_toks = Counter(t for t, _, _ in _tokens(g))
+    halluc = [t for t, _, _ in htoks if sum(c.isdigit() for c in t) >= 3 and t not in gt_toks]
     gc, hc = Counter(w.casefold() for w in gw), Counter(w.casefold() for w in hw)
     overlap = sum((gc & hc).values())
     return {
@@ -70,10 +94,32 @@ def page_metrics(gt_text: str, gt_numbers: list[str], hyp: str) -> dict:
     }
 
 
+def failed_page_metrics(gt_numbers: list[str]) -> dict:
+    """A page with no successful transcript: worst score, so failures can't improve a backend's numbers."""
+    return {
+        "cer": 1.0,
+        "wer": 1.0,
+        "word_recall": 0.0,
+        "word_precision": 0.0,
+        "num_recall": 0.0,
+        "num_missing": len(gt_numbers),
+        "missing_examples": gt_numbers[:5],
+        "num_hallucinated": 0,
+        "hallucinated_examples": [],
+        "len_ratio": 0.0,
+        "clean_text": "",
+    }
+
+
+# --------------------------------------------------------------------------- field metrics
+_CURRENCY = re.compile(r"^(?:kr|nok)\.?\s*(?=[\d\-−])|\s*(?:kr|nok)\.?$|,-$")
+
+
 def norm_value(v) -> str:
     s = unicodedata.normalize("NFC", str(v)).replace("\u00a0", " ").replace("\u202f", " ")
-    s = re.sub(r"\s+", " ", s).strip().strip(".,;:").casefold()
-    return re.sub(r"^(kr|nok)\s*", "", s)
+    s = re.sub(r"\s+", " ", s).strip().casefold()
+    s = _CURRENCY.sub("", s).strip()
+    return s.strip(".;:").strip()
 
 
 def field_correct(truth, pred) -> bool:
@@ -85,8 +131,11 @@ def field_correct(truth, pred) -> bool:
     return norm_value(truth) == norm_value(pred if not isinstance(pred, list) else " ".join(map(str, pred)))
 
 
+# --------------------------------------------------------------------------- helpers
 def _jsonl(path: Path) -> list[dict]:
-    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()] if path.exists() else []
+    if not path.exists():
+        return []
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
 def _pct(xs: list[float], p: float) -> float | None:
@@ -98,19 +147,24 @@ def _pct(xs: list[float], p: float) -> float | None:
     return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
 
 
-def _price(cfg: Config, backend: str) -> dict | None:
-    return None if backend == "ocr" else cfg["llm_backends"].get(backend, {}).get("price_per_mtok")
+def _token_cost(price: dict | None, pt: float, ct: float) -> float | None:
+    if not price:
+        return None
+    return (pt * price.get("input", 0) + ct * price.get("output", 0)) / 1e6
 
 
-def score(cfg: Config, docs: Path, run_dir: Path, tag: str, gpu_hour: float | None = None) -> dict:
-    manifest = {d["id"]: d for d in load_manifest(docs)}
-    transcripts = _jsonl(run_dir / "transcripts.jsonl")
-    runs = _jsonl(run_dir / "runs.jsonl")
-    strip = bool(cfg["ocr"].get("strip_grounding_tokens", True))
-    gpu_hour = gpu_hour or cfg["ocr"].get("sagemaker", {}).get("price_per_hour_usd")
+def _read(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
-    # ---- speed / cost per run ----
-    speed = []
+
+# --------------------------------------------------------------------------- score
+def speed_rows(meta: dict, runs: list[dict], transcripts: list[dict]) -> list[dict]:
+    prices = {k: v.get("price_per_mtok") for k, v in (meta.get("llm_backends") or {}).items()}
+    gpu_hour = (meta.get("ocr") or {}).get("price_per_hour_usd")
+    rows = []
     for run in runs:
         rs = [r for r in transcripts if r["run_id"] == run["run_id"] and r["backend"] == run["backend"]]
         ok = [r for r in rs if r["ok"]]
@@ -118,14 +172,10 @@ def score(cfg: Config, docs: Path, run_dir: Path, tag: str, gpu_hour: float | No
         pt = st.mean([r["prompt_tokens"] for r in ok if r.get("prompt_tokens")] or [0])
         ct = st.mean([r["completion_tokens"] for r in ok if r.get("completion_tokens")] or [0])
         ppm = len(ok) / run["wall_s"] * 60 if run["wall_s"] else 0
-        price = _price(cfg, run["backend"])
-        if price:
-            cost = (pt * price.get("input", 0) + ct * price.get("output", 0)) / 1e6 * 1000
-        elif run["backend"] == "ocr" and gpu_hour and ppm:
-            cost = gpu_hour / (ppm * 60) * 1000  # at this run's throughput, GPU fully used
-        else:
-            cost = None
-        speed.append(
+        per_page = _token_cost(prices.get(run["backend"]), pt, ct)
+        if per_page is None and run["backend"] == "ocr" and gpu_hour and ppm:
+            per_page = gpu_hour / (ppm * 60)
+        rows.append(
             {
                 "backend": run["backend"],
                 "model": run["model"],
@@ -140,84 +190,151 @@ def score(cfg: Config, docs: Path, run_dir: Path, tag: str, gpu_hour: float | No
                 "max_s": max(lats) if lats else None,
                 "mean_prompt_tokens": pt,
                 "mean_completion_tokens": ct,
-                "retries": sum(r["retries"] for r in rs),
-                "cost_per_1k_pages_usd": cost,
+                "retries": sum(r.get("retries", 0) for r in rs),
+                "cost_per_1k_pages_usd": None if per_page is None else per_page * 1000,
             }
         )
+    return rows
 
-    # ---- transcription quality: first successful transcript per (backend, page, variant) ----
-    seen, tpages = set(), []
-    for r in transcripts:
+
+def cost_basis(speed: list[dict]) -> dict[str, dict]:
+    """Per backend: the per-page cost used for pipeline totals, and why."""
+    out: dict[str, dict] = {}
+    for be in sorted({s["backend"] for s in speed}):
+        rows = [s for s in speed if s["backend"] == be and s["cost_per_1k_pages_usd"] is not None]
+        if not rows:
+            out[be] = {"cost_per_1k_pages_usd": None, "basis": "no price configured"}
+            continue
+        c1 = next((s for s in rows if s["concurrency"] == 1), None)
+        if be == "ocr":
+            ok = [s for s in rows if s["pages"] and s["errors"] / s["pages"] <= SUSTAINED_MAX_ERROR_RATE]
+            best = max(ok or rows, key=lambda s: s["pages_per_min"])
+            out[be] = {
+                "cost_per_1k_pages_usd": best["cost_per_1k_pages_usd"],
+                "basis": f"best sustained throughput: {best['pages_per_min']:.1f} pages/min at concurrency "
+                f"{best['concurrency']} (GPU kept busy)",
+                "concurrency": best["concurrency"],
+                "cost_at_concurrency_1": c1["cost_per_1k_pages_usd"] if c1 else None,
+            }
+        else:  # token-priced: cost per page doesn't depend on concurrency; average all runs
+            out[be] = {
+                "cost_per_1k_pages_usd": st.mean(s["cost_per_1k_pages_usd"] for s in rows),
+                "basis": "list price x tokens used (mean over runs)",
+            }
+    return out
+
+
+def pick_transcript(current: dict | None, new: dict) -> dict | None:
+    """Which successful transcript of a page is scored: the one from the lowest-concurrency run (the same
+    basis as the latency figures), and among equals the most recent one, so a deliberate re-run replaces it."""
+    if not new["ok"]:
+        return current
+    if current is None or new["concurrency"] <= current["concurrency"]:
+        return new
+    return current
+
+
+def transcription(meta: dict, docs: Path, run_dir: Path, transcripts: list[dict], manifest: dict) -> tuple[list, list]:
+    strip = bool((meta.get("ocr") or {}).get("strip_grounding_tokens", True))
+    attempted: dict[tuple, dict | None] = {}
+    for r in transcripts:  # see pick_transcript; failed attempts still mark the page as expected
         k = (r["backend"], r["doc_id"], r["page"], r["variant"])
-        if not r["ok"] or k in seen or r["doc_id"] not in manifest:
+        if r["doc_id"] not in manifest:
             continue
-        seen.add(k)
-        pg = next(p for p in manifest[r["doc_id"]]["pages"] if p["n"] == r["page"])
-        gt = (docs / pg["gt"]).read_text(encoding="utf-8")
-        nums = json.loads((docs / pg["gt_meta"]).read_text(encoding="utf-8"))["numbers"]
-        hyp = (run_dir / r["output_file"]).read_text(encoding="utf-8")
-        if r["backend"] == "ocr" and strip:
-            hyp = strip_grounding(hyp)
-        tpages.append(
+        attempted[k] = pick_transcript(attempted.get(k), r)
+    pages = []
+    for (be, doc_id, page, variant), r in sorted(attempted.items()):
+        pg = next((p for p in manifest[doc_id]["pages"] if p["n"] == page), None)
+        if pg is None:
+            continue
+        gt = _read(docs / pg["gt"]) or ""
+        nums = json.loads(_read(docs / pg["gt_meta"]) or '{"numbers": []}')["numbers"]
+        hyp = _read(run_dir / r["output_file"]) if r else None
+        if hyp is None:
+            m, ok = failed_page_metrics(nums), False
+        else:
+            if be == "ocr" and strip:
+                hyp = strip_grounding(hyp)
+            m, ok = page_metrics(gt, nums, hyp), True
+        pages.append(
             {
-                "backend": r["backend"],
-                "doc_id": r["doc_id"],
-                "page": r["page"],
-                "variant": r["variant"],
-                "output_file": r["output_file"],
-                **page_metrics(gt, nums, hyp),
+                "backend": be,
+                "doc_id": doc_id,
+                "page": page,
+                "variant": variant,
+                "ok": ok,
+                "truncated": bool(r and r.get("finish_reason") == "length"),
+                "output_file": r["output_file"] if r else None,
+                **m,
             }
         )
-    tagg = []
-    for be in sorted({p["backend"] for p in tpages}):
+    agg = []
+    for be in sorted({p["backend"] for p in pages}):
         for v in ("clean", "degraded"):
-            s = [p for p in tpages if p["backend"] == be and p["variant"] == v]
-            if s:
-                tagg.append(
-                    {
-                        "backend": be,
-                        "variant": v,
-                        "pages": len(s),
-                        **{
-                            m: st.mean(p[m] for p in s)
-                            for m in ("cer", "wer", "word_recall", "word_precision", "num_recall")
-                        },
-                        "cer_median": st.median(p["cer"] for p in s),
-                        "runaway": sum(p["len_ratio"] > 3 for p in s),
-                        "num_hallucinated_excl_runaway": sum(p["num_hallucinated"] for p in s if p["len_ratio"] <= 3),
-                        "num_missing": sum(p["num_missing"] for p in s),
-                        "num_hallucinated": sum(p["num_hallucinated"] for p in s),
-                    }
-                )
+            s = [p for p in pages if p["backend"] == be and p["variant"] == v]
+            if not s:
+                continue
+            agg.append(
+                {
+                    "backend": be,
+                    "variant": v,
+                    "pages": len(s),
+                    "coverage": sum(p["ok"] for p in s) / len(s),
+                    **{
+                        m: st.mean(p[m] for p in s)
+                        for m in ("cer", "wer", "word_recall", "word_precision", "num_recall")
+                    },
+                    "cer_median": st.median(p["cer"] for p in s),
+                    "runaway": sum(p["len_ratio"] > RUNAWAY_RATIO for p in s),
+                    "truncated": sum(p["truncated"] for p in s),
+                    "num_hallucinated_excl_runaway": sum(
+                        p["num_hallucinated"] for p in s if p["len_ratio"] <= RUNAWAY_RATIO
+                    ),
+                    "num_missing": sum(p["num_missing"] for p in s),
+                    "num_hallucinated": sum(p["num_hallucinated"] for p in s),
+                }
+            )
+    return agg, pages
 
-    # ---- extraction ----
-    edocs = []
-    extractions = _jsonl(run_dir / "extractions.jsonl")
-    seen_e = set()
-    for e in extractions:
+
+def extraction(
+    meta: dict,
+    docs: Path,
+    run_dir: Path,
+    records: list[dict],
+    manifest: dict,
+    transcripts: list[dict],
+    basis: dict[str, dict],
+) -> tuple[list, list]:
+    prices = {k: v.get("price_per_mtok") for k, v in (meta.get("llm_backends") or {}).items()}
+    latest: dict[tuple, dict] = {}
+    for e in records:  # latest record per (pipeline, doc, variant); successes beat failures
         k = (e["pipeline"], e["doc_id"], e["variant"])
-        if k in seen_e or e["doc_id"] not in manifest:
-            continue
-        seen_e.add(k)
-        truth = json.loads((docs / manifest[e["doc_id"]]["fields"]).read_text(encoding="utf-8"))["fields"]
-        pred = json.loads((run_dir / e["output_file"]).read_text(encoding="utf-8")) if e["ok"] else {}
+        if e["doc_id"] in manifest and (k not in latest or e["ok"] or not latest[k]["ok"]):
+            latest[k] = e
+    docs_out = []
+    for (pipe, doc_id, variant), e in sorted(latest.items()):
+        truth = json.loads(_read(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
+        raw = _read(run_dir / e["output_file"]) if e["ok"] and e.get("output_file") else None
+        pred = json.loads(raw) if raw else {}
         fields = {
             f: {"truth": t, "predicted": pred.get(f), "correct": field_correct(t, pred.get(f))}
             for f, t in truth.items()
         }
         n_ok = sum(x["correct"] for x in fields.values())
-        edocs.append(
+        docs_out.append(
             {
-                "pipeline": e["pipeline"],
-                "doc_id": e["doc_id"],
-                "variant": e["variant"],
-                "ok": e["ok"],
+                "pipeline": pipe,
+                "doc_id": doc_id,
+                "variant": variant,
+                "ok": bool(raw),
+                "error": e.get("error"),
                 "accuracy": n_ok / max(1, len(fields)),
                 "fields_total": len(fields),
                 "fields_correct": n_ok,
                 "fields": fields,
-                "output_file": e["output_file"],
-                "latency_s": e["latency_s"],
+                "output_file": e.get("output_file"),
+                "latency_s": e.get("latency_s") or 0.0,
                 "prompt_tokens": e.get("prompt_tokens"),
                 "completion_tokens": e.get("completion_tokens"),
                 "agent": e["agent"],
@@ -225,56 +342,81 @@ def score(cfg: Config, docs: Path, run_dir: Path, tag: str, gpu_hour: float | No
             }
         )
 
-    # per-doc source transcription latency (sum over pages, concurrency-1 runs preferred)
+    # per-doc transcription latency of the source: sum over pages, from its lowest-concurrency run
     src_lat: dict[tuple[str, str, str], float] = {}
-    for r in sorted(transcripts, key=lambda r: r["concurrency"]):
-        k = (r["backend"], r["doc_id"], r["variant"])
-        if r["ok"] and (r["backend"], r["doc_id"], r["page"], r["variant"], "lat") not in seen:
-            seen.add((r["backend"], r["doc_id"], r["page"], r["variant"], "lat"))
-            src_lat[k] = src_lat.get(k, 0.0) + r["latency_s"]
-    src_cost: dict[str, float | None] = {}
-    for row in speed:
-        src_cost.setdefault(row["backend"], row["cost_per_1k_pages_usd"])
+    lowest: dict[str, int] = {}
+    for r in transcripts:
+        if r["ok"]:
+            lowest[r["backend"]] = min(lowest.get(r["backend"], 10**9), r["concurrency"])
+    counted = set()
+    for r in transcripts:
+        k = (r["backend"], r["doc_id"], r["page"], r["variant"])
+        if r["ok"] and r["concurrency"] == lowest[r["backend"]] and k not in counted:
+            counted.add(k)
+            dk = (r["backend"], r["doc_id"], r["variant"])
+            src_lat[dk] = src_lat.get(dk, 0.0) + r["latency_s"]
 
-    eagg = []
-    for pipe in sorted({d["pipeline"] for d in edocs}):
+    agg = []
+    for pipe in sorted({d["pipeline"] for d in docs_out}):
         for v in ("clean", "degraded"):
-            s = [d for d in edocs if d["pipeline"] == pipe and d["variant"] == v]
+            s = [d for d in docs_out if d["pipeline"] == pipe and d["variant"] == v]
             if not s:
                 continue
-            src = s[0]["source"]
-            lat = st.mean(d["latency_s"] for d in s)
-            e2e = st.mean(d["latency_s"] + src_lat.get((src, d["doc_id"], v), 0.0) for d in s)
-            price = _price(cfg, s[0]["agent"])
+            src, okd = s[0]["source"], [d for d in s if d["ok"]]
+            lat = st.mean(d["latency_s"] for d in okd) if okd else None
+            e2e = (
+                st.mean(d["latency_s"] + src_lat.get((src, d["doc_id"], v), 0.0) for d in okd)
+                if okd and src != "image"
+                else lat
+            )
             cost = None
-            if price:
-                pt = st.mean([d["prompt_tokens"] or 0 for d in s])
-                ct = st.mean([d["completion_tokens"] or 0 for d in s])
-                cost = (pt * price.get("input", 0) + ct * price.get("output", 0)) / 1e6 * 1000
+            per_call = _token_cost(
+                prices.get(s[0]["agent"]),
+                st.mean([d["prompt_tokens"] or 0 for d in okd] or [0]),
+                st.mean([d["completion_tokens"] or 0 for d in okd] or [0]),
+            )
+            if per_call is not None and okd:
+                cost = per_call * 1000
                 if src != "image":
+                    sc = (basis.get(src) or {}).get("cost_per_1k_pages_usd")
                     pages_per_doc = st.mean(len(manifest[d["doc_id"]]["pages"]) for d in s)
-                    sc = src_cost.get(src)
                     cost = cost + sc * pages_per_doc if sc is not None else None
-            tot = sum(d["fields_total"] for d in s)
-            cor = sum(d["fields_correct"] for d in s)
-            eagg.append(
+            tot, cor = sum(d["fields_total"] for d in s), sum(d["fields_correct"] for d in s)
+            agg.append(
                 {
                     "pipeline": pipe,
                     "variant": v,
                     "docs": len(s),
+                    "coverage": len(okd) / len(s),
                     "field_accuracy": cor / max(1, tot),
                     "fields_total": tot,
                     "fields_correct": cor,
                     "mean_latency_s": lat,
-                    "end_to_end_latency_s": e2e if src != "image" else lat,
+                    "end_to_end_latency_s": e2e,
                     "cost_per_1k_docs_usd": cost,
                 }
             )
+    return agg, docs_out
 
+
+def score(meta: dict, run_dir: Path) -> dict:
+    """Score runs/<id>/ using only its own files."""
+    run_dir = Path(run_dir)
+    docs = run_dir / "docs"
+    manifest = {d["id"]: d for d in json.loads((docs / "manifest.json").read_text(encoding="utf-8"))}
+    transcripts = _jsonl(run_dir / "transcripts.jsonl")
+    speed = speed_rows(meta, _jsonl(run_dir / "runs.jsonl"), transcripts)
+    basis = cost_basis(speed)
+    tagg, tpages = transcription(meta, docs, run_dir, transcripts, manifest)
+    eagg, edocs = extraction(meta, docs, run_dir, _jsonl(run_dir / "extractions.jsonl"), manifest, transcripts, basis)
     return {
-        "tag": tag,
-        "generated": datetime.now().isoformat(timespec="seconds"),
-        "summary_md": "",
+        "run_id": meta["id"],
+        "method": {
+            "failures": "counted: failed pages score CER=1/recall 0, failed extractions score 0 (see coverage)",
+            "transcript_per_page": "successful one from the lowest-concurrency run (latest if several)",
+            "runaway_ratio": RUNAWAY_RATIO,
+            "cost_basis": basis,
+        },
         "speed": speed,
         "transcription": {"aggregate": tagg, "pages": tpages},
         "extraction": {"aggregate": eagg, "docs": edocs},

@@ -18,6 +18,7 @@ from pathlib import Path
 from .backends import Request, get_backend
 from .backends.vllm_ocr import strip_grounding
 from .config import Config
+from .redact import error_text
 from .transcribe import call_with_retries, load_manifest
 
 SYSTEM = (
@@ -57,8 +58,15 @@ def parse_json(text: str) -> dict:
     return obj
 
 
-def first_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str], Path]:
-    """(doc_id, page, variant) -> output file of the first successful transcript for that backend."""
+def _records(path: Path) -> list[dict]:
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()] if path.exists() else []
+
+
+def latest_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str], Path]:
+    """(doc_id, page, variant) -> output file of the transcript scoring uses (score.pick_transcript)."""
+    from .score import pick_transcript
+
+    chosen: dict = {}
     out: dict[tuple[str, int, str], Path] = {}
     f = run_dir / "transcripts.jsonl"
     if not f.exists():
@@ -66,7 +74,10 @@ def first_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str],
     for line in f.read_text(encoding="utf-8").splitlines():
         r = json.loads(line)
         k = (r["doc_id"], r["page"], r["variant"])
-        if r["backend"] == backend and r["ok"] and k not in out:
+        if r["backend"] == backend:
+            chosen[k] = pick_transcript(chosen.get(k), r)
+    for k, r in chosen.items():
+        if r:
             out[k] = run_dir / r["output_file"]
     return out
 
@@ -88,9 +99,14 @@ async def run(
 
     schemas = json.loads((docs / "schemas.json").read_text(encoding="utf-8"))
     manifest = load_manifest(docs)
-    if limit:
-        manifest = sorted(manifest, key=lambda d: (int(d["id"].rsplit("-", 1)[1]), d["id"]))[:limit]
     variants = ["clean", "degraded"] if variant == "both" else [variant]
+    # Same document set for every pipeline: the (doc, variant) pairs stage 1 attempted, if it ran.
+    attempted = {(r["doc_id"], r["variant"]) for r in _records(run_dir / "transcripts.jsonl")}
+    if attempted:
+        targets = {(d["id"], v) for d in manifest for v in variants if (d["id"], v) in attempted}
+    else:
+        chosen = sorted(manifest, key=lambda d: (int(d["id"].rsplit("-", 1)[1]), d["id"]))[: limit or None]
+        targets = {(d["id"], v) for d in chosen for v in variants}
     sem = asyncio.Semaphore(int(ex.get("concurrency", 8)))
     strip = bool(cfg["ocr"].get("strip_grounding_tokens", True))
     max_retries = cfg["bench"].get("max_retries", 4)
@@ -102,10 +118,12 @@ async def run(
         source = pipe.split("->")[0]
         agent = await agent_for(pipe)
         slug = pipe.replace("->", "__")
-        texts = first_transcripts(run_dir, source) if source != "image" else {}
+        texts = latest_transcripts(run_dir, source) if source != "image" else {}
         jobs = []
         for d in manifest:
             for v in variants:
+                if (d["id"], v) not in targets:
+                    continue
                 if source == "image":
                     req = Request(
                         SYSTEM,
@@ -115,8 +133,9 @@ async def run(
                     )
                 else:
                     files = [texts.get((d["id"], p["n"], v)) for p in d["pages"]]
-                    if not all(files):
-                        continue  # source has no transcript for every page
+                    if not all(files):  # recorded as a failure: it counts against the pipeline
+                        jobs.append((d, v, None))
+                        continue
                     parts = []
                     for p, f in zip(d["pages"], files, strict=True):
                         t = f.read_text(encoding="utf-8")
@@ -150,17 +169,19 @@ async def run(
                     "prompt_tokens": None,
                     "completion_tokens": None,
                 }
+                if req is None:
+                    rec.update(error="missing transcript: the source failed on at least one page", latency_s=0.0)
+                    return rec
                 try:
-                    resp, _ = await call_with_retries(lambda: agent.complete(req), max_retries)
+                    resp, _, attempt_s = await call_with_retries(lambda: agent.complete(req), max_retries)
                     rec.update(prompt_tokens=resp.prompt_tokens, completion_tokens=resp.completion_tokens)
                     fields = parse_json(resp.text)
                     rel = Path("outputs") / "extract" / slug / f"{d['id']}.{v}.json"
                     (run_dir / rel).parent.mkdir(parents=True, exist_ok=True)
                     (run_dir / rel).write_text(json.dumps(fields, ensure_ascii=False, indent=1), encoding="utf-8")
-                    rec.update(ok=True, output_file=str(rel))
+                    rec.update(ok=True, output_file=str(rel), latency_s=attempt_s)
                 except Exception as e:  # noqa: BLE001
-                    rec["error"] = f"{type(e).__name__}: {e}"[:400]
-                rec["latency_s"] = time.perf_counter() - t0
+                    rec.update(error=error_text(e), latency_s=time.perf_counter() - t0)
                 return rec
 
         recs = await asyncio.gather(*(one(d, v, r) for d, v, r in jobs))

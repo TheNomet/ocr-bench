@@ -9,6 +9,7 @@ report as "unverified".
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from pathlib import Path
 
@@ -94,30 +95,41 @@ def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
     return prompt, facts_md + "\n" + setup
 
 
-_NUM = re.compile(r"\d[\d,.\s]*\d|\d")
+# A number: optional thousands groups (space, no-break/thin space or comma + exactly 3 digits), optional
+# decimals with "." or "," (Norwegian decimal comma). Separators never span other whitespace or newlines.
+_NUM = re.compile(
+    r"(?<![\w.,])\d{1,3}(?:[ \u00a0\u202f,]\d{3})+(?:[.,]\d+)?(?![\d.,]\d)(?!\d)"
+    r"|(?<![\w.,])\d+(?:[.,]\d+)?(?![.,]\d)(?!\d)"
+)
+_FACTOR = re.compile(r"\s*(?:x|×|times|%|-fold)\b|\s*×", re.I)
 
 
-def _norm(n: str) -> str:
-    return re.sub(r"[\s,]", "", n).rstrip(".")
+def _value(tok: str) -> tuple[float, int]:
+    """(value, decimals) of a number token."""
+    m = re.fullmatch(r"(\d{1,3}(?:[ \u00a0\u202f,]\d{3})+)([.,]\d+)?", tok)
+    if m:
+        intpart, dec = re.sub(r"\D", "", m.group(1)), (m.group(2) or "")[1:]
+    else:
+        intpart, _, dec = tok.replace(",", ".").partition(".")
+    return float(f"{intpart}.{dec}" if dec else intpart), len(dec)
 
 
 def unverified_numbers(text: str, source: str) -> list[str]:
-    """Numbers in `text` that do not occur in `source` (ignoring spacing/thousand separators, % and $)."""
-    known = {_norm(m) for m in _NUM.findall(source)}
-    known |= {k.lstrip("0") for k in known}
+    """Numbers in `text` that are not in `source`, nor a rounding of a number in `source`.
+
+    Single-digit numbers are ignored (counts, list items) unless they read as a factor or percentage
+    ("3x cheaper", "5%"), which the model would have had to compute.
+    """
+    known = [_value(m.group()) for m in _NUM.finditer(source)]
     out = []
-    for m in _NUM.findall(text):
-        n = _norm(m)
-        if len(n.replace(".", "")) < 2 or n in known or n.lstrip("0") in known:
+    for m in _NUM.finditer(text):
+        tok = m.group()
+        v, d = _value(tok)
+        if v < 10 and d == 0 and not _FACTOR.match(text, m.end()):
             continue
-        # allow rounding of a known value, e.g. 98.8% -> 99%
-        try:
-            v = float(n)
-            if any(abs(v - float(k)) <= 0.5 for k in known if re.fullmatch(r"\d+(\.\d+)?", k)):
-                continue
-        except ValueError:
-            pass
-        out.append(m.strip())
+        if any(v == k or (d < kd and round(k, d) == v) for k, kd in known):
+            continue
+        out.append(tok)
     return sorted(set(out))
 
 
@@ -128,7 +140,7 @@ def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
 
     async def go():
         await be.warmup()
-        resp, _ = await call_with_retries(
+        resp, _, _ = await call_with_retries(
             lambda: be.complete(Request(SYSTEM, prompt, max_tokens=12000, temperature=0.2)),
             cfg["bench"].get("max_retries", 4),
         )
@@ -137,11 +149,15 @@ def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
     resp = asyncio.run(go())
     text = resp.text.strip()
     bad = unverified_numbers(text, source)
-    header = (
-        f"<!-- LLM comment by {name} ({be.model}) on the computed key facts; "
-        f"{resp.prompt_tokens} in / {resp.completion_tokens} out tokens; "
-        f"unverified numbers: {', '.join(bad) if bad else 'none'} -->\n"
-    )
-    (run_dir / "summary.md").write_text(header + text + "\n", encoding="utf-8")
+    (run_dir / "summary.md").write_text(text + "\n", encoding="utf-8")
+    info = {
+        "backend": name,
+        "model": be.model,
+        "input": "computed key facts + setup description",
+        "prompt_tokens": resp.prompt_tokens,
+        "completion_tokens": resp.completion_tokens,
+        "unverified_numbers": bad,
+    }
+    (run_dir / "summary.json").write_text(json.dumps(info, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"summary written by {name}: {len(text)} chars; unverified numbers: {bad or 'none'}", flush=True)
     return text

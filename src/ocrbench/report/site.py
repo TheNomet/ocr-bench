@@ -367,7 +367,7 @@ class _Site:
         manifest = _read_json(self.docs_dir / "manifest.json", [])
         self.manifest: list[dict] = [d for d in manifest if isinstance(d, dict) and d.get("id")]
         self.schemas: dict = _read_json(self.docs_dir / "schemas.json", {}) or {}
-        self.tag = str(self.scores.get("tag") or "")
+        self.tag = str(self.scores.get("run_id") or self.scores.get("tag") or "")
 
         tr = self.scores.get("transcription") or {}
         ex = self.scores.get("extraction") or {}

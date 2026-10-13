@@ -1,4 +1,3 @@
-<!-- LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts; 2316 in / 1711 out tokens; unverified numbers: none -->
 ## Bottom line
 Choose `image->sonnet-5.5`: it is the most accurate pipeline on degraded pages (99.1%) and the fastest there (1.7 s/doc), and real-world input looks more like degraded phone photos than clean scans. `image->haiku-5.5` is a strong alternative on clean pages. None of the pipelines in the cost note has a price, so cost cannot decide the choice yet.
 

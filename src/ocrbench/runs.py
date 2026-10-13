@@ -151,6 +151,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
             "instance_pools": o.get("sagemaker", {}).get("instance_pools"),
             "serve_args": o.get("serve_args"),
             "prompt": o.get("request", {}).get("prompt"),
+            "strip_grounding_tokens": bool(o.get("strip_grounding_tokens", True)),
             "instance_type": None,
             "price_per_hour_usd": None,
             "image_digest": None,

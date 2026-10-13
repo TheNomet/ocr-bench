@@ -11,6 +11,7 @@ import json
 import re
 
 import httpx
+from botocore.exceptions import ConnectionClosedError, EndpointConnectionError, ReadTimeoutError
 
 from ..config import Config
 from .base import Backend, HTTPError, Request, Response, data_url
@@ -69,7 +70,10 @@ class DirectOcr(_VllmOcr):
         (await self.client.get(self.health)).raise_for_status()
 
     async def complete(self, req: Request) -> Response:
-        r = await self.client.post(self.url, json=self.body(req))
+        try:
+            r = await self.client.post(self.url, json=self.body(req))
+        except httpx.TransportError as e:
+            raise HTTPError(503, f"{type(e).__name__}: {e}") from e
         if r.status_code >= 400:
             raise HTTPError(r.status_code, r.text)
         return self.parse(r.json())
@@ -106,8 +110,10 @@ class SageMakerOcr(_VllmOcr):
                 r = self.rt.invoke_endpoint(
                     EndpointName=self.endpoint, ContentType="application/json", Accept="application/json", Body=body
                 )
-            except self.rt.exceptions.ModelError as e:
+            except self.rt.exceptions.ModelError as e:  # status 0 = the 60 s endpoint timeout: not retried
                 raise HTTPError(int(e.response.get("OriginalStatusCode", 500)), str(e)) from e
+            except (EndpointConnectionError, ReadTimeoutError, ConnectionClosedError) as e:
+                raise HTTPError(503, f"{type(e).__name__}: {e}") from e
             except Exception as e:
                 msg = str(e)
                 if "Throttl" in msg or "ServiceUnavailable" in msg:

@@ -103,6 +103,7 @@ def test_no_forbidden_words(doc_type):
         assert w not in low, f"forbidden word {w!r} in {doc_type}"
 
 
+@pytest.mark.chrome
 @pytest.mark.skipif(find_chrome() is None, reason="Chrome/Edge/Chromium not available")
 def test_generate_end_to_end(tmp_path):
     manifest = generate(tmp_path, per_type=1, seed=7)

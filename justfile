@@ -40,6 +40,10 @@ setup:
 test:
     uv run pytest -q
 
+# Including the slow headless-Chrome rendering tests
+test-all:
+    uv run pytest -q -m ''
+
 lint:
     uv run ruff check src tests && uv run ruff format --check src tests && {{tf}} fmt -check -recursive
 

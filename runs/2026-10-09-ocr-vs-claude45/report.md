@@ -7,25 +7,27 @@
 | question | clean pages | degraded pages |
 |---|---|---|
 | most accurate pipeline | `image->agent` 97.0% | `image->agent` 83.0% |
-| cheapest pipeline | `image->agent` $7.44/1k docs | `image->agent` $6.75/1k docs |
+| cheapest pipeline | `ocr->agent` $5.87/1k docs | `ocr->agent` $5.88/1k docs |
 | fastest pipeline | `image->agent` 3.4 s/doc | `image->agent` 3.6 s/doc |
 
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
 |---|---|---|---|---|---|
 | `haiku-4.5` | clean | 0.033 | 99.3% | 3 | 0 |
-| `haiku-4.5` | degraded | 0.081 | 87.8% | 120 | 1 |
+| `haiku-4.5` | degraded | 0.081 | 87.1% | 124 | 1 |
 | `ocr` | clean | 0.006 | 99.5% | 1 | 0 |
-| `ocr` | degraded | 0.044 | 92.6% | 82 | 0 |
+| `ocr` | degraded | 0.044 | 90.8% | 85 | 0 |
 | `sonnet-4.5` | clean | 0.002 | 99.8% | 2 | 0 |
-| `sonnet-4.5` | degraded | 0.079 | 88.3% | 137 | 1 |
+| `sonnet-4.5` | degraded | 0.079 | 87.8% | 132 | 1 |
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `sonnet-4.5` | 14.1 | 43 (16) |
 | `haiku-4.5` | 8.0 | 137 (32) |
 | `ocr` | 6.2 | 28 (32) |
+| `sonnet-4.5` | 14.1 | 43 (16) |
 
 OCR transcription costs $1.49/hour whether busy or idle; one GPU handled at most ~1686 pages/hour in this run.
+
+Pipeline costs that include OCR use $0.89/1k pages: the cost at its best sustained throughput: 28.1 pages/min at concurrency 32 (GPU kept busy). One request at a time it would be $2.64/1k pages.
 
 - cheaper than `sonnet-4.5` transcription ($15.68/1k pages) above **~95 pages/hour** sustained
 - cheaper than `haiku-4.5` transcription ($4.86/1k pages) above **~307 pages/hour** sustained
@@ -35,7 +37,7 @@ Fields missed most often (count over clean + degraded documents):
 - `image->agent`: `newsletter.new_fee` (10), `rental_contract.property_address` (6), `holiday_survey.activities` (5), `holiday_survey.signed_date` (5)
 - `ocr->agent`: `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5)
 
-## Findings
+## Recommendation
 
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
@@ -193,11 +195,11 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 | backend | variant | pages | CER mean | CER median | runaway | word recall | number recall | missing nums | invented nums |
 |---|---|---|---|---|---|---|---|---|---|
 | haiku-4.5 | clean | 54 | 0.038 | 0.033 | 0 | 97.5% | 99.3% | 3 | 3 |
-| haiku-4.5 | degraded | 54 | 0.290 | 0.081 | 1 | 88.0% | 87.8% | 122 | 120 |
+| haiku-4.5 | degraded | 54 | 0.290 | 0.081 | 1 | 88.0% | 87.1% | 130 | 124 |
 | ocr | clean | 54 | 0.013 | 0.006 | 0 | 97.2% | 99.5% | 2 | 1 |
-| ocr | degraded | 54 | 0.077 | 0.044 | 0 | 85.5% | 92.6% | 109 | 82 |
+| ocr | degraded | 54 | 0.077 | 0.044 | 0 | 85.5% | 90.8% | 135 | 85 |
 | sonnet-4.5 | clean | 54 | 0.028 | 0.002 | 0 | 99.6% | 99.8% | 1 | 2 |
-| sonnet-4.5 | degraded | 54 | 0.496 | 0.079 | 1 | 91.9% | 88.3% | 126 | 413 |
+| sonnet-4.5 | degraded | 54 | 0.496 | 0.079 | 1 | 91.9% | 87.8% | 132 | 410 |
 
 ### Field extraction (stage 2)
 
@@ -205,8 +207,8 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 |---|---|---|---|---|---|---|
 | image->agent | clean | 48 | 97.0% | 3.42 | 3.42 | 7.44 |
 | image->agent | degraded | 48 | 83.0% | 3.57 | 3.57 | 6.75 |
-| ocr->agent | clean | 48 | 95.7% | 2.17 | 8.97 | 7.85 |
-| ocr->agent | degraded | 48 | 81.5% | 2.18 | 9.68 | 7.85 |
+| ocr->agent | clean | 48 | 95.7% | 2.17 | 8.97 | 5.87 |
+| ocr->agent | degraded | 48 | 81.5% | 2.18 | 9.68 | 5.88 |
 
 Most-missed fields (count over clean + degraded):
 

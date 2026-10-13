@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+from botocore.exceptions import ConnectionClosedError, EndpointConnectionError, ReadTimeoutError
+
 from .base import Backend, HTTPError, Request, Response, mime
 
 
@@ -44,8 +46,14 @@ class BedrockBackend(Backend):
             except (
                 self.client.exceptions.ServiceUnavailableException,
                 self.client.exceptions.ModelNotReadyException,
+                self.client.exceptions.InternalServerException,
+                self.client.exceptions.ModelStreamErrorException,
             ) as e:
                 raise HTTPError(503, str(e)) from e
+            except self.client.exceptions.ModelTimeoutException as e:
+                raise HTTPError(504, str(e)) from e
+            except (EndpointConnectionError, ReadTimeoutError, ConnectionClosedError) as e:
+                raise HTTPError(503, f"{type(e).__name__}: {e}") from e
 
         r = await asyncio.to_thread(call)
         text = "".join(b.get("text", "") for b in r["output"]["message"]["content"])

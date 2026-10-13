@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +14,7 @@ from pathlib import Path
 from .backends import HTTPError, Request, get_backend
 from .backends.base import RETRYABLE
 from .config import Config
+from .redact import error_text
 
 SYSTEM = "You are a precise OCR engine. You transcribe documents; you never summarise, translate or correct them."
 PROMPT = (
@@ -72,10 +75,12 @@ class Transcript:
 
 
 async def call_with_retries(fn, max_retries: int):
+    """Returns (result, retries, seconds of the successful attempt): backoff sleeps are not latency."""
     retries = 0
     while True:
+        t0 = time.perf_counter()
         try:
-            return await fn(), retries
+            return await fn(), retries, time.perf_counter() - t0
         except HTTPError as e:
             if e.status in RETRYABLE and retries < max_retries:
                 retries += 1
@@ -84,14 +89,14 @@ async def call_with_retries(fn, max_retries: int):
             raise
 
 
-async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries) -> Transcript:
+async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries, rep=0, sink=None) -> Transcript:
     async with sem:
         t0, started = time.perf_counter(), time.time()
         req = Request(SYSTEM, PROMPT, [ref.path])
         try:
-            resp, retries = await call_with_retries(lambda: be.complete(req), max_retries)
+            resp, retries, lat = await call_with_retries(lambda: be.complete(req), max_retries)
         except Exception as e:  # noqa: BLE001 — record and keep the batch going
-            return Transcript(
+            rec = Transcript(
                 run_id,
                 be.name,
                 be.model,
@@ -102,30 +107,34 @@ async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries) -> 
                 started,
                 time.perf_counter() - t0,
                 False,
-                error=f"{type(e).__name__}: {e}"[:400],
+                error=error_text(e),
             )
-        lat = time.perf_counter() - t0
-        rel = Path("outputs") / be.name / f"{ref.key}.r{run_id}.md"
-        (out_dir / rel).parent.mkdir(parents=True, exist_ok=True)
-        (out_dir / rel).write_text(resp.text, encoding="utf-8")
-        return Transcript(
-            run_id,
-            be.name,
-            be.model,
-            ref.doc_id,
-            ref.page,
-            ref.variant,
-            conc,
-            started,
-            lat,
-            True,
-            resp.prompt_tokens,
-            resp.completion_tokens,
-            resp.finish_reason,
-            retries,
-            None,
-            str(rel),
-        )
+        else:
+            suffix = f".x{rep}" if rep else ""
+            rel = Path("outputs") / be.name / f"{ref.key}.r{run_id}{suffix}.md"
+            (out_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+            (out_dir / rel).write_text(resp.text, encoding="utf-8")
+            rec = Transcript(
+                run_id,
+                be.name,
+                be.model,
+                ref.doc_id,
+                ref.page,
+                ref.variant,
+                conc,
+                started,
+                lat,
+                True,
+                resp.prompt_tokens,
+                resp.completion_tokens,
+                resp.finish_reason,
+                retries,
+                None,
+                str(rel),
+            )
+        if sink:
+            sink(rec)
+        return rec
 
 
 async def run(
@@ -140,26 +149,36 @@ async def run(
     repeat: int = 1,
     warmup: bool = True,
 ) -> dict:
-    refs = pages(docs, variant, limit) * repeat
+    base = pages(docs, variant, limit)
+    refs = [(r, i) for i in range(repeat) for r in base]
     be = get_backend(cfg, backend)
-    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_id = f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"  # unique per plan item
+    # boto3 backends run in threads: make sure the pool never caps the requested concurrency
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=max(32, concurrency + 8)))
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[{be.name}] {be.model}: {len(refs)} pages at concurrency {concurrency}", flush=True)
     await be.warmup()
     if warmup and refs:  # untimed: token fetch, CUDA graphs, connection pools
         try:
-            await be.complete(Request(SYSTEM, PROMPT, [refs[0].path]))
+            await be.complete(Request(SYSTEM, PROMPT, [refs[0][0].path]))
         except Exception as e:  # noqa: BLE001
             print(f"  warmup failed: {e}", flush=True)
     sem = asyncio.Semaphore(concurrency)
     t0, started = time.perf_counter(), time.time()
-    kw = dict(conc=concurrency, run_id=run_id, out_dir=out_dir, max_retries=cfg["bench"].get("max_retries", 4))
-    results = await asyncio.gather(*(_one(be, r, sem, **kw) for r in refs))
-    wall = time.perf_counter() - t0
+    fh = (out_dir / "transcripts.jsonl").open("a", encoding="utf-8")
 
-    with (out_dir / "transcripts.jsonl").open("a", encoding="utf-8") as fh:
-        for r in results:
-            fh.write(json.dumps(asdict(r), ensure_ascii=False) + "\n")
+    def sink(rec: Transcript) -> None:  # written as each request finishes: a crash keeps finished work
+        fh.write(json.dumps(asdict(rec), ensure_ascii=False) + "\n")
+        fh.flush()
+
+    kw = dict(
+        conc=concurrency, run_id=run_id, out_dir=out_dir, max_retries=cfg["bench"].get("max_retries", 4), sink=sink
+    )
+    try:
+        results = await asyncio.gather(*(_one(be, r, sem, rep=i, **kw) for r, i in refs))
+    finally:
+        fh.close()
+    wall = time.perf_counter() - t0
     meta = {
         "run_id": run_id,
         "backend": be.name,

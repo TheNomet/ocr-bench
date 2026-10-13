@@ -23,6 +23,7 @@ from pathlib import Path
 
 from . import config as config_mod
 from .config import ROOT, Config
+from .fileio import write_if_changed
 
 
 def state_dir(cfg: Config) -> Path:
@@ -187,7 +188,7 @@ def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
                     )
                 )
         elif st == "extract":
-            lim = max((int(it.get("limit", 0)) for it in items), default=0)
+            lim = 0  # extraction uses exactly the documents stage 1 attempted
             variants = {it.get("variant", "both") for it in items}
             asyncio.run(
                 extract_run(
@@ -200,8 +201,8 @@ def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
                 )
             )
         elif st == "score":
-            s = score(cfg, docs, d, meta["id"], gpu_hour=meta["ocr"].get("price_per_hour_usd"))
-            (d / "scores.json").write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+            s = score(runs.load(d), d)
+            write_if_changed(d / "scores.json", json.dumps(s, ensure_ascii=False, indent=1))
             print(f"scored: {len(s['transcription']['pages'])} pages, {len(s['extraction']['docs'])} extractions")
         elif st == "summarize":
             from . import summarize
@@ -294,7 +295,7 @@ def _report(cfg: Config, ids: list[str]) -> None:
         if not (d / "transcripts.jsonl").exists():
             print(f"{rid}: no transcripts yet, skipped")
             continue
-        s = score(cfg, d / "docs", d, rid, gpu_hour=meta["ocr"].get("price_per_hour_usd"))
+        s = score(meta, d)
         idx = reporting.write(meta, s, d, site)
         print(f"{rid}: {d / 'report.md'}  |  {idx}")
     items = []

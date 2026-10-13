@@ -17,15 +17,15 @@
 | `haiku-5.5` | clean | 0.000 | 100.0% | 0 | 0 |
 | `haiku-5.5` | degraded | 0.001 | 98.5% | 7 | 0 |
 | `ocr` | clean | 0.006 | 99.5% | 1 | 0 |
-| `ocr` | degraded | 0.044 | 92.6% | 82 | 0 |
+| `ocr` | degraded | 0.044 | 90.8% | 85 | 0 |
 | `sonnet-5.5` | clean | 0.000 | 100.0% | 0 | 0 |
 | `sonnet-5.5` | degraded | 0.001 | 99.3% | 3 | 0 |
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `haiku-5.5` | 4.3 | 136 (16) |
 | `sonnet-5.5` | 5.3 | 175 (16) |
 | `ocr` | 6.1 | 29 (16) |
+| `haiku-5.5` | 4.3 | 136 (16) |
 
 Fields missed most often (count over clean + degraded documents):
 
@@ -33,7 +33,7 @@ Fields missed most often (count over clean + degraded documents):
 - `image->sonnet-5.5`: `newsletter.new_fee` (3), `rental_contract.monthly_rent` (1)
 - `ocr->sonnet-5.5`: `holiday_survey.activities` (9), `receipt.merchant` (8), `holiday_survey.accommodation` (6), `holiday_survey.pets` (6)
 
-## Findings
+## Recommendation
 
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
@@ -193,7 +193,7 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 | haiku-5.5 | clean | 54 | 0.014 | 0.000 | 0 | 100.0% | 100.0% | 0 | 0 |
 | haiku-5.5 | degraded | 54 | 0.018 | 0.001 | 0 | 99.4% | 98.5% | 10 | 7 |
 | ocr | clean | 54 | 0.013 | 0.006 | 0 | 97.2% | 99.5% | 2 | 1 |
-| ocr | degraded | 54 | 0.077 | 0.044 | 0 | 85.5% | 92.6% | 109 | 82 |
+| ocr | degraded | 54 | 0.077 | 0.044 | 0 | 85.5% | 90.8% | 135 | 85 |
 | sonnet-5.5 | clean | 54 | 0.019 | 0.000 | 0 | 100.0% | 100.0% | 0 | 0 |
 | sonnet-5.5 | degraded | 54 | 0.019 | 0.001 | 0 | 99.4% | 99.3% | 4 | 3 |
 
@@ -212,4 +212,4 @@ Most-missed fields (count over clean + degraded):
 
 - **image->haiku-5.5**: `newsletter.new_fee` (3), `receipt.merchant` (1), `rental_contract.monthly_rent` (1), `rental_contract.deposit` (1)
 - **image->sonnet-5.5**: `newsletter.new_fee` (3), `rental_contract.monthly_rent` (1)
-- **ocr->sonnet-5.5**: `holiday_survey.activities` (9), `receipt.merchant` (8), `holiday_survey.accommodation` (6), `holiday_survey.pets` (6), `letter.recipient` (4)
+- **ocr->sonnet-5.5**: `holiday_survey.activities` (9), `receipt.merchant` (8), `holiday_survey.accommodation` (6), `holiday_survey.pets` (6), `holiday_survey.destination` (4)

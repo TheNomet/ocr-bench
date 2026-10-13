@@ -92,6 +92,7 @@ def compute(meta: dict, scores: dict) -> dict:
         "throughput": throughput,
         "break_even": break_even,
         "gpu_price_per_hour_usd": price,
+        "cost_basis": ((scores.get("method") or {}).get("cost_basis") or {}).get("ocr"),
         "most_missed": {p: sorted(m.items(), key=lambda x: -x[1])[:4] for p, m in sorted(misses.items())},
     }
 
@@ -152,6 +153,15 @@ def to_md(f: dict) -> str:
             + (f"; one GPU handled at most ~{cap} pages/hour in this run." if cap else "."),
             "",
         ]
+        cb = f.get("cost_basis") or {}
+        if cb.get("cost_per_1k_pages_usd") is not None:
+            c1 = cb.get("cost_at_concurrency_1")
+            out += [
+                f"Pipeline costs that include OCR use {usd(cb['cost_per_1k_pages_usd'])}/1k pages: the cost at its "
+                f"{cb['basis']}"
+                + (f". One request at a time it would be {usd(c1)}/1k pages." if c1 is not None else "."),
+                "",
+            ]
         for b, x in be.items():
             out.append(
                 f"- cheaper than `{b}` transcription ({usd(x['llm_cost_per_1k_pages_usd'])}/1k pages) above "
