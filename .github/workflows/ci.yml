@@ -63,9 +63,6 @@ jobs:
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      # The lock file pins provider checksums; the cache only saves the download (keyed on the lock file).
-      TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
