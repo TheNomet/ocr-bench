@@ -309,7 +309,15 @@ def _report(cfg: Config, ids: list[str]) -> None:
         if body:  # first paragraph under "## Bottom line"
             parts = body.split("## Bottom line", 1)
             bl = parts[1].split("\n## ", 1)[0].strip() if len(parts) == 2 else ""
-        items.append({"meta": meta, "scores": s, "headline": reporting.headline(meta, s), "bottom_line": bl})
+        items.append(
+            {
+                "meta": meta,
+                "card_meta": reporting.focused_meta(meta),
+                "scores": s,
+                "headline": reporting.headline(meta, s),
+                "bottom_line": bl,
+            }
+        )
     cmp_md = reporting.comparison_md(reporting.comparison(items))
     guide = reporting.guide_md(items[0]["meta"] if items else None)
     print(f"experiments index: {build_experiments_index(items, site, comparison_md=cmp_md, guide_md=guide)}")

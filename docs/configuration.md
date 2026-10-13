@@ -36,6 +36,7 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `bench.extraction.plan_pipelines.<plan>` | Pipelines for that plan instead of `pipelines`. `<input>-><llm key>` uses that backend as the extractor; `->agent` uses the default agent |
 | `llm_backends.<key>.reasoning_effort` | `low` / `medium` / `high` for models with extended thinking (sent as `reasoning_effort`) |
 | `llm_backends.<key>.temperature` | Overrides the request temperature (default 0). Some models accept only 1; `null` omits it. Recorded in the run and shown in the report |
+| `bench.plan_report.<plan>.hide_backends` | Backends re-run only as a reproducibility check: hidden on the run page and in its recommendation, kept in the data and in *Compare runs* |
 | `bench.plan_descriptions.<plan>` | One line shown on every run of that plan (run ids are `<date>-<plan>`) |
 | `bench.plans.<name>` | List of `{backend, concurrency, variant?, limit?, repeat?, warmup?}` runs |
 | `bench.max_retries` | Retries on 429/5xx with exponential backoff |

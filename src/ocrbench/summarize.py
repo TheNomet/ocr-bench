@@ -50,9 +50,10 @@ Rules:
 
 
 def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
-    from .reporting import visible
+    from .reporting import focused_meta, visible
 
     scores = visible(meta, scores)
+    meta = focused_meta(meta)
     facts_md = to_md(compute(meta, scores))
     be, o = meta["llm_backends"], meta["ocr"]
     agent = meta["extraction"]["agent"]

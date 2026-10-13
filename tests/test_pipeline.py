@@ -251,3 +251,37 @@ def test_same_model_pipelines_hidden():
     agg = [{"pipeline": p, "variant": "clean"} for p in meta["extraction"]["pipelines"]]
     vis = reporting.visible(meta, {"extraction": {"aggregate": agg, "docs": []}})
     assert [a["pipeline"] for a in vis["extraction"]["aggregate"]] == ["h->agent", "image->agent", "ocr->h"]
+
+
+def test_focus_hides_repeat_backends_but_not_in_comparison():
+    from ocrbench import reporting
+
+    meta = {
+        "id": "r",
+        "ocr": {"hf_repo": "x/ocr"},
+        "report": {"hide_backends": ["old"]},
+        "transcribers": ["ocr", "old", "new"],
+        "llm_backends": {
+            "old": {"model": "anthropic.claude-sonnet-4-5"},
+            "new": {"model": "anthropic.claude-sonnet-5-5"},
+        },
+        "extraction": {
+            "agent": "old",
+            "pipelines": ["image->agent", "image->new", "ocr->new"],
+            "agents": {"image->agent": "old", "image->new": "new", "ocr->new": "new"},
+        },
+    }
+    agg = [{"pipeline": p, "variant": "clean", "field_accuracy": 1.0} for p in meta["extraction"]["pipelines"]]
+    tr = [{"backend": b, "variant": "clean", "num_recall": 1.0} for b in ("ocr", "old", "new")]
+    scores = {
+        "speed": [],
+        "transcription": {"aggregate": tr, "pages": []},
+        "extraction": {"aggregate": agg, "docs": []},
+    }
+    v = reporting.visible(meta, scores)
+    assert [a["pipeline"] for a in v["extraction"]["aggregate"]] == ["image->new", "ocr->new"]
+    assert [a["backend"] for a in v["transcription"]["aggregate"]] == ["ocr", "new"]
+    fm = reporting.focused_meta(meta)
+    assert fm["extraction"]["agent"] == "new" and fm["transcribers"] == ["ocr", "new"]
+    full = reporting.visible(meta, scores, focus=False)
+    assert len(full["extraction"]["aggregate"]) == 3

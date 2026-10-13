@@ -131,6 +131,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
         "plan": plan,
         "plan_description": (cfg["bench"].get("plan_descriptions") or {}).get(plan, ""),
         "plan_items": cfg.plan(plan) if plan in cfg["bench"]["plans"] else [],
+        "report": {"hide_backends": ((cfg["bench"].get("plan_report") or {}).get(plan) or {}).get("hide_backends", [])},
         "created": datetime.now().isoformat(timespec="seconds"),
         "git_commit": _git_commit(),
         "region": cfg.region,

@@ -164,6 +164,9 @@ th code { text-transform: none; letter-spacing: 0; background: none; border: 0; 
 .crumbs a { color: var(--muted); } .crumbs a:hover { color: var(--accent); }
 .crumbs span:last-child { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumbs .sep { color: #cbd5e1; }
+.gh { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; color: #334155; font-size: .88rem;
+  font-weight: 600; border: 1px solid var(--border); border-radius: 999px; padding: .28rem .8rem; background: var(--panel); }
+.gh:hover { color: var(--fg); border-color: #94a3b8; text-decoration: none; }
 .foot { max-width: 1240px; margin: 0 auto; padding: 1.5rem; color: var(--muted); font-size: .8rem; border-top: 1px solid var(--border); }
 
 /* hero */

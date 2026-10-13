@@ -343,9 +343,14 @@ def test_build_site(tmp_path: Path) -> None:
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in inv_html
     assert "Total &lt;due&gt; 15 937,50 &amp; more" in inv_html
 
-    # Every href/src is relative (no absolute paths, no external URLs).
+    # Every href/src is relative (no absolute paths, no external URLs), except the top-bar repo link
+    # (and the inline favicon).
+    from ocrbench.report.site import REPO_URL
+
     for page in (idx_html, inv_html, form_html):
         for url in re.findall(r'(?:href|src)="([^"]*)"', page):
+            if url == REPO_URL or url.startswith("data:image/svg+xml"):
+                continue
             assert not url.startswith(("/", "http:", "https:", "file:")), url
             assert str(tmp_path) not in url
 

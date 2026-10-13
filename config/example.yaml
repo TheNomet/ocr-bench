@@ -150,6 +150,10 @@ bench:
   # Stage 4: an LLM reads the setup + scored tables and writes the findings (runs/<id>/summary.md).
   summary:
     agent: bedrock-sonnet                 # llm_backends key; defaults to the extraction agent
+  # Optional: backends a plan re-runs only to check reproducibility. Hidden on that run's page and in
+  # its recommendation, still in the data and in Compare runs.
+  # plan_report:
+  #   repeat: {hide_backends: [bedrock-haiku]}
   # One-line description per plan, shown on every run of it (the run id is <date>-<plan>).
   plan_descriptions:
     smoke: "Quick health check: a couple of pages per backend."

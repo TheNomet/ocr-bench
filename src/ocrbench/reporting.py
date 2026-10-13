@@ -78,6 +78,14 @@ def setup_md(meta: dict) -> str:
         f"| container | `{o.get('source_image')}` (digest `{(o.get('image_digest') or '–')[:19]}`) |",
         f"| serving flags | `{' '.join(o.get('serve_args') or [])}` |",
     ]
+    hidden = focus_backends(meta)
+    if hidden:
+        out += [
+            "",
+            "Also re-run as a reproducibility check, shown only in *Compare runs* on the main page: "
+            + ", ".join(f"`{h}`" for h in sorted(hidden))
+            + ".",
+        ]
     out += ["", "### GPU", ""] + (gpu_rows if uses_ocr else ["No self-hosted model in this run, so no GPU was used."])
     out += [
         "",
@@ -213,6 +221,7 @@ def read_summary(run_dir: Path) -> tuple[str, str]:
 def headline(meta: dict, scores: dict) -> dict:
     """Short facts for the experiments index."""
     scores = visible(meta, scores)
+    meta = focused_meta(meta)
     ea = scores["extraction"]["aggregate"]
     best = {}
     for v in ("clean", "degraded"):
@@ -239,6 +248,7 @@ def headline(meta: dict, scores: dict) -> dict:
 
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     scores = visible(meta, scores)
+    meta = focused_meta(meta)
     body, author = read_summary(run_dir)
     findings = (
         ["## Findings", "", f"*{author.split(';')[0]}. It interprets the key facts above.*", ""]
@@ -274,6 +284,7 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
 
     body, author = read_summary(run_dir)
     vis = visible(meta, scores)
+    meta = focused_meta(meta)
     sections = {
         "facts_md": to_md(compute(meta, vis)),
         "findings": body,
@@ -281,6 +292,7 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
         "findings_unverified": unverified(author),
         "setup_md": setup_md(meta),
         "plan_description": meta.get("plan_description", ""),
+        "hide_backends": sorted(focus_backends(meta)),
         "pipeline_labels": {p: explain.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
     }
     return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], sections=sections)
@@ -300,7 +312,7 @@ def comparison(items: list[dict]) -> dict:
     speed: dict[str, dict] = {}
     for it in items:
         m, rid = it["meta"], it["meta"]["id"]
-        s = visible(m, it["scores"])
+        s = visible(m, it["scores"], focus=False)
         be = m.get("llm_backends") or {}
         for a in s["extraction"]["aggregate"]:
             label = explain.pipeline_label(m, a["pipeline"])
@@ -373,18 +385,62 @@ def comparison_md(c: dict) -> str:
 
 
 # --------------------------------------------------------------------------- shared guide (main page)
-def visible(meta: dict, scores: dict) -> dict:
-    """Scores without `X->X` pipelines (same model reading and extracting): kept on disk, hidden in reports."""
-    hide = {p for p in (meta.get("extraction") or {}).get("pipelines", []) if explain.same_model(meta, p)}
-    hide |= {a["pipeline"] for a in scores["extraction"]["aggregate"] if explain.same_model(meta, a["pipeline"])}
-    if not hide:
-        return scores
-    ex = scores["extraction"]
+def focus_backends(meta: dict) -> set[str]:
+    """Backends a run reports on but doesn't focus on (run.json `report.hide_backends`): e.g. models
+    re-run only as a reproducibility check. Their data stays on disk and in the cross-run comparison."""
+    return set((meta.get("report") or {}).get("hide_backends") or [])
+
+
+def focused_meta(meta: dict) -> dict:
+    """run.json as a run page should describe it: hidden backends removed from transcribers and pipelines,
+    and the default agent replaced by a shown extractor if it was hidden."""
+    hidden = focus_backends(meta)
+    if not hidden:
+        return meta
+    ex = dict(meta.get("extraction") or {})
+    agents = ex.get("agents") or {}
+    keep = [
+        p
+        for p in ex.get("pipelines", [])
+        if p.split("->")[0] not in hidden and agents.get(p, ex.get("agent")) not in hidden
+    ]
+    ex["pipelines"] = keep
+    if ex.get("agent") in hidden:
+        shown = [agents.get(p) for p in keep if agents.get(p) and agents.get(p) not in hidden]
+        ex["agent"] = shown[0] if shown else ex.get("agent")
+    ex["agents"] = {p: agents.get(p, ex["agent"]) for p in keep}
+    return {
+        **meta,
+        "extraction": ex,
+        "transcribers": [t for t in meta.get("transcribers") or [] if t not in hidden],
+        "plan_items": [i for i in meta.get("plan_items") or [] if i.get("backend") not in hidden],
+    }
+
+
+def visible(meta: dict, scores: dict, focus: bool = True) -> dict:
+    """Scores as shown on a run page.
+
+    Always hides `X->X` pipelines (same model reading and extracting). With focus=True, also hides
+    everything involving a backend in `report.hide_backends` (as transcriber or extractor).
+    """
+    hidden_be = focus_backends(meta) if focus else set()
+
+    def pipe_hidden(p: str) -> bool:
+        src = p.split("->")[0]
+        return explain.same_model(meta, p) or src in hidden_be or explain._extractor(meta, p) in hidden_be
+
+    ex = scores.get("extraction") or {}
+    tr = scores.get("transcription") or {}
     return {
         **scores,
+        "speed": [r for r in scores.get("speed") or [] if r["backend"] not in hidden_be],
+        "transcription": {
+            "aggregate": [a for a in tr.get("aggregate") or [] if a["backend"] not in hidden_be],
+            "pages": [p for p in tr.get("pages") or [] if p["backend"] not in hidden_be],
+        },
         "extraction": {
-            "aggregate": [a for a in ex["aggregate"] if a["pipeline"] not in hide],
-            "docs": [d for d in ex["docs"] if d["pipeline"] not in hide],
+            "aggregate": [a for a in ex.get("aggregate") or [] if not pipe_hidden(a["pipeline"])],
+            "docs": [d for d in ex.get("docs") or [] if not pipe_hidden(d["pipeline"])],
         },
     }
 
