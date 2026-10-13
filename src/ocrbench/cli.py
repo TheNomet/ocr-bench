@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -27,9 +28,7 @@ from .fileio import write_if_changed
 
 
 def state_dir(cfg: Config) -> Path:
-    d = ROOT / ".state" / cfg.prefix
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return cfg.state_dir
 
 
 def outputs(cfg: Config) -> dict:
@@ -40,6 +39,12 @@ def outputs(cfg: Config) -> dict:
 
 
 # ------------------------------------------------------------------ tf-vars
+def _pinned_images(cfg: Config) -> dict:
+    p = cfg.state_dir / "images.json"
+    refs = json.loads(p.read_text()) if p.exists() else {}
+    return {"ocr_image_ref": refs.get("ocr_image", ""), "bench_image_ref": refs.get("bench_image", "")}
+
+
 def cmd_tf_vars(cfg: Config, _a) -> None:
     r, net, ocr = cfg.raw, cfg["network"], cfg["ocr"]
     kms_arns = []
@@ -67,9 +72,10 @@ def cmd_tf_vars(cfg: Config, _a) -> None:
         "ecs_cluster": cfg["ecs"]["cluster"],
         "runner_cpu": int(r["runner"]["cpu"]),
         "runner_memory": int(r["runner"]["memory"]),
+        "runner_max_minutes": int(r["runner"].get("max_minutes", 240)),
         "create_ocr_model": bool(_a.with_model),
-        "ocr_image_tag": "sagemaker",
-        "bench_image_tag": "latest",
+        # deploy exactly the images that were built (by digest); tags only as a first-deploy fallback
+        **_pinned_images(cfg),
         "model_s3_prefix": cfg.model_prefix,
         "sagemaker_network_isolation": bool(ocr["sagemaker"].get("network_isolation", True)),
         "max_num_seqs": "64",
@@ -121,8 +127,14 @@ def cmd_images(cfg: Config, a) -> None:
 def cmd_endpoint(cfg: Config, a) -> None:
     from . import aws
 
+    def up(c):
+        role = None
+        with contextlib.suppress(SystemExit):
+            role = outputs(c).get("scheduler_role_arn")
+        aws.endpoint_up(c, role)
+
     {
-        "up": aws.endpoint_up,
+        "up": up,
         "down": aws.endpoint_down,
         "wait": aws.endpoint_wait,
         "status": lambda c: print(aws.endpoint_instance_type(c) or "no endpoint"),

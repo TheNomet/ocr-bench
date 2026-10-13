@@ -2,8 +2,8 @@
 # Copy the repo's hooks into .git/hooks (does not modify git config).
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
-for h in pre-commit pre-push; do
+for h in pre-commit pre-push commit-msg; do
   install -m 755 "$root/.githooks/$h" "$root/.git/hooks/$h"
 done
-echo "hooks installed: pre-commit, pre-push"
+echo "hooks installed: pre-commit, pre-push, commit-msg"
 [ -f "$root/.public-denylist" ] || echo "note: create .public-denylist (gitignored) to enable the public guard"

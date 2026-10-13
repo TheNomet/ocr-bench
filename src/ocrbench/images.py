@@ -9,6 +9,7 @@ bench : runner.base_image + one layer with ocrbench and its dependencies install
 from __future__ import annotations
 
 import io
+import json
 import shlex
 import shutil
 import subprocess
@@ -70,18 +71,49 @@ exec vllm serve /opt/ml/model \\
 """
 
 
+def _record(cfg: Config, **refs: str) -> None:
+    """Pinned image references (repo@sha256:...) in .state/<prefix>/images.json; Terraform deploys these."""
+    p = cfg.state_dir / "images.json"
+    data = json.loads(p.read_text()) if p.exists() else {}
+    data.update(refs)
+    p.write_text(json.dumps(data, indent=1) + "\n")
+
+
+def pinned(ref: str, digest: str) -> str:
+    """`name[:tag][@digest]` -> `name@digest` (the tag, if any, is dropped)."""
+    name = ref.split("@", 1)[0]
+    last = name.rsplit("/", 1)[-1]
+    if ":" in last:
+        name = name[: name.rfind(":")]
+    return f"{name}@{digest}"
+
+
+def _exists(c: str, ref: str) -> bool:
+    return subprocess.run([c, "digest", ref], capture_output=True).returncode == 0
+
+
 def build_ocr(cfg: Config, skip_mirror: bool = False) -> None:
+    """Mirror the source image *by digest* (a moved tag can't change what we deploy), then add serve.sh."""
     c, o = _crane(), cfg["ocr"]
     repo = f"{cfg.registry}/{cfg.ocr_repo}"
+    platform = o.get("image_platform", "linux/amd64")
     login(cfg)
-    if not skip_mirror:
-        print(f"mirroring {o['source_image']} -> {repo}:mirror (streams through this machine)")
-        _sh(c, "copy", "--platform", o.get("image_platform", "linux/amd64"), o["source_image"], f"{repo}:mirror")
-    print(f"source digest: {_sh(c, 'digest', '--platform', o.get('image_platform', 'linux/amd64'), o['source_image'])}")
+    src = o["source_image"]
+    digest = src.split("@", 1)[1] if "@" in src else _sh(c, "digest", "--platform", platform, src)
+    if "@" not in src:
+        print(f"note: {src} is a tag; pin it in the config as {src.split(':')[0]}@{digest} for reproducible builds")
+    mirror = f"{repo}:mirror-{digest.split(':')[1][:12]}"
+    if _exists(c, mirror):
+        print(f"source {digest} already mirrored as {mirror}")
+    else:
+        print(f"mirroring {src} ({digest}) -> {mirror} (streams through this machine)")
+        _sh(c, "copy", "--platform", platform, pinned(src, digest), mirror)
     layer = _layer({"opt/serve.sh": (serve_script(cfg).encode(), 0o755)})
-    _sh(c, "append", "-b", f"{repo}:mirror", "-f", str(layer), "-t", f"{repo}:sagemaker-base")
+    _sh(c, "append", "-b", mirror, "-f", str(layer), "-t", f"{repo}:sagemaker-base")
     _sh(c, "mutate", f"{repo}:sagemaker-base", "--entrypoint", "/opt/serve.sh", "--cmd", "", "-t", f"{repo}:sagemaker")
-    print(f"pushed {repo}:sagemaker ({_sh(c, 'digest', f'{repo}:sagemaker')})")
+    built = _sh(c, "digest", f"{repo}:sagemaker")
+    _record(cfg, ocr_image=f"{repo}@{built}", ocr_source_digest=digest)
+    print(f"pushed {repo}@{built}")
 
 
 def build_bench(cfg: Config) -> None:
@@ -90,12 +122,10 @@ def build_bench(cfg: Config) -> None:
     login(cfg)
     work = Path(tempfile.mkdtemp())
     site = work / "site"
-    print("installing ocrbench + deps for linux/amd64 (uv)")
-    _sh(
-        "uv",
-        "pip",
-        "install",
-        "--quiet",
+    print("installing ocrbench + locked deps for linux/amd64 (uv.lock, hash-checked)")
+    req = work / "requirements.txt"
+    req.write_text(_sh("uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--project", str(ROOT)))
+    target = [
         "--target",
         str(site),
         "--python-version",
@@ -103,8 +133,10 @@ def build_bench(cfg: Config) -> None:
         "--python-platform",
         "x86_64-manylinux_2_28",
         "--no-cache",
-        str(ROOT),
-    )
+        "--quiet",
+    ]
+    _sh("uv", "pip", "install", *target, "--require-hashes", "-r", str(req))
+    _sh("uv", "pip", "install", *target, "--no-deps", str(ROOT))
     files: dict[str, tuple[bytes, int]] = {}
     for f in site.rglob("*"):
         if f.is_file() and "__pycache__" not in f.parts:
@@ -116,9 +148,14 @@ def build_bench(cfg: Config) -> None:
         env.append("OCRBENCH_EXTRA_CA=/opt/ocrbench-ca/extra.pem")
     layer = _layer(files)
     print(f"layer: {layer.stat().st_size / 1e6:.1f} MB, {len(files)} files")
-    _sh(c, "append", "--platform", "linux/amd64", "-b", r["base_image"], "-f", str(layer), "-t", f"{repo}:base")
+    base = r["base_image"]
+    base_digest = base.split("@", 1)[1] if "@" in base else _sh(c, "digest", "--platform", "linux/amd64", base)
+    base_ref = pinned(base, base_digest)
+    _sh(c, "append", "--platform", "linux/amd64", "-b", base_ref, "-f", str(layer), "-t", f"{repo}:base")
     mut = [c, "mutate", f"{repo}:base", "-t", f"{repo}:latest", "--entrypoint", "python,-m,ocrbench.cli"]
     for e in env:
         mut += ["--env", e]
     _sh(*mut)
-    print(f"pushed {repo}:latest ({_sh(c, 'digest', f'{repo}:latest')})")
+    built = _sh(c, "digest", f"{repo}:latest")
+    _record(cfg, bench_image=f"{repo}@{built}", bench_base_digest=base_digest)
+    print(f"pushed {repo}@{built}")

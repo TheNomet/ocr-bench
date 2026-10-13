@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Scan the commit message too: messages are public as well.
+exec "$(git rev-parse --show-toplevel)/scripts/public_guard.sh" text < "$1"

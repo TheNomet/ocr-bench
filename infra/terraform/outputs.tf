@@ -9,3 +9,4 @@ output "security_group_id" { value = aws_security_group.runner.id }
 output "log_group" { value = aws_cloudwatch_log_group.bench.name }
 output "sagemaker_model" { value = try(aws_sagemaker_model.ocr[0].name, "") }
 output "endpoint_name" { value = local.endpoint_name }
+output "scheduler_role_arn" { value = aws_iam_role.scheduler.arn }

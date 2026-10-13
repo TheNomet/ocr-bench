@@ -86,12 +86,23 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
 
 resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
+  # Run copies and docs expire; model weights are kept for as long as the stack exists.
   rule {
-    id     = "expire"
+    id     = "expire-runs"
     status = "Enabled"
-    filter {}
+    filter {
+      prefix = "runs/"
+    }
     expiration {
       days = 60
+    }
+  }
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 2
     }
   }
 }
@@ -115,8 +126,11 @@ resource "aws_s3_bucket_policy" "tls_only" {
 resource "aws_ecr_repository" "repo" {
   for_each             = toset(["vllm", "bench"])
   name                 = "${local.p}-${each.key}"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "MUTABLE" # tags move on rebuild; deployments reference digests
   force_delete         = true
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -154,7 +168,7 @@ resource "aws_sagemaker_model" "ocr" {
   execution_role_arn       = aws_iam_role.sagemaker.arn
   enable_network_isolation = var.sagemaker_network_isolation
   primary_container {
-    image = "${aws_ecr_repository.repo["vllm"].repository_url}:${var.ocr_image_tag}"
+    image = var.ocr_image_ref != "" ? var.ocr_image_ref : "${aws_ecr_repository.repo["vllm"].repository_url}:${var.ocr_image_tag}"
     model_data_source {
       s3_data_source {
         s3_uri           = "s3://${local.bucket}/${var.model_s3_prefix}/"
@@ -232,9 +246,11 @@ resource "aws_iam_role_policy" "task" {
       ],
       length(var.kms_sign_key_arns) > 0 ? [{ Effect = "Allow", Action = ["kms:Sign"], Resource = var.kms_sign_key_arns }] : [],
       length(var.bedrock_model_ids) > 0 ? [{
-        Effect = "Allow", Action = ["bedrock:InvokeModel", "bedrock:Converse"],
-        Resource = flatten([for m in var.bedrock_model_ids : [
-          "arn:aws:bedrock:*::foundation-model/${m}",
+        # Converse is authorised by InvokeModel. A cross-region profile id ("eu.anthropic...") needs the
+        # profile ARN plus the un-prefixed foundation model in every region it routes to; full ARNs pass through.
+        Effect = "Allow", Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+        Resource = flatten([for m in var.bedrock_model_ids : startswith(m, "arn:") ? [m] : [
+          "arn:aws:bedrock:*::foundation-model/${replace(m, "/^(us|eu|apac|global|us-gov)\\./", "")}",
           "arn:aws:bedrock:*:${var.account_id}:inference-profile/${m}",
         ]])
       }] : [],
@@ -255,10 +271,11 @@ resource "aws_ecs_task_definition" "bench" {
     operating_system_family = "LINUX"
   }
   container_definitions = jsonencode([{
-    name       = "bench"
-    image      = "${aws_ecr_repository.repo["bench"].repository_url}:${var.bench_image_tag}"
-    essential  = true
-    entryPoint = ["python", "-m", "ocrbench.cli"]
+    name      = "bench"
+    image     = var.bench_image_ref != "" ? var.bench_image_ref : "${aws_ecr_repository.repo["bench"].repository_url}:${var.bench_image_tag}"
+    essential = true
+    # hard limit: the task stops itself even if nobody is watching it
+    entryPoint = ["timeout", "${var.runner_max_minutes}m", "python", "-m", "ocrbench.cli"]
     command    = ["--help"]
     environment = [
       { name = "OCRBENCH_BUCKET", value = local.bucket },
@@ -274,4 +291,34 @@ resource "aws_ecs_task_definition" "bench" {
       }
     }
   }])
+}
+
+# ---------------------------------------------------------------------------
+# Cost safety: EventBridge Scheduler deletes the GPU endpoint after its maximum lifetime
+# (`ocrbench endpoint up` creates the one-off schedule; `endpoint down` removes it).
+# ---------------------------------------------------------------------------
+resource "aws_iam_role" "scheduler" {
+  name_prefix          = "${substr(local.p, 0, 20)}-sched-"
+  permissions_boundary = var.permissions_boundary_arn
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "scheduler.amazonaws.com" }
+      Condition = { StringEquals = { "aws:SourceAccount" = var.account_id } }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  role = aws_iam_role.scheduler.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sagemaker:DeleteEndpoint"]
+      Resource = "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/${local.endpoint_name}"
+    }]
+  })
 }

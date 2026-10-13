@@ -98,6 +98,25 @@ site/                      LOCAL build of the site (gitignored); published to th
   presence. Field values are compared after case, whitespace and currency-prefix
   normalisation. Change `score.py` deliberately and update the tests.
 
+## How results are scored (don't change silently)
+
+`score.py` reads only the run folder (`run.json` for prices, GPU price and post-processing), so a run
+scores the same anywhere. Its choices are written into `scores.json` under `method`:
+- failed pages score CER=1/recall 0 and failed extractions 0 (see `coverage`); nothing is dropped;
+- the scored transcript of a page is the one from the lowest-concurrency run (latest if several);
+- a self-hosted model's per-page cost uses its best sustained throughput (<=1% errors), with the
+  concurrency-1 cost reported next to it;
+- numbers match as whole tokens; currency prefixes/suffixes are ignored when comparing fields.
+
+## Safety rails
+
+- The GPU endpoint deletes itself after `ocr.sagemaker.max_lifetime_hours`; bench tasks stop at
+  `runner.max_minutes`. Images are deployed by digest (`.state/<prefix>/images.json`), the bench
+  image installs from `uv.lock` with hashes, and every model file is hash-checked against Hugging Face.
+- Error text is redacted (`redact.py`) before it is written to records.
+- `scripts/public_guard.sh` fails closed (no denylist / bad pattern = error) and also scans file
+  names, commit messages and authors (`commit-msg` hook).
+
 ## Gotchas found the hard way
 
 - **Edit with care after `ruff format`.** Several string-replace edits silently missed because the

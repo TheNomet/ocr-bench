@@ -58,6 +58,11 @@ variable "runner_memory" {
   type    = number
   default = 4096
 }
+variable "runner_max_minutes" {
+  description = "Hard limit for one bench task"
+  type        = number
+  default     = 240
+}
 variable "bench_image_tag" {
   type    = string
   default = "latest"
@@ -68,6 +73,16 @@ variable "create_ocr_model" {
   description = "Create the SageMaker model (needs the image in ECR and weights in S3 first)"
   type        = bool
   default     = false
+}
+variable "ocr_image_ref" {
+  description = "Pinned OCR image (repo@sha256:...) written by `ocrbench images`; empty = use ocr_image_tag"
+  type        = string
+  default     = ""
+}
+variable "bench_image_ref" {
+  description = "Pinned bench image (repo@sha256:...); empty = use bench_image_tag"
+  type        = string
+  default     = ""
 }
 variable "ocr_image_tag" {
   type    = string

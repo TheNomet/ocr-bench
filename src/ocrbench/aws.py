@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import boto3
@@ -77,7 +78,46 @@ def s3_sync_down(bucket: str, prefix: str, local: Path) -> int:
 
 
 # ---------------------------------------------------------------------------- SageMaker
-def endpoint_up(cfg: Config) -> None:
+def _schedule_name(cfg: Config) -> str:
+    return f"{cfg.endpoint_name}-auto-delete"
+
+
+def schedule_auto_delete(cfg: Config, role_arn: str | None) -> None:
+    """One-off EventBridge Scheduler job that deletes the endpoint after ocr.sagemaker.max_lifetime_hours."""
+    hours = float(cfg["ocr"].get("sagemaker", {}).get("max_lifetime_hours", 8))
+    if not role_arn or hours <= 0:
+        print("  WARNING: no auto-delete scheduled; remember `endpoint down` (it bills per hour)")
+        return
+    sch = boto3.client("scheduler", region_name=cfg.region)
+    at = (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
+    args = dict(
+        Name=_schedule_name(cfg),
+        ScheduleExpression=f"at({at})",
+        ScheduleExpressionTimezone="UTC",
+        FlexibleTimeWindow={"Mode": "OFF"},
+        ActionAfterCompletion="DELETE",
+        Target={
+            "Arn": "arn:aws:scheduler:::aws-sdk:sagemaker:deleteEndpoint",
+            "RoleArn": role_arn,
+            "Input": json.dumps({"EndpointName": cfg.endpoint_name}),
+        },
+    )
+    try:
+        try:
+            sch.create_schedule(**args)
+        except sch.exceptions.ConflictException:
+            sch.update_schedule(**args)
+        print(f"  auto-delete scheduled at {at} UTC ({hours:g} h); change with ocr.sagemaker.max_lifetime_hours")
+    except Exception as e:  # noqa: BLE001 — never block the run on this, but say so loudly
+        print(f"  WARNING: could not schedule auto-delete ({type(e).__name__}); remember `endpoint down`")
+
+
+def cancel_auto_delete(cfg: Config) -> None:
+    with contextlib.suppress(Exception):  # absent or already fired
+        boto3.client("scheduler", region_name=cfg.region).delete_schedule(Name=_schedule_name(cfg))
+
+
+def endpoint_up(cfg: Config, scheduler_role_arn: str | None = None) -> None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     s = cfg["ocr"]["sagemaker"]
     name = cfg.endpoint_name
@@ -107,6 +147,7 @@ def endpoint_up(cfg: Config) -> None:
     except sm.exceptions.ClientError:
         sm.create_endpoint(EndpointName=name, EndpointConfigName=conf, Tags=tags)
         print(f"creating {name} (cold start is typically 10-20 min)")
+    schedule_auto_delete(cfg, scheduler_role_arn)
     endpoint_wait(cfg)
 
 
@@ -166,9 +207,12 @@ def endpoint_down(cfg: Config) -> None:
                 break
     except sm.exceptions.ClientError as e:
         print(f"endpoint: {e.response['Error']['Message']}")
-    for c in sm.list_endpoint_configs(NameContains=name, MaxResults=100)["EndpointConfigs"]:
-        sm.delete_endpoint_config(EndpointConfigName=c["EndpointConfigName"])
-        print(f"deleted config {c['EndpointConfigName']}")
+    cancel_auto_delete(cfg)
+    for page in sm.get_paginator("list_endpoint_configs").paginate(NameContains=name):
+        for c in page["EndpointConfigs"]:
+            if c["EndpointConfigName"].startswith(f"{name}-"):  # only ours, not e.g. "my{name}-..."
+                sm.delete_endpoint_config(EndpointConfigName=c["EndpointConfigName"])
+                print(f"deleted config {c['EndpointConfigName']}")
 
 
 def sagemaker_hourly_usd(region: str, instance_type: str) -> float | None:

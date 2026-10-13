@@ -19,12 +19,13 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `network.create.cidr` | /24 for the dedicated VPC (2 private subnets, NAT, S3 endpoint) |
 | `ecs.cluster` | `create`, or the name of an existing cluster |
 | `ocr.hf_repo`, `hf_revision` | Model snapshot, pinned. `hf_skip_prefixes` lists files not uploaded |
-| `ocr.source_image` | vLLM image that can serve the model |
+| `ocr.source_image` | vLLM image that can serve the model. Prefer `name@sha256:...`; with a tag the build prints the digest to pin. It is mirrored by digest, and the deployed model always references the built image by digest |
 | `ocr.serve_args` | Arguments to `vllm serve` (model path, host and port are added). Baked into `/opt/serve.sh` by `ocrbench images ocr` |
 | `ocr.request` | Request body: `prompt`, `max_tokens`, `temperature`, `extra_body` (merged as-is, e.g. `vllm_xargs`) |
 | `ocr.strip_grounding_tokens` | Remove `<\|det\|>` boxes and unwrap `<\|ref\|>` before scoring and extraction |
 | `ocr.sagemaker.instance_pools` | GPU types in priority order |
 | `ocr.sagemaker.inference_ami_version` | Host image, which sets the NVIDIA driver |
+| `ocr.sagemaker.max_lifetime_hours` | The endpoint deletes itself after this long (EventBridge Scheduler, created by `endpoint up`); 0 = never |
 | `ocr.sagemaker.price_per_hour_usd` | Optional. When unset, `report` looks up the deployed instance's price in the AWS Pricing API |
 | `ocr.direct_url` | Use a running vLLM server instead of SageMaker |
 | `llm_backends.<key>` | Named backends (see below). Use neutral model names as keys (`sonnet-5.5`): they appear in every record and on the public site |
@@ -42,6 +43,7 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `bench.max_retries` | Retries on 429/5xx with exponential backoff |
 | `runner.mode` | `fargate` (in the VPC) or `local` |
 | `runner.cpu/memory` | Fargate task size |
+| `runner.max_minutes` | Hard time limit per bench task (default 240) |
 | `runner.base_image` | Python 3.12 base for the bench image |
 | `runner.extra_ca_pem` | PEM baked into the bench image and trusted for outbound TLS |
 

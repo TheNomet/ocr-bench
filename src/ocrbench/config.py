@@ -55,6 +55,13 @@ class Config:
         return self.raw["name_prefix"]
 
     @property
+    def state_dir(self) -> Path:
+        """Local, gitignored deployment state: .state/<prefix>/ (tfvars, outputs, pinned image refs)."""
+        d = ROOT / ".state" / self.prefix
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @property
     def region(self) -> str:
         return self.raw["aws"]["region"]
 

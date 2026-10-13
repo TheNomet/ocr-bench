@@ -65,23 +65,19 @@ deploy:
     just _tfinit
     {{tf}} apply -input=false -auto-approve -var-file="$PWD/{{state}}/terraform.tfvars.json"
     just _outputs
-    just images
+    {{ob}} images all
     just weights
     just _tfinit --with-model
     {{tf}} apply -input=false -auto-approve -var-file="$PWD/{{state}}/terraform.tfvars.json"
     just _outputs
     @echo "deployed. next: just endpoint-up && just docs && just run smoke"
 
-# Build + push both images (ocr mirror is skipped if already present: `just images-force` to redo)
+# Build + push both images (pinned by digest) and point the stack at them (terraform apply)
 images:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    repo=$(python3 -c "import json;print(json.load(open('{{state}}/outputs.json'))['vllm_repository_url']['value'])")
-    if crane digest "$repo:mirror" >/dev/null 2>&1; then {{ob}} images ocr --skip-mirror; else {{ob}} images ocr; fi
-    {{ob}} images bench
-
-images-force:
     {{ob}} images all
+    just _tfinit --with-model
+    {{tf}} apply -input=false -auto-approve -var-file="$PWD/{{state}}/terraform.tfvars.json"
+    just _outputs
 
 # Weights -> S3, skipped if the manifest is already there. Proxy blocks the HF CDN? `just weights ~/Downloads`
 weights from_dir="":
