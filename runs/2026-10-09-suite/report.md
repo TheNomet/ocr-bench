@@ -21,8 +21,8 @@
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `haiku-4.5` | 8.0 | 137 (32) |
 | `sonnet-4.5` | 14.1 | 43 (16) |
+| `haiku-4.5` | 8.0 | 137 (32) |
 | `ocr` | 6.2 | 28 (32) |
 
 OCR transcription costs $1.49/hour whether busy or idle; one GPU handled at most ~1686 pages/hour in this run.
