@@ -196,8 +196,8 @@
    "seconds": 0.3
   },
   "summarize": {
-   "finished": "2026-10-13T08:45:20",
-   "seconds": 14.8
+   "finished": "2026-10-13T16:15:13",
+   "seconds": 16.4
   }
  },
  "plan_description": "First benchmark: self-hosted Unlimited-OCR (GPU) vs Claude Sonnet 4.5 and Haiku 4.5, single requests and batch load (concurrency 1-32).",
@@ -280,13 +280,13 @@
   },
   "opus-5.5": {
    "kind": "openai_compatible",
+   "label": null,
+   "postprocess": [],
    "model": "anthropic.claude-opus-5-5",
    "price_per_mtok": null,
    "temperature": 1,
    "reasoning_effort": "medium",
-   "via": "OpenAI-compatible gateway",
-   "postprocess": [],
-   "label": null
+   "via": "OpenAI-compatible gateway"
   }
  },
  "prompts": {
