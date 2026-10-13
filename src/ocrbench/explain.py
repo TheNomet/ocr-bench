@@ -24,8 +24,9 @@ STAGES = [
     ),
     (
         "2. Extract",
-        "The extraction agent pulls each document type's fields (totals, dates, names, checked boxes…) "
-        "out of each pipeline's input. Scored field by field against the ground truth.",
+        "An extractor pulls each document type's fields (totals, dates, names, checked boxes…) out of each "
+        "pipeline's input: the run's extraction agent, or the model named after the arrow. Scored field by "
+        "field against the ground truth.",
     ),
     ("3. Score", "Transcripts and fields are compared with the ground truth; latency and cost are aggregated."),
     (

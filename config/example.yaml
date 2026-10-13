@@ -110,12 +110,14 @@ backends:
     kind: bedrock
     # temperature: 1               # optional override; some models accept only 1. null = don't send
     # reasoning_effort: medium     # optional: low | medium | high, for models with extended thinking
-    model_id: anthropic.claude-sonnet-4-5-20250929-v1:0   # or an inference profile id
+    # Claude 4.5 on Bedrock is invoked through an inference profile: eu. / us. / apac. / global. + model id,
+    # matching the region below. A bare foundation-model id is rejected for these models.
+    model_id: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
     region: ${AWS_REGION:-eu-west-1}
     price_per_mtok: {input: 3.0, output: 15.0}            # USD, for the cost table only
   haiku-4.5:
     kind: bedrock
-    model_id: anthropic.claude-haiku-4-5-20251001-v1:0
+    model_id: eu.anthropic.claude-haiku-4-5-20251001-v1:0
     region: ${AWS_REGION:-eu-west-1}
     price_per_mtok: {input: 1.0, output: 5.0}
   # gateway-sonnet:
@@ -172,9 +174,15 @@ bench:
   # One-line description per plan, shown on every run of it (the run id is <date>-<plan>).
   plan_descriptions:
     smoke: "Quick health check: a couple of pages per backend."
+    bedrock-only: "No GPU: Claude Sonnet 4.5 and Haiku 4.5 on Bedrock, transcribing vs reading the images."
     suite: "Self-hosted OCR vs hosted LLMs, single requests and batch load."
   # Named run plans: each item is one transcription run.
+  # Pipelines whose transcriber a plan doesn't run are skipped for that plan.
   plans:
+    # No GPU, no deploy: with runner.mode local this needs only Bedrock access (see README).
+    bedrock-only:
+      - {backend: sonnet-4.5, concurrency: 4}
+      - {backend: haiku-4.5, concurrency: 4}
     smoke:
       - {backend: unlimited-ocr, concurrency: 1, limit: 2, variant: clean}
       - {backend: sonnet-4.5, concurrency: 1, limit: 1, variant: clean}

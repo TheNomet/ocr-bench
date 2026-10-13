@@ -7,7 +7,7 @@ import json
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -91,45 +91,26 @@ def request(prompt: dict, image: Path) -> Request:
 async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries, prompt, rep=0, sink=None) -> Transcript:
     async with sem:
         t0, started = time.perf_counter(), time.time()
-        req = request(prompt, ref.path)
+        base = Transcript(
+            run_id, be.name, be.model, ref.doc_id, ref.page, ref.variant, conc, started, latency_s=0.0, ok=False
+        )
         try:
-            resp, retries, lat = await call_with_retries(lambda: be.complete(req), max_retries)
+            resp, retries, lat = await call_with_retries(lambda: be.complete(request(prompt, ref.path)), max_retries)
         except Exception as e:  # noqa: BLE001 — record and keep the batch going
-            rec = Transcript(
-                run_id,
-                be.name,
-                be.model,
-                ref.doc_id,
-                ref.page,
-                ref.variant,
-                conc,
-                started,
-                time.perf_counter() - t0,
-                False,
-                error=error_text(e),
-            )
+            rec = replace(base, latency_s=time.perf_counter() - t0, error=error_text(e))
         else:
-            suffix = f".x{rep}" if rep else ""
-            rel = Path("outputs") / be.name / f"{ref.key}.r{run_id}{suffix}.md"
+            rel = Path("outputs") / be.name / f"{ref.key}.r{run_id}{f'.x{rep}' if rep else ''}.md"
             (out_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             (out_dir / rel).write_text(resp.text, encoding="utf-8")
-            rec = Transcript(
-                run_id,
-                be.name,
-                be.model,
-                ref.doc_id,
-                ref.page,
-                ref.variant,
-                conc,
-                started,
-                lat,
-                True,
-                resp.prompt_tokens,
-                resp.completion_tokens,
-                resp.finish_reason,
-                retries,
-                None,
-                str(rel),
+            rec = replace(
+                base,
+                latency_s=lat,
+                ok=True,
+                prompt_tokens=resp.prompt_tokens,
+                completion_tokens=resp.completion_tokens,
+                finish_reason=resp.finish_reason,
+                retries=retries,
+                output_file=str(rel),
             )
         if sink:
             sink(rec)

@@ -305,6 +305,7 @@ def run_task(cfg: Config, outputs: dict, args: list[str]) -> tuple[str, int | No
         if status == "STOPPED":
             break
         time.sleep(10)
+    t, code = {}, None
     for _ in range(30):  # exitCode is filled in a little after STOPPED
         t = ecs.describe_tasks(cluster=outputs["ecs_cluster"], tasks=[arn])["tasks"][0]
         # pick ours by name: accounts may inject sidecars (e.g. a security agent) into every task

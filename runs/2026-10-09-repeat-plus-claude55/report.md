@@ -31,8 +31,8 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `sonnet-5.5` | 5.3 | 175 (16) |
 | `unlimited-ocr` | 6.1 | 29 (16) |
+| `sonnet-5.5` | 5.3 | 175 (16) |
 | `haiku-5.5` | 4.3 | 136 (16) |
 
 `unlimited-ocr` runs on its own GPU (ml.g5.xlarge), which costs $1.49/hour whether busy or idle; it handled at most ~1729 pages/hour in this run.
@@ -134,7 +134,7 @@ Transcription runs in this plan:
 ### Stages
 
 - **1. Transcribe**: Every page image (clean and degraded) is sent to each transcriber, at several concurrency levels. This measures how well and how fast each backend reads.
-- **2. Extract**: The extraction agent pulls each document type's fields (totals, dates, names, checked boxes…) out of each pipeline's input. Scored field by field against the ground truth.
+- **2. Extract**: An extractor pulls each document type's fields (totals, dates, names, checked boxes…) out of each pipeline's input: the run's extraction agent, or the model named after the arrow. Scored field by field against the ground truth.
 - **3. Score**: Transcripts and fields are compared with the ground truth; latency and cost are aggregated.
 - **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers; every number it writes is checked against the facts, and any it cannot find there is flagged as unverified.
 

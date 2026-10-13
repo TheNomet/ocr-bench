@@ -325,6 +325,7 @@ def test_named_extractor_pipeline(fake_docs, tmp_path, monkeypatch):
 
 def test_comparison_matches_on_model_not_key():
     from ocrbench import reporting
+    from ocrbench.report import RunCard
 
     def run(rid, agent_model, acc):
         meta = {
@@ -345,7 +346,7 @@ def test_comparison_matches_on_model_not_key():
             "transcription": {"aggregate": []},
             "speed": [{"backend": "o", "concurrency": 1, "pages_per_min": 9.0}],
         }
-        return {"meta": meta, "scores": scores}
+        return RunCard(meta=meta, card_meta=meta, scores=scores, headline={})
 
     c = reporting.comparison(
         [run("r2", "anthropic.claude-sonnet-5-5", 0.99), run("r1", "anthropic.claude-sonnet-4-5-20250929-v1:0", 0.97)]
@@ -411,3 +412,44 @@ def test_focus_hides_repeat_backends_but_not_in_comparison():
     assert fm["extraction"]["agent"] == "new" and fm["transcribers"] == ["ocr", "new"]
     full = reporting.visible(meta, scores, focus=False)
     assert len(full["extraction"]["aggregate"]) == 3
+
+
+def test_bedrock_only_plan_runs_locally_without_selfhosted_pipelines(fake_docs, tmp_path, monkeypatch):
+    """The README's no-GPU quick start: example config, runner.mode local, plan bedrock-only."""
+    from ocrbench import cli, extract, runs, summarize, transcribe
+
+    cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    cfg.raw["runner"]["mode"] = "local"
+    monkeypatch.setattr(runs, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    fake = {}
+
+    def get(c, n):
+        assert c.kind(n) == "bedrock"  # nothing else is called
+        return fake.setdefault(n, GroundTruthBackend(n, fake_docs))
+
+    monkeypatch.setattr(transcribe, "get_backend", get)
+    monkeypatch.setattr(extract, "get_backend", get)
+    monkeypatch.setattr(summarize, "get_backend", lambda c, n: GroundTruthBackend(n, fake_docs))
+    monkeypatch.setattr(runs, "record_endpoint", lambda *a: pytest.fail("no endpoint in a Bedrock-only run"))
+
+    class A:
+        plan, id, stages, docs = "bedrock-only", None, "transcribe,extract,score", str(fake_docs)
+
+    cli.cmd_run(cfg, A())
+    (d,) = (tmp_path / "runs").iterdir()
+    meta = runs.load(d)
+    assert meta["extraction"]["pipelines"] == ["haiku-4.5->agent", "image->agent"]
+    s = json.loads((d / "scores.json").read_text())
+    assert all(a["coverage"] == 1 and a["field_accuracy"] == 1 for a in s["extraction"]["aggregate"])
+    assert "No self-hosted model in this run" in (d / "report.md").read_text()
+
+
+def test_throughput_facts_keep_plan_order():
+    from ocrbench.facts import throughput_facts
+
+    sp = [
+        {"backend": b, "concurrency": 1, "pages_per_min": 1.0, "p50_s": 1.0}
+        for b in ("zeta", "alpha", "mid", "beta", "omega")
+    ]
+    assert list(throughput_facts(sp)) == ["zeta", "alpha", "mid", "beta", "omega"]

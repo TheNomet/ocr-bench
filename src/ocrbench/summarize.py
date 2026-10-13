@@ -1,4 +1,4 @@
-"""Stage 4: an LLM comments on the computed key facts (summary.md).
+"""Stage 4: an LLM writes the recommendation from the computed key facts (summary.md).
 
 The LLM gets the key-facts table (computed in code, see facts.py) and a short description of
 the setup. It is asked to interpret, not to restate or recompute. Afterwards every number in
@@ -154,5 +154,5 @@ def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
         "unverified_numbers": bad,
     }
     (run_dir / "summary.json").write_text(json.dumps(info, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"summary written by {name}: {len(text)} chars; unverified numbers: {bad or 'none'}", flush=True)
+    print(f"recommendation written by {name}: {len(text)} chars; unverified numbers: {bad or 'none'}", flush=True)
     return text

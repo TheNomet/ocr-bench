@@ -141,6 +141,13 @@ class OpenAICompatBackend(Backend):
     async def warmup(self) -> None:
         await self._auth(False)
 
+    async def _post(self, body: dict, force_token: bool) -> httpx.Response:
+        headers = {**self.headers, **await self._auth(force=force_token)}
+        try:
+            return await self.client.post(self.url, json=body, headers=headers)
+        except httpx.TransportError as e:  # connect/read timeouts, resets: retryable
+            raise HTTPError(503, f"{type(e).__name__}: {e}") from e
+
     async def complete(self, req: Request) -> Response:
         system = req.system
         if self.cache_bust:  # some gateways return cached completions for identical bodies
@@ -154,15 +161,9 @@ class OpenAICompatBackend(Backend):
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
             **self.extra_body,
         }
-        for attempt in (1, 2):
-            headers = {**self.headers, **await self._auth(force=attempt == 2)}
-            try:
-                r = await self.client.post(self.url, json=body, headers=headers)
-            except httpx.TransportError as e:  # connect/read timeouts, resets: retryable
-                raise HTTPError(503, f"{type(e).__name__}: {e}") from e
-            if r.status_code == 401 and attempt == 1 and self.kms_auth:
-                continue
-            break
+        r = await self._post(body, force_token=False)
+        if r.status_code == 401 and self.kms_auth:  # token revoked or expired early: fetch a new one once
+            r = await self._post(body, force_token=True)
         if r.status_code >= 400:
             raise HTTPError(r.status_code, r.text)
         data = r.json()

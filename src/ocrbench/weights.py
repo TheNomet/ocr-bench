@@ -21,7 +21,7 @@ from boto3.s3.transfer import TransferConfig
 from .config import Config
 
 try:  # trust the OS store too (corporate TLS inspection)
-    import truststore
+    import truststore  # pyright: ignore[reportMissingImports]
 
     VERIFY: ssl.SSLContext | bool = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 except ImportError:

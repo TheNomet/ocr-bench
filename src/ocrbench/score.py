@@ -298,6 +298,79 @@ def transcription(meta: dict, docs: Path, run_dir: Path, transcripts: list[dict]
     return agg, pages
 
 
+def latest_extractions(records: list[dict], manifest: dict) -> dict[tuple[str, str, str], dict]:
+    """The latest record per (pipeline, doc, variant); a success beats a later failure."""
+    latest: dict[tuple[str, str, str], dict] = {}
+    for e in records:
+        k = (e["pipeline"], e["doc_id"], e["variant"])
+        if e["doc_id"] in manifest and (k not in latest or e["ok"] or not latest[k]["ok"]):
+            latest[k] = e
+    return latest
+
+
+def score_extraction(e: dict, truth: dict, run_dir: Path) -> dict:
+    """Field-by-field score of one extraction record. A failed extraction gets every field wrong."""
+    raw = _read(run_dir / e["output_file"]) if e["ok"] and e.get("output_file") else None
+    pred = json.loads(raw) if raw else {}
+    fields = {
+        f: {"truth": t, "predicted": pred.get(f), "correct": field_correct(t, pred.get(f))} for f, t in truth.items()
+    }
+    n_ok = sum(x["correct"] for x in fields.values())
+    return {
+        "pipeline": e["pipeline"],
+        "doc_id": e["doc_id"],
+        "variant": e["variant"],
+        "ok": bool(raw),
+        "error": e.get("error"),
+        "accuracy": n_ok / max(1, len(fields)),
+        "fields_total": len(fields),
+        "fields_correct": n_ok,
+        "fields": fields,
+        "output_file": e.get("output_file"),
+        "latency_s": e.get("latency_s") or 0.0,
+        "prompt_tokens": e.get("prompt_tokens"),
+        "completion_tokens": e.get("completion_tokens"),
+        "agent": e["agent"],
+        "source": e["source"],
+    }
+
+
+def source_latency(transcripts: list[dict]) -> dict[tuple[str, str, str], float]:
+    """(backend, doc, variant) -> transcription seconds for the whole document: the sum over its pages,
+    from the backend's lowest-concurrency run (the same basis as the latency figures)."""
+    lowest: dict[str, int] = {}
+    for r in transcripts:
+        if r["ok"]:
+            lowest[r["backend"]] = min(lowest.get(r["backend"], 10**9), r["concurrency"])
+    out: dict[tuple[str, str, str], float] = {}
+    counted = set()
+    for r in transcripts:
+        k = (r["backend"], r["doc_id"], r["page"], r["variant"])
+        if r["ok"] and r["concurrency"] == lowest[r["backend"]] and k not in counted:
+            counted.add(k)
+            dk = (r["backend"], r["doc_id"], r["variant"])
+            out[dk] = out.get(dk, 0.0) + r["latency_s"]
+    return out
+
+
+def _pipeline_cost(s: list[dict], okd: list[dict], price: dict | None, src_cost: float | None, manifest: dict):
+    """USD per 1k documents: extractor tokens, plus the source's per-page cost x pages per document.
+    None when either part has no price."""
+    per_call = _token_cost(
+        price,
+        st.mean([d["prompt_tokens"] or 0 for d in okd] or [0]),
+        st.mean([d["completion_tokens"] or 0 for d in okd] or [0]),
+    )
+    if per_call is None or not okd:
+        return None
+    cost = per_call * 1000
+    if s[0]["source"] == "image":
+        return cost
+    if src_cost is None:
+        return None
+    return cost + src_cost * st.mean(len(manifest[d["doc_id"]]["pages"]) for d in s)
+
+
 def extraction(
     meta: dict,
     docs: Path,
@@ -308,54 +381,11 @@ def extraction(
     basis: dict[str, dict],
 ) -> tuple[list, list]:
     prices = {k: v.get("price_per_mtok") for k, v in meta["backends"].items()}
-    latest: dict[tuple, dict] = {}
-    for e in records:  # latest record per (pipeline, doc, variant); successes beat failures
-        k = (e["pipeline"], e["doc_id"], e["variant"])
-        if e["doc_id"] in manifest and (k not in latest or e["ok"] or not latest[k]["ok"]):
-            latest[k] = e
     docs_out = []
-    for (pipe, doc_id, variant), e in sorted(latest.items()):
+    for (_, doc_id, _), e in sorted(latest_extractions(records, manifest).items()):
         truth = json.loads(_read(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
-        raw = _read(run_dir / e["output_file"]) if e["ok"] and e.get("output_file") else None
-        pred = json.loads(raw) if raw else {}
-        fields = {
-            f: {"truth": t, "predicted": pred.get(f), "correct": field_correct(t, pred.get(f))}
-            for f, t in truth.items()
-        }
-        n_ok = sum(x["correct"] for x in fields.values())
-        docs_out.append(
-            {
-                "pipeline": pipe,
-                "doc_id": doc_id,
-                "variant": variant,
-                "ok": bool(raw),
-                "error": e.get("error"),
-                "accuracy": n_ok / max(1, len(fields)),
-                "fields_total": len(fields),
-                "fields_correct": n_ok,
-                "fields": fields,
-                "output_file": e.get("output_file"),
-                "latency_s": e.get("latency_s") or 0.0,
-                "prompt_tokens": e.get("prompt_tokens"),
-                "completion_tokens": e.get("completion_tokens"),
-                "agent": e["agent"],
-                "source": e["source"],
-            }
-        )
-
-    # per-doc transcription latency of the source: sum over pages, from its lowest-concurrency run
-    src_lat: dict[tuple[str, str, str], float] = {}
-    lowest: dict[str, int] = {}
-    for r in transcripts:
-        if r["ok"]:
-            lowest[r["backend"]] = min(lowest.get(r["backend"], 10**9), r["concurrency"])
-    counted = set()
-    for r in transcripts:
-        k = (r["backend"], r["doc_id"], r["page"], r["variant"])
-        if r["ok"] and r["concurrency"] == lowest[r["backend"]] and k not in counted:
-            counted.add(k)
-            dk = (r["backend"], r["doc_id"], r["variant"])
-            src_lat[dk] = src_lat.get(dk, 0.0) + r["latency_s"]
+        docs_out.append(score_extraction(e, truth, run_dir))
+    src_lat = source_latency(transcripts)
 
     agg = []
     for pipe in sorted({d["pipeline"] for d in docs_out}):
@@ -370,18 +400,7 @@ def extraction(
                 if okd and src != "image"
                 else lat
             )
-            cost = None
-            per_call = _token_cost(
-                prices.get(s[0]["agent"]),
-                st.mean([d["prompt_tokens"] or 0 for d in okd] or [0]),
-                st.mean([d["completion_tokens"] or 0 for d in okd] or [0]),
-            )
-            if per_call is not None and okd:
-                cost = per_call * 1000
-                if src != "image":
-                    sc = (basis.get(src) or {}).get("cost_per_1k_pages_usd")
-                    pages_per_doc = st.mean(len(manifest[d["doc_id"]]["pages"]) for d in s)
-                    cost = cost + sc * pages_per_doc if sc is not None else None
+            src_cost = (basis.get(src) or {}).get("cost_per_1k_pages_usd")
             tot, cor = sum(d["fields_total"] for d in s), sum(d["fields_correct"] for d in s)
             agg.append(
                 {
@@ -394,7 +413,7 @@ def extraction(
                     "fields_correct": cor,
                     "mean_latency_s": lat,
                     "end_to_end_latency_s": e2e,
-                    "cost_per_1k_docs_usd": cost,
+                    "cost_per_1k_docs_usd": _pipeline_cost(s, okd, prices.get(s[0]["agent"]), src_cost, manifest),
                 }
             )
     return agg, docs_out

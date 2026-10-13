@@ -7,7 +7,7 @@ Runs         run --plan P [--stages ...]      new run folder runs/<date>-<plan>/
              fetch --run ID | list | report [--run ID]   (report also rebuilds site/index.html)
 Gateways     probe-models / probe-task        which model ids does a gateway accept?
 
-Stages: transcribe (1) -> extract (2) -> score (3) -> summarize (4, LLM-written findings).
+Stages: transcribe (1) -> extract (2) -> score (3) -> summarize (4, the LLM-written recommendation).
 """
 
 from __future__ import annotations
@@ -189,61 +189,71 @@ def _parse_stages(s: str) -> list[str]:
     return [x for x in STAGES if x in stages]  # canonical order
 
 
+def _stage_transcribe(cfg: Config, d: Path, meta: dict) -> None:
+    from . import prompts
+    from .transcribe import run
+
+    items = meta.get("plan_items") or []
+    for i, it in enumerate(items, 1):
+        print(f"\n=== [{i}/{len(items)}] {json.dumps(it)}", flush=True)
+        asyncio.run(
+            run(
+                cfg,
+                d / "docs",
+                d,
+                prompt=prompts.of(meta, "transcribe"),
+                backend=it["backend"],
+                concurrency=int(it.get("concurrency", 1)),
+                variant=it.get("variant", "both"),
+                limit=int(it.get("limit", 0)),
+                repeat=int(it.get("repeat", 1)),
+                warmup=it.get("warmup", True),
+            )
+        )
+
+
+def _stage_extract(cfg: Config, d: Path, meta: dict) -> None:
+    from .extract import run
+
+    # the documents stage 1 attempted (extract.targets); one variant if every plan item used the same one
+    variants = {it.get("variant", "both") for it in meta.get("plan_items") or []}
+    variant = variants.pop() if len(variants) == 1 else "both"
+    asyncio.run(run(cfg, d / "docs", d, meta=meta, pipelines=meta["extraction"]["pipelines"], variant=variant))
+
+
+def _stage_score(cfg: Config, d: Path, meta: dict) -> None:
+    from .score import score
+
+    s = score(meta, d)
+    write_if_changed(d / "scores.json", json.dumps(s, ensure_ascii=False, indent=1))
+    print(f"scored: {len(s['transcription']['pages'])} pages, {len(s['extraction']['docs'])} extractions")
+
+
+def _stage_summarize(cfg: Config, d: Path, meta: dict) -> None:
+    from . import summarize
+
+    sp = d / "scores.json"
+    if not sp.exists():
+        raise SystemExit("summarize needs scores.json: run the score stage first")
+    summarize.run(cfg, d, meta, json.loads(sp.read_text(encoding="utf-8")))
+
+
+STAGE_RUNNERS = {
+    "transcribe": _stage_transcribe,
+    "extract": _stage_extract,
+    "score": _stage_score,
+    "summarize": _stage_summarize,
+}
+
+
 def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
     """Run stages over runs/<id>/. `sync` (optional) is called after each stage (Fargate: upload to S3)."""
-    from . import prompts, runs
-    from .extract import run as extract_run
-    from .score import score
-    from .transcribe import run as transcribe_run
+    from . import runs
 
-    meta = runs.load(d)
-    docs = d / "docs"
-    items = meta.get("plan_items") or []
     for st in stages:
         t0 = time.time()
         print(f"\n##### stage: {st}", flush=True)
-        if st == "transcribe":
-            for i, it in enumerate(items, 1):
-                print(f"\n=== [{i}/{len(items)}] {json.dumps(it)}", flush=True)
-                asyncio.run(
-                    transcribe_run(
-                        cfg,
-                        docs,
-                        d,
-                        prompt=prompts.of(meta, "transcribe"),
-                        backend=it["backend"],
-                        concurrency=int(it.get("concurrency", 1)),
-                        variant=it.get("variant", "both"),
-                        limit=int(it.get("limit", 0)),
-                        repeat=int(it.get("repeat", 1)),
-                        warmup=it.get("warmup", True),
-                    )
-                )
-        elif st == "extract":
-            lim = 0  # extraction uses exactly the documents stage 1 attempted
-            variants = {it.get("variant", "both") for it in items}
-            asyncio.run(
-                extract_run(
-                    cfg,
-                    docs,
-                    d,
-                    meta=meta,
-                    pipelines=meta["extraction"]["pipelines"],
-                    variant=variants.pop() if len(variants) == 1 else "both",
-                    limit=lim,
-                )
-            )
-        elif st == "score":
-            s = score(runs.load(d), d)
-            write_if_changed(d / "scores.json", json.dumps(s, ensure_ascii=False, indent=1))
-            print(f"scored: {len(s['transcription']['pages'])} pages, {len(s['extraction']['docs'])} extractions")
-        elif st == "summarize":
-            from . import summarize
-
-            sp = d / "scores.json"
-            if not sp.exists():
-                raise SystemExit("summarize needs scores.json: run the score stage first")
-            summarize.run(cfg, d, runs.load(d), json.loads(sp.read_text(encoding="utf-8")))
+        STAGE_RUNNERS[st](cfg, d, runs.load(d))  # each stage sees what the previous one recorded
         runs.stage(d, st, finished=datetime.now().isoformat(timespec="seconds"), seconds=round(time.time() - t0, 1))
         if sync:
             sync()
@@ -274,7 +284,7 @@ def cmd_run(cfg: Config, a) -> None:
         print(f"resuming run {a.id}: stages {stages}")
         if "summarize" in stages:
             runs.refresh_summary_setup(cfg, d)
-            print(f"summary model: {runs.load(d)['summary']['agent']}")
+            print(f"recommendation model: {runs.load(d)['summary']['agent']}")
     else:
         if not a.plan:
             raise SystemExit("--plan is required for a new run")
@@ -335,26 +345,10 @@ def _report(cfg: Config, ids: list[str]) -> None:
     items = []
     for meta in runs.all_runs():
         d = runs.run_dir(meta["id"])
-        sp = d / "scores.json"
-        if not sp.exists():
-            continue
-        s = json.loads(sp.read_text(encoding="utf-8"))
-        body, _ = reporting.read_summary(d)
-        bl = ""
-        if body:  # first paragraph under "## Bottom line"
-            parts = body.split("## Bottom line", 1)
-            bl = parts[1].split("\n## ", 1)[0].strip() if len(parts) == 2 else ""
-        items.append(
-            {
-                "meta": meta,
-                "card_meta": reporting.focused_meta(meta),
-                "scores": s,
-                "headline": reporting.headline(meta, s),
-                "bottom_line": bl,
-            }
-        )
+        if (d / "scores.json").exists():
+            items.append(reporting.run_card(meta, json.loads((d / "scores.json").read_text(encoding="utf-8")), d))
     cmp_md = reporting.comparison_md(reporting.comparison(items))
-    guide = reporting.guide_md(items[0]["meta"] if items else None)
+    guide = reporting.guide_md(items[0].meta if items else None)
     print(f"experiments index: {build_experiments_index(items, site, comparison_md=cmp_md, guide_md=guide)}")
 
 
@@ -377,13 +371,14 @@ def cmd_probe_models(cfg: Config, a) -> None:
     """List what each openai_compatible backend's gateway offers and try a 1-token call per candidate id."""
     import httpx
 
-    from .backends import Request, get_backend
+    from .backends import Request
+    from .backends.openai_compat import OpenAICompatBackend
 
     async def go():
         for name, spec in cfg.backends.items():
             if spec["kind"] != "openai_compatible" or (a.backend and name not in a.backend):
                 continue
-            be = get_backend(cfg, name)
+            be = OpenAICompatBackend(name, spec)
             print(f"\n== {name} ({spec['base_url']})", flush=True)
             try:
                 hdr = await be._auth(False)

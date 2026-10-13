@@ -79,7 +79,7 @@ runs/<id>/
   scores.json               stage 3 (section 4)
   summary.md                stage 4: the LLM-written recommendation
   summary.json              who wrote it (backend, model), token counts, and numbers not found in the key facts
-  report.md                 findings + setup + legend + result tables
+  report.md                 key facts + recommendation + setup + legend + result tables
 ```
 
 ### run.json
@@ -151,7 +151,7 @@ runs/<id>/
 ```
 runs/<id>/
   extractions.jsonl
-  outputs/extract/<pipeline_slug>/<doc_id>.<variant>.json   # parsed fields returned by the agent
+  outputs/extract/<pipeline_slug>/<doc_id>.<variant>.json   # parsed fields returned by the extractor
 ```
 
 `pipeline` is `"<source>-><extractor>"`. The source is a transcriber backend name, or `"image"`

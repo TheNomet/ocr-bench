@@ -6,7 +6,7 @@
       docs/               copy of the document set the run used
       runs.jsonl transcripts.jsonl extractions.jsonl outputs/     stage 1 + 2 records
       scores.json         scored results (stage 3)
-      summary.md          LLM-written findings (stage 4)
+      summary.md          LLM-written recommendation (stage 4); summary.json: who wrote it, unverified numbers
       report.md           everything above as one readable document
 
 The same folder is mirrored to s3://<bucket>/runs/<id>/ when the runner is Fargate.
@@ -182,6 +182,19 @@ def backends_summary(cfg: Config, names: list[str] | None = None) -> dict:
     return {k: backend_summary(cfg.backend(k)) for k in (names if names is not None else cfg.backends)}
 
 
+def plan_pipelines(cfg: Config, plan: str) -> list[str]:
+    """The plan's pipelines (bench.extraction.plan_pipelines.<plan>, else .pipelines), minus those reading a
+    transcript the plan doesn't produce: they could only fail."""
+    ex = cfg["bench"]["extraction"]
+    pipes = (ex.get("plan_pipelines") or {}).get(plan, ex["pipelines"])
+    made = {it["backend"] for it in cfg.plan(plan)} if plan in cfg["bench"]["plans"] else set()
+    keep = [p for p in pipes if p.split("->")[0] in made | {"image"}]
+    dropped = [p for p in pipes if p not in keep]
+    if dropped:
+        print(f"note: plan {plan!r} doesn't transcribe with their source, so skipping {', '.join(dropped)}")
+    return keep
+
+
 def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     rid = rid or new_id(plan)
     d = run_dir(rid)
@@ -189,7 +202,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     shutil.copytree(docs, d / "docs")
     shutil.copy2(cfg.path, d / "config.yaml")
     ex = dict(cfg["bench"]["extraction"])
-    ex["pipelines"] = (ex.get("plan_pipelines") or {}).get(plan, ex["pipelines"])
+    ex["pipelines"] = plan_pipelines(cfg, plan)
     summ = cfg["bench"].get("summary") or {}
     meta = {
         "schema_version": SCHEMA_VERSION,
@@ -261,7 +274,7 @@ def all_runs() -> list[dict]:
 
 
 def refresh_summary_setup(cfg: Config, d: Path) -> None:
-    """Re-summarising an old run uses the *current* config's summary model (and plan description).
+    """Re-summarising an old run uses the *current* config's recommendation model (and plan description).
 
     The run's config.yaml snapshot is patched so the Fargate task, which reads it, sees the same thing.
     Nothing that affected stages 1-3 is changed.

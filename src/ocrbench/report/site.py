@@ -1,6 +1,6 @@
 """Static, self-contained HTML viewer for benchmark results.
 
-``build_site(docs_dir, run_dir, scores, out_dir)`` writes::
+``build_site(docs_dir, run_dir, scores, out_dir, page)`` writes::
 
     out_dir/
       index.html              # summary, aggregate tables, document grid
@@ -23,6 +23,7 @@ import shutil
 import statistics
 import unicodedata
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
@@ -229,12 +230,12 @@ GITHUB_ICON = (
 REPO_URL = _repo_url()
 
 
-def _page(title: str, body: str, prefix: str, crumbs: list[tuple[str, str | None]] | None = None) -> str:
-    """crumbs: [(label, href or None)] after the brand; hrefs are relative to this page."""
-    home = (crumbs[0][1] if crumbs and crumbs[0][1] else "index.html") if crumbs else "index.html"
+def _page(title: str, body: str, prefix: str, home: str, crumbs: list[tuple[str, str | None]]) -> str:
+    """`home`: the experiments index, relative to this page (the brand links there). `crumbs`: the trail
+    after the brand, [(label, href or None)], hrefs relative to this page."""
     trail = "".join(
         '<span class="sep">/</span>' + (f'<a href="{h}">{e(lbl)}</a>' if h else f"<span>{e(lbl)}</span>")
-        for lbl, h in (crumbs or [])[1:]
+        for lbl, h in crumbs
     )
     return (
         "<!doctype html>\n"
@@ -263,12 +264,25 @@ def _page(title: str, body: str, prefix: str, crumbs: list[tuple[str, str | None
 # --------------------------------------------------------------------------- site builder
 
 
+@dataclass
+class RunPage:
+    """What a run page shows besides the score tables. Built by `reporting.write` from run.json, the
+    key facts and summary.md, so the page and report.md say the same thing."""
+
+    facts_md: str = ""
+    recommendation: str = ""  # the LLM recommendation (Markdown); empty until the summarize stage ran
+    recommendation_author: str = ""
+    unverified_numbers: list[str] = field(default_factory=list)
+    setup_md: str = ""
+    plan_description: str = ""
+    hide_backends: list[str] = field(default_factory=list)
+    pipeline_labels: dict[str, str] = field(default_factory=dict)
+
+
 class _Site:
-    def __init__(
-        self, docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, sections: dict | None = None
-    ) -> None:
-        self.sections = sections or {}
-        labels = self.sections.get("pipeline_labels") or {}
+    def __init__(self, docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, page: RunPage) -> None:
+        self.page = page
+        labels = page.pipeline_labels
         if labels:
             scores = {**(scores or {})}
             ex = dict(scores.get("extraction") or {})
@@ -302,7 +316,7 @@ class _Site:
 
         # Unscored transcripts (fallback so raw output is still viewable).
         self.page_raw: dict[tuple[str, int, str], dict[str, dict]] = defaultdict(dict)
-        hidden_be = set(self.sections.get("hide_backends") or [])
+        hidden_be = set(self.page.hide_backends)
         for t in _read_jsonl(self.run_dir / "transcripts.jsonl"):
             if not t.get("ok") or not t.get("output_file") or t.get("backend") in hidden_be:
                 continue
@@ -373,45 +387,43 @@ class _Site:
                 vals[str(d.get("pipeline"))].append(n)
         return {k: statistics.fmean(v) for k, v in sorted(vals.items())}
 
-    def render_index(self) -> str:
-        sec = self.sections
-        parts = []
-        parts.append(f'<div class="eyebrow">Experiment</div><h1>{e(self.tag)}</h1>')
-        if self.sections.get("plan_description"):
-            parts.append(f'<p class="plan-desc">{markdown_lite.inline(self.sections["plan_description"])}</p>')
+    def _crumbs(self) -> list[tuple[str, str | None]]:
+        return [("Experiments", "../index.html"), (self.tag, None)]
+
+    def render_header(self) -> list[str]:
+        pg = self.page
+        parts = [f'<div class="eyebrow">Experiment</div><h1>{e(self.tag)}</h1>']
+        if pg.plan_description:
+            parts.append(f'<p class="plan-desc">{markdown_lite.inline(pg.plan_description)}</p>')
         gen = self.scores.get("generated")
         if gen:
             parts.append(f'<p class="muted small">Scored {e(str(gen).replace("T", " ")[:16])}</p>')
-        if sec:
-            parts.append(
-                '<p class="muted">One experiment. New here? The <a href="../index.html#guide">main page</a> explains '
-                "what the benchmark does, what the pipelines and metrics mean, and the document types.</p>"
-                '<nav class="toc small">Jump to: <a href="#facts">Key facts</a> &middot; '
-                '<a href="#findings">Recommendation</a> &middot; <a href="#setup">Setup</a> &middot; '
-                '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
-            )
-            if sec.get("facts_md"):
-                parts.append(f'<section id="facts" class="facts">{markdown_lite.render(sec["facts_md"])}</section>')
-            parts.append('<h2 id="findings">Recommendation</h2>')
-            if sec.get("findings"):
+        parts.append(
+            '<p class="muted">One experiment. New here? The <a href="../index.html#guide">main page</a> explains '
+            "what the benchmark does, what the pipelines and metrics mean, and the document types.</p>"
+            '<nav class="toc small">Jump to: <a href="#facts">Key facts</a> &middot; '
+            '<a href="#recommendation">Recommendation</a> &middot; <a href="#setup">Setup</a> &middot; '
+            '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
+        )
+        if pg.facts_md:
+            parts.append(f'<section id="facts" class="facts">{markdown_lite.render(pg.facts_md)}</section>')
+        parts.append('<h2 id="recommendation">Recommendation</h2>')
+        if pg.recommendation:
+            if pg.unverified_numbers:
                 parts.append(
-                    (
-                        f'<p class="warn">Unverified numbers (not in the key facts): {e(", ".join(sec["findings_unverified"]))}</p>'
-                        if sec.get("findings_unverified")
-                        else ""
-                    )
-                    + f'<p class="muted small">{e(sec.get("findings_author"))}. '
-                    "Check the numbers against the tables below.</p>"
+                    f'<p class="warn">Unverified numbers (not in the key facts): {e(", ".join(pg.unverified_numbers))}</p>'
                 )
-                parts.append(f'<div class="summary">{markdown_lite.render(sec["findings"])}</div>')
-            else:
-                parts.append('<p class="empty">No LLM summary yet: run the summarize stage.</p>')
-            parts.append(f'<section id="setup">{markdown_lite.render(sec.get("setup_md", ""))}</section>')
+            parts.append(
+                f'<p class="muted small">{e(pg.recommendation_author)}. Check the numbers against the tables below.</p>'
+            )
+            parts.append(f'<div class="summary">{markdown_lite.render(pg.recommendation)}</div>')
         else:
-            summary = markdown_lite.render(str(self.scores.get("summary_md") or ""))
-            if summary:
-                parts.append(f'<div class="summary">{summary}</div>')
+            parts.append('<p class="empty">No recommendation yet: run the summarize stage.</p>')
+        parts.append(f'<section id="setup">{markdown_lite.render(pg.setup_md)}</section>')
+        return parts
 
+    def render_index(self) -> str:
+        parts = self.render_header()
         parts.append('<h2 id="results">Results</h2>')
         parts.append("<h3>Speed and cost (stage 1)</h3>")
         parts.append(render_table(self.speed, SPEED_COLS, "concurrency", "No speed data."))
@@ -421,15 +433,13 @@ class _Site:
         parts.append(render_table(self.ex_agg, EXTRACTION_COLS, "variant", "No extraction scores."))
 
         parts.append(f'<h2 id="documents">Documents ({len(self.manifest)})</h2>')
-        if not self.manifest:
-            parts.append('<p class="empty">No documents in manifest.</p>')
-            return _page(
-                f"ocr-bench — {self.tag}",
-                "\n".join(parts),
-                "",
-                [("Experiments", "../index.html"), ("Experiments", "../index.html"), (self.tag, None)],
-            )
+        parts.append(self.render_doc_grid())
+        return _page(f"ocr-bench — {self.tag}", "\n".join(parts), "", "../index.html", self._crumbs())
 
+    def render_doc_grid(self) -> str:
+        if not self.manifest:
+            return '<p class="empty">No documents in manifest.</p>'
+        parts = []
         types = self._order([str(d.get("type") or "") for d in self.manifest])
         buttons = ['<button class="type-filter active" data-type="">All</button>']
         for t in types:
@@ -475,12 +485,7 @@ class _Site:
                 f'<div class="badges">{"".join(badges)}</div></div></a>'
             )
         parts.append(f'<div class="grid" id="doc-grid">{"".join(cards)}</div>')
-        return _page(
-            f"ocr-bench — {self.tag}",
-            "\n".join(parts),
-            "",
-            [("Experiments", "../index.html"), ("Experiments", "../index.html"), (self.tag, None)],
-        )
+        return "\n".join(parts)
 
     # ------------------------------------------------------------------ doc page
 
@@ -616,7 +621,8 @@ class _Site:
         schema_fields: dict = (
             ((self.schemas.get(doc_type) or {}).get("fields") or {}) if isinstance(self.schemas, dict) else {}
         )
-        truth_doc = _read_json(self.docs_dir / _safe_rel(doc.get("fields")), {}) if _safe_rel(doc.get("fields")) else {}
+        fields_rel = _safe_rel(doc.get("fields"))
+        truth_doc = _read_json(self.docs_dir / fields_rel, {}) if fields_rel else {}
         truth: dict = (truth_doc or {}).get("fields") or {}
         entries = sorted(self.doc_ex.get(doc_id, []), key=lambda d: (str(d.get("pipeline")), str(d.get("variant"))))
 
@@ -712,12 +718,8 @@ class _Site:
             f"{doc_id} — ocr-bench {self.tag}",
             "\n".join(body),
             prefix,
-            [
-                ("Experiments", "../../index.html"),
-                ("Experiments", "../../index.html"),
-                (self.tag, "../index.html"),
-                (doc_id, None),
-            ],
+            "../../index.html",
+            [("Experiments", "../../index.html"), (self.tag, "../index.html"), (doc_id, None)],
         )
 
     # ------------------------------------------------------------------ build
@@ -734,26 +736,29 @@ class _Site:
         return index
 
 
-def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, sections: dict | None = None) -> Path:
+def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, page: RunPage) -> Path:
     """Write a static, self-contained HTML viewer into *out_dir* and return the index path.
 
     *docs_dir* holds ``manifest.json``/``schemas.json`` and the page images; *run_dir*
     holds ``transcripts.jsonl`` and the raw ``outputs/``; *scores* is the dict saved as
     ``scores.json`` (see docs/data-formats.md). Images are copied to ``out_dir/assets``.
     """
-    return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir), sections).build()
+    return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir), page).build()
 
 
-def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str = "", guide_md: str = "") -> Path:
-    """site/index.html: one row per run with models, GPU, cost and headline results, linking to the run page.
+@dataclass
+class RunCard:
+    """One run on the experiments index. `card_meta` is run.json as the run page describes it (hidden
+    backends removed); `headline` comes from reporting.headline; `bottom_line` from summary.md."""
 
-    Each item: {"meta": run.json dict, "headline": reporting.headline(...), "bottom_line": str}.
-    """
-    out_dir = Path(out_dir)
-    assets = out_dir / "assets"
-    assets.mkdir(parents=True, exist_ok=True)
-    (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
-    (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
+    meta: dict
+    card_meta: dict
+    scores: dict
+    headline: dict
+    bottom_line: str = ""
+
+
+def _card_models(m: dict) -> str:
     from .. import view
     from ..explain import AGENT_INPUT
 
@@ -761,107 +766,120 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
         view.ROLE_AGENT: f"Reads {AGENT_INPUT}; returns the fields as JSON.",
         view.ROLE_WRITER: "Writes the bottom line and recommendation from the computed key facts",
     }
-    cards = []
-    for r in runs:
-        m, h = r.get("card_meta") or r["meta"], r.get("headline") or {}
-        docs = m.get("documents") or {}
-
-        rows = []
-        for mr in view.model_rows(m):
-            note = " ".join(notes[x] for x in mr.roles if x in notes)
-            if view.ROLE_WRITER in mr.roles:
-                note += f"; reasoning effort {mr.reasoning_effort}." if mr.reasoning_effort else "."
-            chip = f'<span class="chip warmchip">temperature {mr.temperature:g}</span>' if mr.temperature else ""
-            rows.append(
-                f'<tr><td class="role">{e(", ".join(mr.roles))}</td><td><code>{e(mr.key)}</code></td><td>{chip}'
-                f'<div class="mname">{e(mr.label)}</div><div class="mid">{e(mr.detail)}</div>'
-                + (f'<div class="mnote">{markdown_lite.inline(note)}</div>' if note else "")
-                + "</td></tr>"
-            )
-
-        sh = view.selfhosted_in_run(m)
-        if not sh:
-            gpu = '<p class="muted">No self-hosted model in this run.</p>'
-        else:
-            parts = []
-            for name in sh:
-                b = view.spec(m, name)
-                price = b.get("price_per_hour_usd")
-                price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
-                parts.append(
-                    (f'<div class="kv"><span>Model</span><code>{e(name)}</code></div>' if len(sh) > 1 else "")
-                    + f'<div class="kv"><span>Instance</span><code>{e(b.get("instance_type") or "?")}</code></div>'
-                    f'<div class="kv"><span>GPU</span><span>{e(b.get("gpu") or "?")}</span></div>'
-                    f'<div class="kv"><span>Host</span><span>{e(b.get("host") or "?")}</span></div>'
-                    f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
-                    '<span class="muted">on-demand, billed while idle too</span></span></div>'
-                )
-            gpu = "".join(parts) + f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
-
-        pipes = h.get("pipelines") or {}
-        best = {v: (h.get("best") or {}).get(v, {}).get("pipeline") for v in ("clean", "degraded")}
-        prow = []
-        for p, vs in pipes.items():
-            cells = []
-            for v in ("clean", "degraded"):
-                x = vs.get(v)
-                cls = ' class="win"' if x and best.get(v) == p else ""
-                cells.append(f"<td{cls}>{e(fmt(x['acc'], 'pct')) if x else '&ndash;'}</td>")
-            c = vs.get("clean") or vs.get("degraded") or {}
-            prow.append(
-                f'<tr><td title="{e(p)}">{e(view.pipeline_label(m, p))}</td>{"".join(cells)}'
-                f"<td>{e(fmt(c.get('s'), 'sec'))} s</td><td>{e(fmt(c.get('cost'), 'usd'))}</td></tr>"
-            )
-        results = (
-            '<table class="mini"><thead><tr><th>input → extractor</th><th>clean</th><th>degraded</th>'
-            "<th>time / doc</th><th>$ / 1k docs</th></tr></thead><tbody>" + "".join(prow) + "</tbody></table>"
-            '<p class="muted small">Field accuracy; best per variant in green. Time and cost: clean pages.</p>'
-            if prow
-            else '<p class="muted">not scored yet</p>'
+    rows = []
+    for mr in view.model_rows(m):
+        note = " ".join(notes[x] for x in mr.roles if x in notes)
+        if view.ROLE_WRITER in mr.roles:
+            note += f"; reasoning effort {mr.reasoning_effort}." if mr.reasoning_effort else "."
+        chip = f'<span class="chip warmchip">temperature {mr.temperature:g}</span>' if mr.temperature else ""
+        rows.append(
+            f'<tr><td class="role">{e(", ".join(mr.roles))}</td><td><code>{e(mr.key)}</code></td><td>{chip}'
+            f'<div class="mname">{e(mr.label)}</div><div class="mid">{e(mr.detail)}</div>'
+            + (f'<div class="mnote">{markdown_lite.inline(note)}</div>' if note else "")
+            + "</td></tr>"
         )
+    return f'<table class="models">{"".join(rows)}</table>'
 
-        bl = r.get("bottom_line") or ""
-        created = (m.get("created") or "")[:16].replace("T", " ")
-        cards.append(
-            '<details class="run-card">'
-            '<summary><span class="chev" aria-hidden="true"></span>'
-            f'<div class="run-sum"><div class="run-id">{e(m["id"])}</div>'
-            + (
-                f'<div class="plan-desc">{markdown_lite.inline(m.get("plan_description") or "")}</div>'
-                if m.get("plan_description")
-                else ""
-            )
-            + f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
-            f'<span class="chip">{e(docs.get("count"))} docs &middot; {e(docs.get("page_images"))} page images</span>'
-            f'<span class="chip">{e(created)}</span></div></div>'
-            f'<a class="open" href="{quote(m["id"])}/index.html">Open run &rarr;</a></summary>'
-            + (
-                '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'
-                f"{markdown_lite.render(bl)}</div>"
-                if bl
-                else ""
-            )
-            + '<div class="run-grid">'
-            f'<div class="block wide"><h4>Models</h4><table class="models">{"".join(rows)}</table></div>'
-            f'<div class="block"><h4>GPU (self-hosted models)</h4>{gpu}</div>'
-            f'<div class="block"><h4>Results</h4>{results}</div>'
-            "</div></details>"
+
+def _card_gpu(m: dict) -> str:
+    from .. import view
+
+    sh = view.selfhosted_in_run(m)
+    if not sh:
+        return '<p class="muted">No self-hosted model in this run.</p>'
+    parts = []
+    for name in sh:
+        b = view.spec(m, name)
+        price = b.get("price_per_hour_usd")
+        price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
+        parts.append(
+            (f'<div class="kv"><span>Model</span><code>{e(name)}</code></div>' if len(sh) > 1 else "")
+            + f'<div class="kv"><span>Instance</span><code>{e(b.get("instance_type") or "?")}</code></div>'
+            f'<div class="kv"><span>GPU</span><span>{e(b.get("gpu") or "?")}</span></div>'
+            f'<div class="kv"><span>Host</span><span>{e(b.get("host") or "?")}</span></div>'
+            f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
+            '<span class="muted">on-demand, billed while idle too</span></span></div>'
         )
+    return "".join(parts) + f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
+
+
+def _card_results(m: dict, h: dict) -> str:
+    from .. import view
+
+    best = {v: (h.get("best") or {}).get(v, {}).get("pipeline") for v in VARIANTS}
+    rows = []
+    for p, vs in (h.get("pipelines") or {}).items():
+        cells = []
+        for v in VARIANTS:
+            x = vs.get(v)
+            cls = ' class="win"' if x and best.get(v) == p else ""
+            cells.append(f"<td{cls}>{e(fmt(x['acc'], 'pct')) if x else '&ndash;'}</td>")
+        c = vs.get("clean") or vs.get("degraded") or {}
+        rows.append(
+            f'<tr><td title="{e(p)}">{e(view.pipeline_label(m, p))}</td>{"".join(cells)}'
+            f"<td>{e(fmt(c.get('s'), 'sec'))} s</td><td>{e(fmt(c.get('cost'), 'usd'))}</td></tr>"
+        )
+    if not rows:
+        return '<p class="muted">not scored yet</p>'
+    return (
+        '<table class="mini"><thead><tr><th>input → extractor</th><th>clean</th><th>degraded</th>'
+        "<th>time / doc</th><th>$ / 1k docs</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        '<p class="muted small">Field accuracy; best per variant in green. Time and cost: clean pages.</p>'
+    )
+
+
+def _run_card(r: RunCard) -> str:
+    m, docs = r.card_meta, r.card_meta.get("documents") or {}
+    created = (m.get("created") or "")[:16].replace("T", " ")
+    desc = m.get("plan_description") or ""
+    return (
+        '<details class="run-card">'
+        '<summary><span class="chev" aria-hidden="true"></span>'
+        f'<div class="run-sum"><div class="run-id">{e(m["id"])}</div>'
+        + (f'<div class="plan-desc">{markdown_lite.inline(desc)}</div>' if desc else "")
+        + f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
+        f'<span class="chip">{e(docs.get("count"))} docs &middot; {e(docs.get("page_images"))} page images</span>'
+        f'<span class="chip">{e(created)}</span></div></div>'
+        f'<a class="open" href="{quote(m["id"])}/index.html">Open run &rarr;</a></summary>'
+        + (
+            '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'
+            f"{markdown_lite.render(r.bottom_line)}</div>"
+            if r.bottom_line
+            else ""
+        )
+        + '<div class="run-grid">'
+        f'<div class="block wide"><h4>Models</h4>{_card_models(m)}</div>'
+        f'<div class="block"><h4>GPU (self-hosted models)</h4>{_card_gpu(m)}</div>'
+        f'<div class="block"><h4>Results</h4>{_card_results(m, r.headline)}</div>'
+        "</div></details>"
+    )
+
+
+def _guide_sections(guide_md: str) -> tuple[str, str]:
+    """(intro, "How the benchmark works" body) of the shared guide."""
+    head, sep, rest = guide_md.partition("## How the benchmark works")
+    return head, rest if sep else ""
+
+
+def build_experiments_index(runs: list[RunCard], out_dir: Path, comparison_md: str = "", guide_md: str = "") -> Path:
+    """site/index.html: the guide, the cross-run comparison, and one expandable card per run (models,
+    GPU, headline results), each linking to its run page."""
+    out_dir = Path(out_dir)
+    assets = out_dir / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
+    (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
+    intro, guide = _guide_sections(guide_md)
     body = (
         '<section class="hero"><div class="eyebrow">Document reading benchmark</div>'
         "<h1>Which setup reads documents best?</h1>"
-        + (
-            f'<div class="intro">{markdown_lite.render(guide_md.split("## How the benchmark works")[0])}</div>'
-            if guide_md
-            else ""
-        )
+        + (f'<div class="intro">{markdown_lite.render(intro)}</div>' if intro else "")
         + "</section>"
         + '<nav class="toc small">Jump to: <a href="#guide">How the benchmark works</a> &middot; '
         '<a href="#compare">Compare runs</a> &middot; <a href="#runs">Experiments</a></nav>'
         + (
-            f'<section id="guide" class="guide"><h2>How the benchmark works</h2>'
-            f"{markdown_lite.render(guide_md.split('## How the benchmark works', 1)[1])}</section>"
-            if "## How the benchmark works" in guide_md
+            f'<section id="guide" class="guide"><h2>How the benchmark works</h2>{markdown_lite.render(guide)}</section>'
+            if guide
             else ""
         )
         + (
@@ -872,8 +890,8 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
         )
         + f'<h2 id="runs">Experiments</h2><p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}, '
         "newest first. Click a row to expand it, or open the run for its documents.</p>"
-        + ("".join(cards) or '<p class="empty">No runs yet.</p>')
+        + ("".join(_run_card(r) for r in runs) or '<p class="empty">No runs yet.</p>')
     )
     idx = out_dir / "index.html"
-    idx.write_text(_page("ocr-bench experiments", body, "", [("Experiments", "index.html")]), encoding="utf-8")
+    idx.write_text(_page("ocr-bench experiments", body, "", "index.html", []), encoding="utf-8")
     return idx

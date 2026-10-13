@@ -26,7 +26,7 @@ src/ocrbench/
   transcribe.py            stage 1 runner (concurrency, retries, JSONL records)
   extract.py               stage 2 runner (pipelines "<transcriber>->agent" and "image->agent")
   score.py                 stage 3: metrics + aggregation -> scores dict
-  summarize.py             stage 4: LLM writes the findings (summary.md) from setup + scores
+  summarize.py             stage 4: LLM writes the recommendation (summary.md) from the key facts + setup
   view.py                  how a run names its backends, roles, prices and pipelines (report.md, site, summary prompt)
   metrics.py               every metric column: label, format, better direction, glossary
   explain.py               static texts: intro, stages, variants, document challenges
@@ -96,7 +96,7 @@ site/                      LOCAL build of the site (gitignored); published to th
   flagged as "unverified". Keep both properties if you change it.
 - **Pipelines where one model both transcribes and extracts are hidden** (`reporting.visible`):
   they only measure the model against itself. Don't add `X->X` to plans.
-- **Re-summarising an old run** (`just rerun <id> summarize`) uses the *current* summary model;
+- **Re-summarising an old run** (`just rerun <id> summarize`) uses the *current* recommendation model (`bench.summary.agent`);
   `runs.refresh_summary_setup` patches the run's snapshot. Nothing from stages 1-3 changes.
 - **Cost.** The SageMaker endpoint bills per hour while it exists. Always finish with
   `just endpoint-down` (or `just destroy`).
@@ -153,4 +153,6 @@ scores the same anywhere. Its choices are written into `scores.json` under `meth
 
 `just test` runs the unit tests plus an end-to-end local pipeline with fake backends (two
 self-hosted ones, to keep names unspecial); no Chrome needed. `just test-all` adds the
-Chrome rendering tests. `just lint` runs ruff and terraform fmt.
+Chrome rendering tests. `just lint` runs ruff, pyright and terraform fmt. CI
+(`.github/workflows/ci.yml`) runs the same checks plus `terraform validate` and a gitleaks secret
+scan on every push; its actions are pinned by commit SHA.

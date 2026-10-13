@@ -4,7 +4,7 @@ import struct
 import zlib
 from pathlib import Path
 
-from ocrbench.report import build_site
+from ocrbench.report import RunPage, build_site
 from ocrbench.report.markdown_lite import render as render_md
 
 
@@ -138,7 +138,6 @@ def make_fixture(tmp_path: Path) -> tuple[Path, Path, dict]:
     scores = {
         "tag": "suite",
         "generated": "2026-10-08T17:00:00",
-        "summary_md": "# Summary\n\nThe **ocr** backend is `fast`.\n\n- point one\n- point <two>\n\n| a | b |\n|---|---|\n| 1 | 2 |",
         "speed": [
             {
                 "backend": "ocr",
@@ -274,7 +273,16 @@ def make_fixture(tmp_path: Path) -> tuple[Path, Path, dict]:
 def test_build_site(tmp_path: Path) -> None:
     docs, run, scores = make_fixture(tmp_path)
     out = tmp_path / "site"
-    index = build_site(docs, run, scores, out)
+    page = RunPage(
+        facts_md="## Key facts\n\n| question | clean |\n|---|---|\n| most accurate | `ocr->agent` |",
+        recommendation="## Bottom line\n\nThe **ocr** backend is `fast`.\n\n- point one\n- point <two>\n\n| a | b |\n|---|---|\n| 1 | 2 |",
+        recommendation_author="LLM comment by w (m)",
+        unverified_numbers=["1234"],
+        setup_md="## Setup\n\n### Models\n\n| role | name |\n|---|---|\n| transcriber | `ocr` |",
+        plan_description="A **test** plan.",
+        pipeline_labels={"ocr->agent": "OCR text → Agent"},
+    )
+    index = build_site(docs, run, scores, out, page)
 
     assert index == out / "index.html"
     assert index.is_file()
@@ -319,8 +327,17 @@ def test_build_site(tmp_path: Path) -> None:
         'href="docs/invoice-01.html"',
         'src="assets/invoice-01/p1.png"',
         "Søknad &lt;skjema&gt;",
+        'id="facts"',
+        "Unverified numbers (not in the key facts): 1234",
+        "LLM comment by w (m)",
+        'id="setup"',
+        "<strong>test</strong> plan",
+        "OCR text → Agent",
     ]:
         assert s in idx_html, s
+    # one "Experiments" crumb per page, linking to the experiments index
+    assert idx_html.count(">Experiments</a>") == 1 and 'class="brand" href="../index.html"' in idx_html
+    assert inv_html.count(">Experiments</a>") == 1 and 'class="brand" href="../../index.html"' in inv_html
     assert "–" in idx_html  # null cost
     assert "<script>alert" not in idx_html
 
@@ -360,14 +377,14 @@ def test_empty_scores(tmp_path: Path) -> None:
     scores = {
         "tag": "empty",
         "generated": "",
-        "summary_md": "",
         "speed": [],
         "transcription": {"aggregate": [], "pages": []},
         "extraction": {"aggregate": [], "docs": []},
     }
-    index = build_site(docs, run, scores, tmp_path / "site")
+    index = build_site(docs, run, scores, tmp_path / "site", RunPage())
     html = index.read_text(encoding="utf-8")
     assert "No speed data." in html and "No extraction scores." in html
+    assert "No recommendation yet" in html
     assert (tmp_path / "site/docs/invoice-01.html").is_file()
 
 

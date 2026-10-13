@@ -1,6 +1,6 @@
 """report.md + site for one run, and the experiments index across runs.
 
-The setup, legend and LLM findings are produced as Markdown here, so report.md and the
+The setup, legend and LLM recommendation are produced as Markdown here, so report.md and the
 site show exactly the same information (the site renders it with markdown_lite).
 """
 
@@ -11,14 +11,12 @@ import re
 from pathlib import Path
 
 from . import explain, metrics, prompts, view
+from .report.site import RunCard
 
 
 # --------------------------------------------------------------------------- setup + legend
-def setup_md(meta: dict) -> str:
-    docs = meta["documents"]
+def _md_models(meta: dict) -> list[str]:
     out = [
-        "## Setup",
-        "",
         "### Models",
         "",
         "| role | name in tables | model | model id | served by | temperature | price |",
@@ -27,6 +25,10 @@ def setup_md(meta: dict) -> str:
     for r in view.model_rows(meta):
         temp = "default" if r.temperature is None else f"{r.temperature:g}"
         out.append(f"| {', '.join(r.roles)} | `{r.key}` | {r.label} | `{r.model_id}` | {r.via} | {temp} | {r.price} |")
+    return out
+
+
+def _md_agent(meta: dict) -> list[str]:
     agent = meta["extraction"]["agent"]
     a = view.spec(meta, agent)
     others = [
@@ -39,7 +41,7 @@ def setup_md(meta: dict) -> str:
         label=view.label(meta, agent),
         max_tokens=int(prompts.of(meta, "extract")["max_tokens"]),
     )
-    out += ["", "### The extraction agent", "", note]
+    out = ["### The extraction agent", "", note]
     if view.sampling(meta):
         out += [
             "",
@@ -54,26 +56,34 @@ def setup_md(meta: dict) -> str:
             + ", ".join(f"`{h}`" for h in sorted(hidden))
             + ".",
         ]
+    return out
+
+
+def _md_gpu(meta: dict) -> list[str]:
     sh = view.selfhosted_in_run(meta)
-    out += ["", "### GPU", ""]
+    out = ["### GPU", ""]
     if not sh:
         out.append("No self-hosted model in this run, so no GPU was used.")
     for i, name in enumerate(sh):
         out += ([""] if i else []) + ([f"`{name}`:", ""] if len(sh) > 1 else []) + ["| | |", "|---|---|"]
         out += [f"| {k} | {v} |" for k, v in view.gpu_rows(meta, name)]
-    out += [
-        "",
+    return out
+
+
+def _md_run(meta: dict) -> list[str]:
+    docs, runner, items = meta["documents"], meta["runner"], meta.get("plan_items") or []
+    out = [
         "### Run",
         "",
         "| | |",
         "|---|---|",
-        f"| plan | `{meta['plan']}`: {meta.get('plan_description') or ''} ({len(meta.get('plan_items') or [])} transcription runs) |",
-        f"| documents | {docs['count']} documents, {docs['pages']} pages, {docs['page_images']} page images (clean + degraded), seed {docs.get('seed')} |",
-        f"| runner | {meta['runner'].get('mode')} ({meta['runner'].get('cpu')} CPU units / {meta['runner'].get('memory')} MB) |",
+        f"| plan | `{meta['plan']}`: {meta.get('plan_description') or ''} ({len(items)} transcription runs) |",
+        f"| documents | {docs['count']} documents, {docs['pages']} pages, {docs['page_images']} page images "
+        f"(clean + degraded), seed {docs.get('seed')} |",
+        f"| runner | {runner.get('mode')} ({runner.get('cpu')} CPU units / {runner.get('memory')} MB) |",
         f"| code | git `{meta.get('git_commit') or '?'}` |",
         f"| started | {meta.get('created')} |",
     ]
-    items = meta.get("plan_items") or []
     if items:
         out += ["", "Transcription runs in this plan:", ""]
         for it in items:
@@ -81,6 +91,11 @@ def setup_md(meta: dict) -> str:
             out.append(
                 f"- `{it['backend']}` at concurrency {it.get('concurrency', 1)}" + (f" ({extra})" if extra else "")
             )
+    return out
+
+
+def setup_md(meta: dict) -> str:
+    out = ["## Setup", ""] + _md_models(meta) + [""] + _md_agent(meta) + [""] + _md_gpu(meta) + [""] + _md_run(meta)
     return "\n".join(out)
 
 
@@ -198,7 +213,7 @@ def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     meta = focused_meta(meta)
     body, info = read_summary(run_dir)
     bad = info.get("unverified_numbers") or []
-    findings = (
+    recommendation = (
         ["## Recommendation", "", f"*{author_line(info)}. It interprets the key facts above.*", ""]
         + ([f"> **Unverified numbers** (not found in the key facts): {', '.join(bad)}", ""] if bad else [])
         + [body]
@@ -211,7 +226,7 @@ def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
         f"# ocr-bench run `{meta['id']}`",
         "",
         to_md(compute(meta, scores)),
-        "\n".join(findings),
+        "\n".join(recommendation),
         setup_md(meta),
         legend_md(meta),
         results_md(scores),
@@ -221,7 +236,7 @@ def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
 
 def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
     from .fileio import write_if_changed
-    from .report import build_site
+    from .report import RunPage, build_site
 
     write_if_changed(run_dir / "scores.json", json.dumps(scores, ensure_ascii=False, indent=1))
     write_if_changed(run_dir / "report.md", report_md(meta, scores, run_dir))
@@ -230,32 +245,49 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
     body, info = read_summary(run_dir)
     vis = visible(meta, scores)
     meta = focused_meta(meta)
-    sections = {
-        "facts_md": to_md(compute(meta, vis)),
-        "findings": body,
-        "findings_author": author_line(info),
-        "findings_unverified": info.get("unverified_numbers") or [],
-        "setup_md": setup_md(meta),
-        "plan_description": meta.get("plan_description", ""),
-        "hide_backends": sorted(focus_backends(meta)),
-        "pipeline_labels": {p: view.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
-    }
-    return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], sections=sections)
+    page = RunPage(
+        facts_md=to_md(compute(meta, vis)),
+        recommendation=body,
+        recommendation_author=author_line(info),
+        unverified_numbers=info.get("unverified_numbers") or [],
+        setup_md=setup_md(meta),
+        plan_description=meta.get("plan_description", ""),
+        hide_backends=sorted(focus_backends(meta)),
+        pipeline_labels={p: view.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
+    )
+    return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], page)
 
 
-def comparison(items: list[dict]) -> dict:
-    """Cross-run tables. items: [{"meta":..., "scores":...}] newest first.
+def bottom_line(run_dir: Path) -> str:
+    """First section of the recommendation ("## Bottom line"), for the experiments index."""
+    body, _ = read_summary(run_dir)
+    _, sep, rest = body.partition("## Bottom line")
+    return rest.split("\n## ", 1)[0].strip() if sep else ""
+
+
+def run_card(meta: dict, scores: dict, run_dir: Path) -> RunCard:
+    return RunCard(
+        meta=meta,
+        card_meta=focused_meta(meta),
+        scores=scores,
+        headline=headline(meta, scores),
+        bottom_line=bottom_line(run_dir),
+    )
+
+
+def comparison(items: list[RunCard]) -> dict:
+    """Cross-run tables over runs, newest first.
 
     Rows are keyed by what was actually measured (pipeline + extractor model id, or backend + model id),
     so a renamed config key never silently compares different models.
     """
-    runs_ = [i["meta"]["id"] for i in items]
+    runs_ = [i.meta["id"] for i in items]
     extraction: dict[str, dict] = {}
     reading: dict[str, dict] = {}
     speed: dict[str, dict] = {}
     for it in items:
-        m, rid = it["meta"], it["meta"]["id"]
-        s = visible(m, it["scores"], focus=False)
+        m, rid = it.meta, it.meta["id"]
+        s = visible(m, it.scores, focus=False)
         for a in s["extraction"]["aggregate"]:
             label = view.pipeline_label(m, a["pipeline"])
             extraction.setdefault(label, {}).setdefault(rid, {})[a["variant"]] = a["field_accuracy"]

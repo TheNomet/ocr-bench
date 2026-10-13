@@ -69,7 +69,7 @@ def pdf_to_images(pdf_path: Path, scale: float = 2.0) -> list[Image.Image]:
     with _PDFIUM_LOCK:
         pdf = pdfium.PdfDocument(str(pdf_path))
         try:
-            return [pdf[i].render(scale=scale).to_pil().convert("RGB") for i in range(len(pdf))]
+            return [pdf[i].render(scale=scale).to_pil().convert("RGB") for i in range(len(pdf))]  # pyright: ignore[reportArgumentType]
         finally:
             pdf.close()
 

@@ -46,8 +46,11 @@ test:
 test-all:
     uv run pytest -q -m ''
 
+# Same checks as CI (.github/workflows/ci.yml), minus the secret scan
 lint:
-    uv run ruff check src tests && uv run ruff format --check src tests && {{tf}} fmt -check -recursive
+    uv run ruff check src tests scripts && uv run ruff format --check src tests scripts
+    uv run pyright
+    {{tf}} fmt -check -recursive
 
 # ---- infrastructure ----
 

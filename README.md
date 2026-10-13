@@ -6,7 +6,7 @@ ocr-bench compares **self-hosted OCR models** (vLLM on SageMaker GPU endpoints, 
 speed, accuracy and cost on synthetic Norwegian documents that come with exact ground truth.
 
 ```
-docs ─► 1 transcribe every page ─► 2 an agent extracts fields ─► 3 score ─► 4 an LLM writes the findings
+docs ─► 1 transcribe every page ─► 2 an LLM extracts fields ─► 3 score ─► 4 an LLM writes the recommendation
         (OCR models, Sonnet, Haiku…)    from each transcript, or straight
                                         from the images (baseline)
 ```
@@ -24,14 +24,33 @@ just deploy             # infra -> images -> weights -> SageMaker model   (~20 m
 just endpoint-up        # GPU endpoint                                    (~15 min cold start)
 just docs               # 8 types x 6 docs, clean + degraded              (~100 pages)
 just run smoke          # quick check of every backend      -> runs/<date>-smoke/
-just run suite          # latency + batch sweep, extraction, findings -> runs/<date>-suite/
+just run suite          # latency + batch sweep, extraction, recommendation -> runs/<date>-suite/
                         # (name plans after what they test: runs are called <date>-<plan>)
 just open               # experiments index -> one run -> one document
 just endpoint-down      # stop GPU billing
 just destroy            # remove everything
 ```
 
-Requirements: an AWS account with SageMaker GPU endpoint quota (`ml.g5`/`ml.g6` family),
+### Without a GPU: Bedrock only, nothing to deploy
+
+```bash
+cp config/example.yaml config/mine.yaml   # set aws.account_id/region; set runner.mode: local
+export CONFIG=config/mine.yaml AWS_PROFILE=...
+just setup              # python env, git hooks
+just docs               # needs Google Chrome
+just run bedrock-only   # Sonnet 4.5 + Haiku 4.5 transcribe; extraction from text and from images
+just open
+```
+
+This runs everything from your machine and creates no AWS resources. Your credentials need
+`bedrock:InvokeModel` on the two Claude 4.5 models in the region (enable model access in the
+Bedrock console first). The example uses `eu.` inference profiles for `eu-west-1`; use `us.`,
+`apac.` or `global.` to match your region. Pipelines that read the self-hosted model's
+transcript are skipped, because this plan doesn't run it.
+
+### Requirements for the full stack
+
+An AWS account with SageMaker GPU endpoint quota (`ml.g5`/`ml.g6` family),
 `uv`, `just`, Google Chrome (to render the documents), and the AWS CLI with credentials. You
 don't need Docker: images are copied and layered registry-side with `crane`.
 
@@ -40,7 +59,7 @@ don't need Docker: images are copied and layered registry-side with `crane`.
 Every run is one self-contained folder, `runs/<date>-<plan>/`, committed to this repo. It holds the setup
 (`run.json`: models, GPU host and price, documents, plan, git commit), a copy of the
 documents, every raw output, `scores.json`, the LLM-written `summary.md`, and `report.md`.
-`report.md` puts it all together: findings, setup, a legend of document types and pipelines,
+`report.md` puts it all together: key facts, recommendation, setup, a legend of document types and pipelines,
 metric definitions and result tables. The one exception is each run's `config.yaml`
 snapshot: it holds deployment details (account, endpoints, client ids), so it stays local
 and is gitignored.
@@ -77,7 +96,7 @@ consistently.
 `just publish` rebuilds the site, scans every file with the public guard, force-pushes it to the
 `gh-pages` branch and starts the `pages` workflow. Pages must use "GitHub Actions" as its source.
 
-## Without AWS GPU access
+## Your own vLLM server
 
 Set `direct_url` on a self-hosted backend to any running vLLM server (for example a local GPU box) and
 `runner.mode: local`. `just run` then calls everything from your machine and nothing needs

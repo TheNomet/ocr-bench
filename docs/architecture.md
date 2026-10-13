@@ -35,7 +35,7 @@ flowchart LR
 | Fargate runner | Runs both stages inside the VPC | Needed when backends are only reachable privately; otherwise use `runner.mode: local` |
 | Backends | One interface: `complete(Request) -> Response` | Runners don't know which provider they're talking to |
 | Scorer | Page metrics, field accuracy, latency and cost aggregates | Pure function of the files in `runs/<id>/` |
-| Summariser | Stage 4: an LLM turns setup + scores into findings and a recommendation | Labelled LLM-written; told to use only the given numbers |
+| Recommender | Stage 4: an LLM interprets the computed key facts and writes the recommendation | Labelled LLM-written; every number it writes is checked against the key facts |
 | Site | Experiments index → run page → document page; static HTML, no external resources | Open via `file://` or zip a run's folder |
 
 ## Two-stage evaluation

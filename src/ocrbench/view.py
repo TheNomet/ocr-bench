@@ -60,7 +60,7 @@ def sampling(meta: dict) -> list[str]:
 # --------------------------------------------------------------------------- pipelines
 def extractor(meta: dict, pipe: str) -> str:
     ex = meta.get("extraction") or {}
-    return (ex.get("agents") or {}).get(pipe) or ex.get("agent")
+    return (ex.get("agents") or {}).get(pipe) or ex.get("agent") or ""
 
 
 def same_model(meta: dict, pipe: str) -> bool:

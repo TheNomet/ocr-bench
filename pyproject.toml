@@ -1,7 +1,7 @@
 [project]
 name = "ocrbench"
 version = "0.1.0"
-description = "Benchmark a self-hosted OCR model (vLLM on SageMaker) against hosted LLMs on synthetic documents with ground truth."
+description = "Benchmark self-hosted OCR models (vLLM on SageMaker) against hosted LLMs on synthetic documents with ground truth."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ dev = [
     "pypdfium2>=4.30",
     "pytest>=8.0",
     "ruff>=0.6",
+    "pyright>=1.1.390",
 ]
 
 [project.scripts]
@@ -38,6 +39,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = ["E501"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingModuleSource = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

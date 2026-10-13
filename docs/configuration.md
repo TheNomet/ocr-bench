@@ -27,7 +27,7 @@ Real files (`config/<name>.yaml`) are gitignored. Choose one with `CONFIG=...` (
 | `backends.<name>.price_per_mtok` | LLMs: `{input, output}` USD per million tokens, for cost figures. Without it the backend's cost is unknown and it is left out of "cheapest" |
 | `bench.docs.per_type/seed/scale` | Document generation |
 | `bench.extraction.agent` | Backend that extracts the fields in stage 2 (the `agent` in `<input>->agent`) |
-| `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"`; `"<input>-><backend>"` uses that backend as the extractor |
+| `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"`; `"<input>-><backend>"` uses that backend as the extractor. A plan skips pipelines whose transcriber it doesn't run |
 | `bench.extraction.plan_pipelines.<plan>` | Pipelines for that plan instead of `pipelines` |
 | `bench.extraction.concurrency` | Parallel extraction requests (default 8) |
 | `bench.summary.agent` | Backend that writes the recommendation in stage 4 (default: the extraction agent). A strong reasoning model works best, e.g. Opus 5.5 with `reasoning_effort: medium` |
