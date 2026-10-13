@@ -4,12 +4,25 @@ Chrome: page images are placeholder PNGs, which is all the pipeline tests need."
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from ocrbench.docgen import SCHEMAS, build_doc
+
+
+@pytest.fixture(autouse=True)
+def _isolated_aws_env():
+    """No test sees the developer's AWS profile, and none leaks one: config.load() sets AWS_PROFILE
+    from the config, which would otherwise carry over to later tests (and fail where it doesn't exist)."""
+    saved = dict(os.environ)
+    for k in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE"):
+        os.environ.pop(k, None)
+    yield
+    os.environ.clear()
+    os.environ.update(saved)
 
 
 def make_docs(out: Path, types=("invoice", "holiday_survey", "rental_contract"), per_type: int = 1) -> Path:
