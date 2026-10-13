@@ -1,6 +1,6 @@
 {
- "id": "2026-10-09-suite",
- "plan": "suite",
+ "id": "2026-10-09-ocr-vs-claude45",
+ "plan": "ocr-vs-claude45",
  "plan_items": [
   {
    "backend": "ocr",

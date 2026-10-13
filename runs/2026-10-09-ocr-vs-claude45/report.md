@@ -1,4 +1,4 @@
-# ocr-bench run `2026-10-09-suite`
+# ocr-bench run `2026-10-09-ocr-vs-claude45`
 
 
 
@@ -21,9 +21,9 @@
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
+| `ocr` | 6.2 | 28 (32) |
 | `sonnet-4.5` | 14.1 | 43 (16) |
 | `haiku-4.5` | 8.0 | 137 (32) |
-| `ocr` | 6.2 | 28 (32) |
 
 OCR transcription costs $1.49/hour whether busy or idle; one GPU handled at most ~1686 pages/hour in this run.
 
@@ -103,7 +103,7 @@ Models with temperature above 0 sample their output, so their results vary sligh
 
 | | |
 |---|---|
-| plan | `suite`: First benchmark: self-hosted Unlimited-OCR (GPU) vs Claude Sonnet 4.5 and Haiku 4.5, single requests and batch load (concurrency 1-32). (9 transcription runs) |
+| plan | `ocr-vs-claude45`: First benchmark: self-hosted Unlimited-OCR (GPU) vs Claude Sonnet 4.5 and Haiku 4.5, single requests and batch load (concurrency 1-32). (9 transcription runs) |
 | documents | 48 documents, 54 pages, 108 page images (clean + degraded), seed 7 |
 | runner | fargate (2048 CPU units / 4096 MB) |
 | code | git `f3e57e7 (migrated from results/suite)` |

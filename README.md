@@ -25,6 +25,7 @@ just endpoint-up        # GPU endpoint                                    (~15 m
 just docs               # 8 types x 6 docs, clean + degraded              (~100 pages)
 just run smoke          # quick check of every backend      -> runs/<date>-smoke/
 just run suite          # latency + batch sweep, extraction, findings -> runs/<date>-suite/
+                        # (name plans after what they test: runs are called <date>-<plan>)
 just open               # experiments index -> one run -> one document
 just endpoint-down      # stop GPU billing
 just destroy            # remove everything

@@ -84,7 +84,7 @@ runs/<id>/
 ### run.json
 
 ```json
-{"id": "2026-10-09-suite", "plan": "suite", "plan_items": [{"backend": "ocr", "concurrency": 1}],
+{"id": "2026-10-09-ocr-vs-claude45", "plan": "ocr-vs-claude45", "plan_items": [{"backend": "ocr", "concurrency": 1}],
  "created": "...", "git_commit": "90b8e41", "region": "eu-west-1",
  "runner": {"mode": "fargate", "cpu": 2048, "memory": 4096},
  "documents": {"count": 48, "pages": 54, "page_images": 108, "seed": 7, "per_type": 6,

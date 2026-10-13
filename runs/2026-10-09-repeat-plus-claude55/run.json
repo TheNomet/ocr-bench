@@ -1,6 +1,6 @@
 {
- "id": "2026-10-09-full",
- "plan": "full",
+ "id": "2026-10-09-repeat-plus-claude55",
+ "plan": "repeat-plus-claude55",
  "plan_items": [
   {
    "backend": "ocr",
@@ -305,5 +305,5 @@
    "seconds": 18.3
   }
  },
- "plan_description": "Independent repeat of `suite` (same GPU model, same documents) to check reproducibility, plus the new Claude Sonnet 5.5 and Haiku 5.5."
+ "plan_description": "Independent repeat of `ocr-vs-claude45` (same GPU model, same documents) to check reproducibility, plus the new Claude Sonnet 5.5 and Haiku 5.5."
 }

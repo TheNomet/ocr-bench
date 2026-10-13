@@ -112,7 +112,7 @@ docs per_type="":
 run plan:
     {{ob}} run --plan {{plan}}
 
-# Redo stages of an existing run, e.g. `just rerun 2026-10-09-suite summarize` or `extract,score,summarize`
+# Redo stages of an existing run, e.g. `just rerun 2026-10-09-ocr-vs-claude45 summarize` or `extract,score,summarize`
 rerun id stages:
     {{ob}} run --id {{id}} --stages {{stages}}
 

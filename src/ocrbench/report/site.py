@@ -938,18 +938,18 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
             else ""
         )
         + "</section>"
-        + '<nav class="toc small">Jump to: <a href="#compare">Compare runs</a> &middot; '
-        '<a href="#guide">How the benchmark works</a> &middot; <a href="#runs">Experiments</a></nav>'
-        + (
-            '<section id="compare" class="compare"><h2>Compare runs</h2>'
-            f"{markdown_lite.render(comparison_md.replace('## Compare runs', '', 1))}</section>"
-            if comparison_md
-            else ""
-        )
+        + '<nav class="toc small">Jump to: <a href="#guide">How the benchmark works</a> &middot; '
+        '<a href="#compare">Compare runs</a> &middot; <a href="#runs">Experiments</a></nav>'
         + (
             f'<section id="guide" class="guide"><h2>How the benchmark works</h2>'
             f"{markdown_lite.render(guide_md.split('## How the benchmark works', 1)[1])}</section>"
             if "## How the benchmark works" in guide_md
+            else ""
+        )
+        + (
+            '<section id="compare" class="compare"><h2>Compare runs</h2>'
+            f"{markdown_lite.render(comparison_md.replace('## Compare runs', '', 1))}</section>"
+            if comparison_md
             else ""
         )
         + f'<h2 id="runs">Experiments</h2><p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}, '
