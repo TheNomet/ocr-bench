@@ -6,7 +6,7 @@ aren't obvious from the code.
 ## What this is
 
 ocr-bench is a benchmark harness. It generates synthetic documents with ground truth, sends
-the page images to several **transcribers** (a self-hosted vLLM OCR model on SageMaker, and
+the page images to several **transcribers** (self-hosted vLLM models on SageMaker, and
 hosted LLMs), then has an **agent** LLM extract structured fields from each transcript. It
 scores everything and writes a report plus a static HTML site. The infrastructure is
 temporary: deploy it, run, destroy it.
@@ -19,16 +19,20 @@ src/ocrbench/
   config.py                load + env expansion + derived resource names (keep in sync with infra/terraform/main.tf locals)
   cli.py                   all commands; `ocrbench --help`
   docgen/                  document generator (types/<type>.py = one module per document type)
-  backends/                ocr (vllm_ocr.py), bedrock.py, openai_compat.py (auth: none | bearer_env | oauth2_kms_jwt)
-  runs.py                  run folders runs/<id>/ + run.json (setup, GPU, price, stage timings)
+  backends/                one per kind: vllm.py (selfhosted), bedrock.py, openai_compat.py (auth: none | bearer_env | oauth2_kms_jwt)
+  postprocess.py           named output clean-up steps (strip_grounding...), listed per backend
+  prompts.py               prompt + token-limit defaults; a run records what it used in run.json
+  runs.py                  run folders runs/<id>/ + run.json (schema_version, backends, prompts, stage timings); upgrade() for old runs
   transcribe.py            stage 1 runner (concurrency, retries, JSONL records)
   extract.py               stage 2 runner (pipelines "<transcriber>->agent" and "image->agent")
   score.py                 stage 3: metrics + aggregation -> scores dict
   summarize.py             stage 4: LLM writes the findings (summary.md) from setup + scores
-  explain.py               intro, legend/glossary, model and pipeline labels (shared by report.md and the site)
+  view.py                  how a run names its backends, roles, prices and pipelines (report.md, site, summary prompt)
+  metrics.py               every metric column: label, format, better direction, glossary
+  explain.py               static texts: intro, stages, variants, document challenges
   facts.py                 computed key facts: the source of truth for every comparison
   reporting.py, report/    report.md, per-run site, experiments index
-  images.py                crane-based image builds (OCR SageMaker wrapper, bench runner)
+  images.py                crane-based image builds (one SageMaker image per self-hosted backend, bench runner)
   weights.py               HF snapshot -> S3, SHA-256 verified
   aws.py                   S3 sync, SageMaker endpoint lifecycle, Fargate run_task, pricing
 infra/terraform/           one root module; network/ submodule for network.mode=create
@@ -45,9 +49,9 @@ site/                      LOCAL build of the site (gitignored); published to th
 1. `ocrbench tf-vars` renders `.state/<prefix>/terraform.tfvars.json` and
    `infra/terraform/backend.tf` from the config. Terraform reads nothing else.
 2. Terraform creates the bucket, the ECR repos (`<prefix>-vllm`, `<prefix>-bench`), IAM, the
-   Fargate task definition and optionally a VPC. Once the image and weights exist, it also
-   creates the SageMaker **model** (`create_ocr_model`).
-3. The SageMaker **endpoint** is *not* in Terraform. `ocrbench endpoint up` creates it with
+   Fargate task definition and optionally a VPC. Once the images and weights exist, it also
+   creates one SageMaker **model** per self-hosted backend (`create_selfhosted_models`).
+3. The SageMaker **endpoints** are *not* in Terraform. `ocrbench endpoint up [--backend B]` creates one with
    `InstancePools`, a priority list of GPU types, because single GPU types often have no
    capacity. The AWS provider doesn't support instance pools.
 4. `ocrbench run --plan P` creates `runs/<date>-<plan>/`: a copy of `docs-out/`, a config
@@ -73,8 +77,11 @@ site/                      LOCAL build of the site (gitignored); published to th
 - **One config, no hard-coded values.** If you need a new knob, add it to
   `config/example.yaml` with a comment, document it in `docs/configuration.md`, and read it
   through `Config`.
-- **Resource names** come from `name_prefix`. If you change a name, change it in both
-  `config.py` and `infra/terraform/main.tf` `locals`.
+- **Resource names** come from `name_prefix` (and the backend name for self-hosted resources).
+  If you change a name, change it in both `config.py` and `infra/terraform/main.tf`.
+- **No backend name is special.** Code decides by `kind` (`view.is_selfhosted`), never by name.
+  A run's `run.json` is the only input to scoring and reporting; if you add a setting that
+  changes results, record it there and bump `runs.SCHEMA_VERSION` with an `upgrade()` step.
 - **Runs are committed, their `config.yaml` is not.** Everything else in `runs/<id>/` is meant
   to be public: backend keys are neutral model names (`sonnet-5.5`), and SageMaker endpoint
   names are kept out of records (`model@sagemaker`). If you add a field to `run.json` or the
@@ -110,7 +117,7 @@ scores the same anywhere. Its choices are written into `scores.json` under `meth
 
 ## Safety rails
 
-- The GPU endpoint deletes itself after `ocr.sagemaker.max_lifetime_hours`; bench tasks stop at
+- A GPU endpoint deletes itself after `backends.<name>.sagemaker.max_lifetime_hours`; bench tasks stop at
   `runner.max_minutes`. Images are deployed by digest (`.state/<prefix>/images.json`), the bench
   image installs from `uv.lock` with hashes, and every model file is hash-checked against Hugging Face.
 - Error text is redacted (`redact.py`) before it is written to records.
@@ -134,7 +141,7 @@ scores the same anywhere. Its choices are written into `scores.json` under `meth
   `inference_ami_version` (`al2023-ami-sagemaker-inference-gpu-4-1`) ships CUDA 13
   drivers.
 - The Unlimited-OCR model **needs** its logits processor and a literal `<image>` prompt
-  prefix. Without them it returns nothing or loops (see `ocr.serve_args` and `ocr.request`).
+  prefix. Without them it returns nothing or loops (see its `serve_args` and `request`).
 - Corporate TLS inspection: `runner.extra_ca_pem` bakes a CA into the runner image. Some
   proxies interpose a "generative AI" warning page on huggingface.co. Open the URL in a
   browser once, or use `just weights ~/Downloads`.
@@ -144,5 +151,6 @@ scores the same anywhere. Its choices are written into `scores.json` under `meth
 
 ## Testing
 
-`just test` runs unit tests plus an end-to-end local pipeline with a fake backend (needs
-Chrome; that test skips otherwise). `just lint` runs ruff and terraform fmt.
+`just test` runs the unit tests plus an end-to-end local pipeline with fake backends (two
+self-hosted ones, to keep names unspecial); no Chrome needed. `just test-all` adds the
+Chrome rendering tests. `just lint` runs ruff and terraform fmt.

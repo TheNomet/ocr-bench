@@ -108,6 +108,7 @@ def test_failures_count_and_cost_basis(fake_docs, tmp_path):
             }
         ],
     )
+    # a v1 run.json (before `backends`): score() upgrades it
     meta = {"id": "r", "ocr": {"price_per_hour_usd": 1.2}, "llm_backends": {"a": {"price_per_mtok": None}}}
     s = score(meta, d)
     agg = {(a["backend"], a["variant"]): a for a in s["transcription"]["aggregate"]}
@@ -138,4 +139,4 @@ def test_cost_basis_skips_error_prone_runs():
             "cost_per_1k_pages_usd": 0.7,
         },
     ]
-    assert cost_basis(rows)["ocr"]["concurrency"] == 4
+    assert cost_basis(rows, {"ocr"})["ocr"]["concurrency"] == 4

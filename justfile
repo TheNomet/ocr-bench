@@ -3,7 +3,8 @@
 #   export CONFIG=config/mine.yaml
 #   just tools          # terraform + crane into .tools/ (one-off)
 #   just deploy         # infra, images, weights, SageMaker model (idempotent)
-#   just endpoint-up    # start the GPU endpoint (~15 min; billed per hour from here)
+#   just endpoint-up    # start the GPU endpoint (~15 min; billed per hour from here). Several
+#                       # self-hosted backends? `just endpoint-up <name>`
 #   just docs           # generate the synthetic documents
 #   just run smoke      # new run folder runs/<date>-smoke/: transcribe, extract, score, summarize
 #   just open           # experiments index -> drill down per run and per document
@@ -22,6 +23,7 @@ prefix := `uv run python scripts/cfg_get.py prefix`
 export AWS_PROFILE := env("AWS_PROFILE", `uv run python scripts/cfg_get.py profile`)
 export AWS_REGION := `uv run python scripts/cfg_get.py region`
 state := ".state/" + prefix
+selfhosted := `uv run python scripts/cfg_get.py selfhosted`
 
 default:
     @just --list --unsorted
@@ -79,29 +81,34 @@ images:
     {{tf}} apply -input=false -auto-approve -var-file="$PWD/{{state}}/terraform.tfvars.json"
     just _outputs
 
-# Weights -> S3, skipped if the manifest is already there. Proxy blocks the HF CDN? `just weights ~/Downloads`
-weights from_dir="":
+# Weights of every self-hosted backend -> S3 (models/<name>/), skipped where the manifest is already there.
+# Proxy blocks the HF CDN? `just weights ~/Downloads` (with several self-hosted backends: `just weights ~/Downloads <name>`)
+weights from_dir="" backend="":
     #!/usr/bin/env bash
     set -euo pipefail
     bucket=$(python3 -c "import json;print(json.load(open('{{state}}/outputs.json'))['bucket']['value'])")
-    if [ -z "{{from_dir}}" ] && aws s3 ls "s3://$bucket/models/ocr.manifest.json" >/dev/null 2>&1; then
-      echo "weights already in s3://$bucket/models/ocr/"; exit 0
-    fi
-    {{ob}} upload-weights {{ if from_dir != "" { "--from-dir " + from_dir } else { "" } }}
+    for name in {{ if backend != "" { backend } else { selfhosted } }}; do
+      if [ -z "{{from_dir}}" ] && aws s3 ls "s3://$bucket/models/$name.manifest.json" >/dev/null 2>&1; then
+        echo "$name: weights already in s3://$bucket/models/$name/"; continue
+      fi
+      {{ob}} upload-weights --backend "$name" {{ if from_dir != "" { "--from-dir " + from_dir } else { "" } }}
+    done
 
 # ---- GPU endpoint ----
 
-endpoint-up:
-    {{ob}} endpoint up
+# The backend name is optional when the config has one self-hosted backend
+endpoint-up backend="":
+    {{ob}} endpoint up {{ if backend != "" { "--backend " + backend } else { "" } }}
 
-endpoint-down:
-    {{ob}} endpoint down
+# Without a name: every self-hosted backend
+endpoint-down backend="":
+    for b in {{ if backend != "" { backend } else { selfhosted } }}; do {{ob}} endpoint down --backend "$b"; done
 
 endpoint-status:
-    {{ob}} endpoint status
+    for b in {{selfhosted}}; do {{ob}} endpoint status --backend "$b"; done
 
-endpoint-logs:
-    aws logs tail "/aws/sagemaker/Endpoints/{{prefix}}-ocr" --since 30m
+endpoint-logs backend="":
+    aws logs tail "/aws/sagemaker/Endpoints/{{prefix}}-{{ if backend != "" { backend } else { selfhosted } }}" --since 30m
 
 # ---- benchmark ----
 
@@ -138,7 +145,7 @@ probe *args:
 
 [confirm("Destroy the whole ocr-bench stack for this config (endpoint, bucket incl. weights/results, ECR, IAM, network)? [y/N]")]
 destroy:
-    -{{ob}} endpoint down
+    -just endpoint-down
     just _tfinit --with-model
     {{tf}} destroy -input=false -auto-approve -var-file="$PWD/{{state}}/terraform.tfvars.json"
 

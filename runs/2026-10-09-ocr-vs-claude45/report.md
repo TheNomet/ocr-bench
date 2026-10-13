@@ -7,7 +7,7 @@
 | question | clean pages | degraded pages |
 |---|---|---|
 | most accurate pipeline | `image->agent` 97.0% | `image->agent` 83.0% |
-| cheapest pipeline | `ocr->agent` $5.87/1k docs | `ocr->agent` $5.88/1k docs |
+| cheapest pipeline | `unlimited-ocr->agent` $5.87/1k docs | `unlimited-ocr->agent` $5.88/1k docs |
 | fastest pipeline | `image->agent` 3.4 s/doc | `image->agent` 3.6 s/doc |
 
 Every pipeline (field accuracy, time per document, cost per 1,000 documents):
@@ -15,56 +15,56 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 | pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
 |---|---|---|---|---|
 | `image->agent` | 97.0% | 83.0% | 3.4 | $7.44 |
-| `ocr->agent` | 95.7% | 81.5% | 9.0 | $5.87 |
+| `unlimited-ocr->agent` | 95.7% | 81.5% | 9.0 | $5.87 |
 
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
 |---|---|---|---|---|---|
 | `haiku-4.5` | clean | 0.033 | 99.3% | 3 | 0 |
 | `haiku-4.5` | degraded | 0.081 | 87.1% | 124 | 1 |
-| `ocr` | clean | 0.006 | 99.5% | 1 | 0 |
-| `ocr` | degraded | 0.044 | 90.8% | 85 | 0 |
 | `sonnet-4.5` | clean | 0.002 | 99.8% | 2 | 0 |
 | `sonnet-4.5` | degraded | 0.079 | 87.8% | 132 | 1 |
+| `unlimited-ocr` | clean | 0.006 | 99.5% | 1 | 0 |
+| `unlimited-ocr` | degraded | 0.044 | 90.8% | 85 | 0 |
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
+| `unlimited-ocr` | 6.2 | 28 (32) |
 | `haiku-4.5` | 8.0 | 137 (32) |
-| `ocr` | 6.2 | 28 (32) |
 | `sonnet-4.5` | 14.1 | 43 (16) |
 
-OCR transcription costs $1.49/hour whether busy or idle; one GPU handled at most ~1686 pages/hour in this run.
+`unlimited-ocr` runs on its own GPU (ml.g5.xlarge), which costs $1.49/hour whether busy or idle; it handled at most ~1686 pages/hour in this run.
 
-Pipeline costs that include OCR use $0.89/1k pages: the cost at its best sustained throughput: 28.1 pages/min at concurrency 32 (GPU kept busy). One request at a time it would be $2.64/1k pages.
+Pipeline costs that include `unlimited-ocr` use $0.89/1k pages: the cost at its best sustained throughput: 28.1 pages/min at concurrency 32 (GPU kept busy). One request at a time it would be $2.64/1k pages.
 
-- cheaper than `sonnet-4.5` transcription ($15.68/1k pages) above **~95 pages/hour** sustained
-- cheaper than `haiku-4.5` transcription ($4.86/1k pages) above **~307 pages/hour** sustained
+- `unlimited-ocr` is cheaper than `sonnet-4.5` transcription ($15.68/1k pages) above **~95 pages/hour** sustained
+- `unlimited-ocr` is cheaper than `haiku-4.5` transcription ($4.86/1k pages) above **~307 pages/hour** sustained
 
 Fields missed most often (count over clean + degraded documents):
 
 - `image->agent`: `newsletter.new_fee` (10), `rental_contract.property_address` (6), `holiday_survey.activities` (5), `holiday_survey.signed_date` (5)
-- `ocr->agent`: `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5)
+- `unlimited-ocr->agent`: `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5)
 
 ## Recommendation
 
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->agent` as the default: it is the most accurate pipeline on both clean (97.0%) and degraded (83.0%) pages and also the fastest. `ocr->agent` is the cheapest pipeline, but only if the GPU stays busy. Its accuracy is slightly lower and it is markedly slower.
+Choose `image->agent` as the default: it is the most accurate pipeline on both clean (97.0%) and degraded (83.0%) pages and also the fastest. `unlimited-ocr->agent` is the cheapest pipeline, but only if the GPU stays busy. Its accuracy is slightly lower and it is markedly slower.
 
 ## What the facts say
-- **Transcription quality is not the bottleneck.** The `ocr` reader produces strong transcripts: lowest degraded CER, best degraded number recall, fewest invented numbers and no runaway pages. Even so, `ocr->agent` trails `image->agent`. Converting pages to text appears to discard information the agent uses when it sees the image.
-- **The missed fields support this.** `ocr->agent` misses mostly `holiday_survey` fields (`activities`, `accommodation`, `pets`) and `receipt.merchant`. These look like form selections and header or logo content, where layout carries meaning that plain text loses.
-- **`image->agent` fails differently.** Its top misses are `newsletter.new_fee` and `rental_contract.property_address`. This suggests the two pipelines' errors are not identical, which makes `ocr->agent` useful as a cross-check.
-- **Degraded pages hurt every pipeline.** Accuracy falls sharply for both, and the LLM readers (`sonnet-4.5`, `haiku-4.5`) invent many more numbers on degraded pages and each had a runaway page. On noisy input, `ocr` is the more trustworthy transcriber.
-- **The self-hosted model's cost advantage depends on utilisation.** The `ocr` price is $1.49/hour whether busy or idle. Pipeline costs assume the best sustained throughput ($0.89/1k pages). Sending one request at a time costs $2.64/1k pages, so the "cheapest" ranking holds only under sustained load.
+- **Transcription quality is not the bottleneck.** The `unlimited-ocr` reader produces strong transcripts: lowest degraded CER, best degraded number recall, fewest invented numbers and no runaway pages. Even so, `unlimited-ocr->agent` trails `image->agent`. Converting pages to text appears to discard information the agent uses when it sees the image.
+- **The missed fields support this.** `unlimited-ocr->agent` misses mostly `holiday_survey` fields (`activities`, `accommodation`, `pets`) and `receipt.merchant`. These look like form selections and header or logo content, where layout carries meaning that plain text loses.
+- **`image->agent` fails differently.** Its top misses are `newsletter.new_fee` and `rental_contract.property_address`. This suggests the two pipelines' errors are not identical, which makes `unlimited-ocr->agent` useful as a cross-check.
+- **Degraded pages hurt every pipeline.** Accuracy falls sharply for both, and the LLM readers (`sonnet-4.5`, `haiku-4.5`) invent many more numbers on degraded pages and each had a runaway page. On noisy input, `unlimited-ocr` is the more trustworthy transcriber.
+- **The self-hosted model's cost advantage depends on utilisation.** The `unlimited-ocr` price is $1.49/hour whether busy or idle. Pipeline costs assume the best sustained throughput ($0.89/1k pages). Sending one request at a time costs $2.64/1k pages, so the "cheapest" ranking holds only under sustained load.
 
 ## Recommendation
 | Goal | Choice | Why |
 |---|---|---|
 | Highest accuracy | `image->agent` | Most accurate on clean and degraded pages |
 | Lowest latency | `image->agent` | Fastest pipeline (3.4 s/doc clean); one step with no OCR stage |
-| Lowest cost | `ocr->agent` | Cheapest pipeline ($5.87/1k docs clean), assuming the GPU is kept busy |
-| Checking / second opinion | `ocr->agent` alongside `image->agent` | Different miss patterns; `ocr` transcripts invent the fewest numbers on degraded pages |
+| Lowest cost | `unlimited-ocr->agent` | Cheapest pipeline ($5.87/1k docs clean), assuming the GPU is kept busy |
+| Checking / second opinion | `unlimited-ocr->agent` alongside `image->agent` | Different miss patterns; `unlimited-ocr` transcripts invent the fewest numbers on degraded pages |
 | When to self-host OCR | Sustained volume, cost-driven | Beats `haiku-4.5` transcription above ~307 pages/hour and `sonnet-4.5` above ~95 pages/hour; below that, idle GPU time removes the saving |
 
 ## Caveats
@@ -79,10 +79,10 @@ Choose `image->agent` as the default: it is the most accurate pipeline on both c
 
 | role | name in tables | model | model id | served by | temperature | price |
 |---|---|---|---|---|---|---|
-| transcriber (self-hosted) | `ocr` | baidu/Unlimited-OCR @ 07dea832 | `baidu/Unlimited-OCR` | vLLM on SageMaker real-time endpoint | 0 | $1.49/hour (on-demand) |
+| transcriber (self-hosted) | `unlimited-ocr` | baidu/Unlimited-OCR @ 07dea832 | `baidu/Unlimited-OCR` | vLLM on SageMaker real-time endpoint | 0 | $1.49/hour (on-demand) |
 | transcriber, extraction agent (default) | `sonnet-4.5` | Claude Sonnet 4.5 (2025-09-29) | `anthropic.claude-sonnet-4-5-20250929-v1:0` | OpenAI-compatible gateway | 0 | $3.0 in / $15.0 out per 1M tokens |
 | transcriber | `haiku-4.5` | Claude Haiku 4.5 (2025-10-01) | `anthropic.claude-haiku-4-5-20251001-v1:0` | OpenAI-compatible gateway | 0 | $1.0 in / $5.0 out per 1M tokens |
-| summary writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
+| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
 
 ### The extraction agent
 
@@ -102,6 +102,7 @@ Models with temperature above 0 sample their output, so their results vary sligh
 | host image | `al2023-ami-sagemaker-inference-gpu-4-1` |
 | container | `docker.io/vllm/vllm-openai:unlimited-ocr` (digest `sha256:f86770951a9d`) |
 | serving flags | `--trust-remote-code --logits_processors vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor --no-enable-prefix-caching --mm-processor-cache-gb 0 --max-num-seqs 64 --max-model-len 32768 --gpu-memory-utilization 0.90` |
+| post-processing | `strip_grounding` |
 
 ### Run
 
@@ -115,12 +116,12 @@ Models with temperature above 0 sample their output, so their results vary sligh
 
 Transcription runs in this plan:
 
-- `ocr` at concurrency 1
+- `unlimited-ocr` at concurrency 1
 - `sonnet-4.5` at concurrency 1
 - `haiku-4.5` at concurrency 1
-- `ocr` at concurrency 4
-- `ocr` at concurrency 16
-- `ocr` at concurrency 32
+- `unlimited-ocr` at concurrency 4
+- `unlimited-ocr` at concurrency 16
+- `unlimited-ocr` at concurrency 32
 - `sonnet-4.5` at concurrency 16
 - `haiku-4.5` at concurrency 16
 - `haiku-4.5` at concurrency 32
@@ -138,9 +139,9 @@ Transcription runs in this plan:
 
 Pipeline names read `<input> -> <extractor>`. The left side is what the extracting model gets to read: `image` = the page images themselves, anything else = the text transcript produced by that backend in stage 1. The right side is the model that extracts the fields: `agent` = the run's default extraction agent, otherwise the named backend.
 
-| pipeline | what the agent reads |
+| pipeline | what the extractor reads |
 |---|---|
-| `ocr->agent` | Two steps: the self-hosted OCR model (baidu/Unlimited-OCR) transcribes every page to text, then the extraction agent reads that text (not the images) and returns the fields. Extractor: `sonnet-4.5` (Claude Sonnet 4.5 (2025-09-29)). |
+| `unlimited-ocr->agent` | Two steps: the self-hosted model `unlimited-ocr` (baidu/Unlimited-OCR @ 07dea832) transcribes every page to text, then the extractor reads that text (not the images) and returns the fields. Extractor: `sonnet-4.5` (Claude Sonnet 4.5 (2025-09-29)). |
 | `image->agent` | One step: the extraction agent reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `sonnet-4.5` (Claude Sonnet 4.5 (2025-09-29)). |
 
 ### Page variants
@@ -171,47 +172,48 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 - **word recall / precision**: share of the page's words found / share of output words that are on the page; ignores order
 - **number recall**: share of the amounts, dates, account numbers etc. on the page that appear in the output
 - **invented numbers**: numbers of 3+ characters in the output that are not on the page
+- **coverage**: share of pages or documents that got an answer. Failures count against the backend: CER 1 and no numbers found for a page, every field wrong for a document
 - **field accuracy**: share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored)
-- **end-to-end**: per document: transcription time of all its pages (concurrency-1 runs) plus the agent call
-- **$/1k**: LLMs: list price x tokens used. OCR model: GPU hourly price / measured throughput, i.e. with the GPU kept busy
+- **end-to-end**: per document: transcription time of all its pages (concurrency-1 runs) plus the extraction call
+- **$/1k**: LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput (GPU kept busy); the cost one request at a time is shown next to it
 
 ## Results
 
 ### Speed and cost (stage 1)
 
-| backend | conc | pages | ok | pages/min | p50 s | p95 s | $ / 1k pages |
+| Backend | Conc. | Pages | OK | Pages/min | p50 (s) | p95 (s) | $/1k pages |
 |---|---|---|---|---|---|---|---|
-| ocr | 1 | 108 | 108 | 9.4 | 6.23 | 8.94 | 2.64 |
-| sonnet-4.5 | 1 | 108 | 108 | 3.7 | 14.09 | 22.86 | 15.68 |
-| haiku-4.5 | 1 | 108 | 108 | 7.2 | 7.95 | 12.73 | 4.86 |
-| ocr | 4 | 108 | 108 | 23.1 | 10.74 | 14.15 | 1.08 |
-| ocr | 16 | 108 | 107 | 23.3 | 33.43 | 41.44 | 1.07 |
-| ocr | 32 | 108 | 108 | 28.1 | 65.09 | 76.86 | 0.89 |
-| sonnet-4.5 | 16 | 108 | 108 | 43.3 | 14.29 | 22.73 | 14.65 |
-| haiku-4.5 | 16 | 108 | 108 | 92.5 | 7.18 | 12.18 | 5.51 |
-| haiku-4.5 | 32 | 108 | 108 | 136.7 | 7.02 | 12.16 | 5.51 |
+| unlimited-ocr | 1 | 108 | 108 | 9.4 | 6.23 | 8.94 | $2.64 |
+| sonnet-4.5 | 1 | 108 | 108 | 3.7 | 14.09 | 22.86 | $15.68 |
+| haiku-4.5 | 1 | 108 | 108 | 7.2 | 7.95 | 12.73 | $4.86 |
+| unlimited-ocr | 4 | 108 | 108 | 23.1 | 10.74 | 14.15 | $1.08 |
+| unlimited-ocr | 16 | 108 | 107 | 23.3 | 33.43 | 41.44 | $1.07 |
+| unlimited-ocr | 32 | 108 | 108 | 28.1 | 65.09 | 76.86 | $0.89 |
+| sonnet-4.5 | 16 | 108 | 108 | 43.3 | 14.29 | 22.73 | $14.65 |
+| haiku-4.5 | 16 | 108 | 108 | 92.5 | 7.18 | 12.18 | $5.51 |
+| haiku-4.5 | 32 | 108 | 108 | 136.7 | 7.02 | 12.16 | $5.51 |
 
 ### Transcription quality (stage 1)
 
-| backend | variant | pages | CER mean | CER median | runaway | word recall | number recall | missing nums | invented nums |
-|---|---|---|---|---|---|---|---|---|---|
-| haiku-4.5 | clean | 54 | 0.038 | 0.033 | 0 | 97.5% | 99.3% | 3 | 3 |
-| haiku-4.5 | degraded | 54 | 0.290 | 0.081 | 1 | 88.0% | 87.1% | 130 | 124 |
-| ocr | clean | 54 | 0.013 | 0.006 | 0 | 97.2% | 99.5% | 2 | 1 |
-| ocr | degraded | 54 | 0.077 | 0.044 | 0 | 85.5% | 90.8% | 135 | 85 |
-| sonnet-4.5 | clean | 54 | 0.028 | 0.002 | 0 | 99.6% | 99.8% | 1 | 2 |
-| sonnet-4.5 | degraded | 54 | 0.496 | 0.079 | 1 | 91.9% | 87.8% | 132 | 410 |
+| Backend | Variant | Pages | Coverage | CER mean | CER median | Runaway | Word recall | Number recall | Numbers missing | Invented numbers |
+|---|---|---|---|---|---|---|---|---|---|---|
+| haiku-4.5 | clean | 54 | 100.0% | 0.038 | 0.033 | 0 | 97.5% | 99.3% | 3 | 3 |
+| haiku-4.5 | degraded | 54 | 100.0% | 0.290 | 0.081 | 1 | 88.0% | 87.1% | 130 | 124 |
+| sonnet-4.5 | clean | 54 | 100.0% | 0.028 | 0.002 | 0 | 99.6% | 99.8% | 1 | 2 |
+| sonnet-4.5 | degraded | 54 | 100.0% | 0.496 | 0.079 | 1 | 91.9% | 87.8% | 132 | 410 |
+| unlimited-ocr | clean | 54 | 100.0% | 0.013 | 0.006 | 0 | 97.2% | 99.5% | 2 | 1 |
+| unlimited-ocr | degraded | 54 | 100.0% | 0.077 | 0.044 | 0 | 85.5% | 90.8% | 135 | 85 |
 
 ### Field extraction (stage 2)
 
-| pipeline | variant | docs | field accuracy | agent s | end-to-end s | $ / 1k docs |
-|---|---|---|---|---|---|---|
-| image->agent | clean | 48 | 97.0% | 3.42 | 3.42 | 7.44 |
-| image->agent | degraded | 48 | 83.0% | 3.57 | 3.57 | 6.75 |
-| ocr->agent | clean | 48 | 95.7% | 2.17 | 8.97 | 5.87 |
-| ocr->agent | degraded | 48 | 81.5% | 2.18 | 9.68 | 5.88 |
+| Pipeline id | Variant | Docs | Coverage | Field accuracy | Extractor latency (s) | End-to-end (s) | $/1k docs |
+|---|---|---|---|---|---|---|---|
+| image->agent | clean | 48 | 100.0% | 97.0% | 3.42 | 3.42 | $7.44 |
+| image->agent | degraded | 48 | 100.0% | 83.0% | 3.57 | 3.57 | $6.75 |
+| unlimited-ocr->agent | clean | 48 | 100.0% | 95.7% | 2.17 | 8.97 | $5.87 |
+| unlimited-ocr->agent | degraded | 48 | 100.0% | 81.5% | 2.18 | 9.68 | $5.88 |
 
 Most-missed fields (count over clean + degraded):
 
 - **image->agent**: `newsletter.new_fee` (10), `rental_contract.property_address` (6), `holiday_survey.activities` (5), `holiday_survey.signed_date` (5), `rental_contract.tenant` (5)
-- **ocr->agent**: `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5), `holiday_survey.destination` (4)
+- **unlimited-ocr->agent**: `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5), `holiday_survey.destination` (4)

@@ -1,14 +1,14 @@
-"""The self-hosted OCR model: vLLM's OpenAI API, either behind SageMaker or at a direct URL.
+"""Self-hosted models (`kind: selfhosted`): vLLM's OpenAI API, behind SageMaker or at a direct URL.
 
-The request body comes from `ocr.request` in the config (prompt, sampling, extra vLLM
-fields), so a different vLLM-served OCR model only needs a config change.
+The request body comes from `backends.<name>.request` (prompt, sampling, extra vLLM fields), so
+another vLLM-served model only needs a config entry. Each one gets its own SageMaker model and
+endpoint (<prefix>-<name>).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import re
 
 import httpx
 from botocore.exceptions import ConnectionClosedError, EndpointConnectionError, ReadTimeoutError
@@ -16,24 +16,12 @@ from botocore.exceptions import ConnectionClosedError, EndpointConnectionError, 
 from ..config import Config
 from .base import Backend, HTTPError, Request, Response, data_url
 
-_REF = re.compile(r"<\|ref\|>(.*?)<\|/ref\|>", re.S)
-_DET = re.compile(r"<\|det\|>.*?<\|/det\|>", re.S)
-_SPECIAL = re.compile(r"<\|[^|]*\|>|<｜[^｜]*｜>")
 
-
-def strip_grounding(text: str) -> str:
-    """DeepSeek-OCR-family output: unwrap <|ref|>text<|/ref|>, drop <|det|>[boxes]<|/det|>."""
-    text = _REF.sub(lambda m: m.group(1), text or "")
-    return _SPECIAL.sub("", _DET.sub("", text))
-
-
-class _VllmOcr(Backend):
-    def __init__(self, cfg: Config):
-        o = cfg["ocr"]
-        self.name = "ocr"
-        self.served = o["served_model_name"]
-        self.req_cfg = o["request"]
-        self.strip = bool(o.get("strip_grounding_tokens", True))
+class _Vllm(Backend):
+    def __init__(self, cfg: Config, name: str, spec: dict):
+        self.name = name
+        self.served = spec["served_model_name"]
+        self.req_cfg = spec["request"]
         self.price_per_mtok = None
 
     def body(self, req: Request) -> dict:
@@ -57,10 +45,10 @@ class _VllmOcr(Backend):
         )
 
 
-class DirectOcr(_VllmOcr):
-    def __init__(self, cfg: Config):
-        super().__init__(cfg)
-        base = cfg["ocr"]["direct_url"].rstrip("/")
+class DirectVllm(_Vllm):
+    def __init__(self, cfg: Config, name: str, spec: dict):
+        super().__init__(cfg, name, spec)
+        base = spec["direct_url"].rstrip("/")
         self.url = base + "/v1/chat/completions"
         self.health = base + "/health"
         self.model = f"{self.served}@{base}"
@@ -79,16 +67,16 @@ class DirectOcr(_VllmOcr):
         return self.parse(r.json())
 
 
-class SageMakerOcr(_VllmOcr):
+class SageMakerVllm(_Vllm):
     """vLLM's /invocations accepts chat-completion bodies. Real-time endpoints cap a request at 60 s."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, name: str, spec: dict):
         import boto3
         from botocore.config import Config as BotoConfig
 
-        super().__init__(cfg)
+        super().__init__(cfg, name, spec)
         self.boto3, self.region, self.instance_type = boto3, cfg.region, None
-        self.endpoint = cfg.endpoint_name
+        self.endpoint = cfg.endpoint_name(name)
         self.model = f"{self.served}@sagemaker"  # endpoint name stays out of records
         self.rt = boto3.client(
             "sagemaker-runtime",
@@ -124,5 +112,5 @@ class SageMakerOcr(_VllmOcr):
         return self.parse(await asyncio.to_thread(call))
 
 
-def make_ocr_backend(cfg: Config) -> Backend:
-    return DirectOcr(cfg) if cfg["ocr"].get("direct_url") else SageMakerOcr(cfg)
+def make(cfg: Config, name: str, spec: dict) -> Backend:
+    return DirectVllm(cfg, name, spec) if spec.get("direct_url") else SageMakerVllm(cfg, name, spec)

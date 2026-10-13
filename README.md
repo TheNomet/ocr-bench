@@ -1,13 +1,13 @@
 # ocr-bench
 
-ocr-bench compares a **self-hosted OCR model** (vLLM on a SageMaker GPU endpoint, by default
+ocr-bench compares **self-hosted OCR models** (vLLM on SageMaker GPU endpoints, by default
 [baidu/Unlimited-OCR](https://huggingface.co/baidu/Unlimited-OCR)) with **hosted LLMs**
 (Claude through Bedrock or any OpenAI-compatible gateway) on reading documents. It measures
 speed, accuracy and cost on synthetic Norwegian documents that come with exact ground truth.
 
 ```
 docs ─► 1 transcribe every page ─► 2 an agent extracts fields ─► 3 score ─► 4 an LLM writes the findings
-        (OCR model, Sonnet, Haiku…)     from each transcript, or straight
+        (OCR models, Sonnet, Haiku…)    from each transcript, or straight
                                         from the images (baseline)
 ```
 
@@ -66,9 +66,11 @@ Redo any stage of an old run without starting over, e.g. `just rerun <id> summar
 
 ## Naming backends
 
-Backend keys appear in every record, report and the public site, so name them after the
-model, not the provider or your organisation: `sonnet-5.5`, `haiku-4.5`, `opus-5.5`. If you
-renamed keys after a run, `scripts/rename_backends.py` rewrites old runs consistently.
+Backend keys (`backends.<name>`) appear in every record, report and the public site, so name
+them after the model, not the provider or your organisation: `unlimited-ocr`, `sonnet-4.5`,
+`opus-5.5`, as in `config/example.yaml`. You can add several self-hosted models; each gets its
+own endpoint. If you renamed keys after a run, `scripts/rename_backends.py` rewrites old runs
+consistently.
 
 ## Publishing
 
@@ -77,7 +79,7 @@ renamed keys after a run, `scripts/rename_backends.py` rewrites old runs consist
 
 ## Without AWS GPU access
 
-Set `ocr.direct_url` to any running vLLM server (for example a local GPU box) and
+Set `direct_url` on a self-hosted backend to any running vLLM server (for example a local GPU box) and
 `runner.mode: local`. `just run` then calls everything from your machine and nothing needs
 deploying. The LLM backends work the same way.
 

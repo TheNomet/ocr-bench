@@ -1,6 +1,7 @@
 """ocrbench command line. Every command reads the same config (--config, $CONFIG or $OCRBENCH_CONFIG).
 
-Setup        docs | tf-vars | upload-weights | images ocr|bench|all | endpoint up|down|status
+Setup        docs | tf-vars | upload-weights [--backend B] | images <self-hosted name>|bench|all
+             endpoint up|down|wait|status [--backend B]   (B: a self-hosted backend; optional if only one)
 Runs         run --plan P [--stages ...]      new run folder runs/<date>-<plan>/, all stages
              run --id ID --stages a,b         resume / redo stages of an existing run
              fetch --run ID | list | report [--run ID]   (report also rebuilds site/index.html)
@@ -40,22 +41,35 @@ def outputs(cfg: Config) -> dict:
 
 # ------------------------------------------------------------------ tf-vars
 def _pinned_images(cfg: Config) -> dict:
-    p = cfg.state_dir / "images.json"
-    refs = json.loads(p.read_text()) if p.exists() else {}
-    return {"ocr_image_ref": refs.get("ocr_image", ""), "bench_image_ref": refs.get("bench_image", "")}
+    """Deploy exactly the images that were built (by digest); tags only as a first-deploy fallback."""
+    from .images import recorded
+
+    refs = recorded(cfg)
+    sh = refs.get("selfhosted") or {}
+    return {
+        "selfhosted": {
+            k: {
+                "image_ref": (sh.get(k) or {}).get("image", ""),
+                "network_isolation": bool((cfg.backend(k).get("sagemaker") or {}).get("network_isolation", True)),
+            }
+            for k in cfg.selfhosted()
+            if not cfg.backend(k).get("direct_url")
+        },
+        "bench_image_ref": refs.get("bench_image", ""),
+    }
 
 
 def cmd_tf_vars(cfg: Config, _a) -> None:
-    r, net, ocr = cfg.raw, cfg["network"], cfg["ocr"]
+    r, net = cfg.raw, cfg["network"]
     kms_arns = []
     bedrock_models = []
-    for spec in r["llm_backends"].values():
+    for spec in cfg.backends.values():
         auth = spec.get("auth") or {}
         if auth.get("type") == "oauth2_kms_jwt":
             reg = auth.get("kms_region") or cfg.region
             kid = auth["kms_key_id"]
             kms_arns.append(kid if kid.startswith("arn:") else f"arn:aws:kms:{reg}:{r['aws']['account_id']}:key/{kid}")
-        if spec.get("provider") == "bedrock":
+        if spec["kind"] == "bedrock":
             bedrock_models.append(spec["model_id"])
     tfvars = {
         "name_prefix": cfg.prefix,
@@ -73,12 +87,8 @@ def cmd_tf_vars(cfg: Config, _a) -> None:
         "runner_cpu": int(r["runner"]["cpu"]),
         "runner_memory": int(r["runner"]["memory"]),
         "runner_max_minutes": int(r["runner"].get("max_minutes", 240)),
-        "create_ocr_model": bool(_a.with_model),
-        # deploy exactly the images that were built (by digest); tags only as a first-deploy fallback
+        "create_selfhosted_models": bool(_a.with_model),
         **_pinned_images(cfg),
-        "model_s3_prefix": cfg.model_prefix,
-        "sagemaker_network_isolation": bool(ocr["sagemaker"].get("network_isolation", True)),
-        "max_num_seqs": "64",
         "kms_sign_key_arns": sorted(set(kms_arns)),
         "bedrock_model_ids": sorted(set(bedrock_models)),
     }
@@ -86,14 +96,15 @@ def cmd_tf_vars(cfg: Config, _a) -> None:
     (sd / "terraform.tfvars.json").write_text(json.dumps(tfvars, indent=1))
     ts = r["terraform_state"]
     if ts.get("bucket"):
-        backend = (
-            f'terraform {{\n  backend "s3" {{\n    bucket = "{ts["bucket"]}"\n    key = "{ts["key"]}"\n'
-            f'    region = "{cfg.region}"\n    encrypt = true\n'
-            + (f'    dynamodb_table = "{ts["dynamodb_table"]}"\n' if ts.get("dynamodb_table") else "")
-            + "  }\n}\n"
-        )
+        kind, kv = "s3", {"bucket": f'"{ts["bucket"]}"', "key": f'"{ts["key"]}"', "region": f'"{cfg.region}"'}
+        kv["encrypt"] = "true"
+        if ts.get("dynamodb_table"):
+            kv["dynamodb_table"] = f'"{ts["dynamodb_table"]}"'
     else:
-        backend = f'terraform {{\n  backend "local" {{\n    path = "{sd / "terraform.tfstate"}"\n  }}\n}}\n'
+        kind, kv = "local", {"path": f'"{sd / "terraform.tfstate"}"'}
+    w = max(map(len, kv))  # aligned like `terraform fmt`, so `just lint` passes on the generated file
+    body = "".join(f"    {k.ljust(w)} = {v}\n" for k, v in kv.items())
+    backend = f'terraform {{\n  backend "{kind}" {{\n{body}  }}\n}}\n'
     (ROOT / "infra" / "terraform" / "backend.tf").write_text(backend)
     print(sd / "terraform.tfvars.json")
 
@@ -112,14 +123,18 @@ def cmd_docs(cfg: Config, a) -> None:
 def cmd_upload_weights(cfg: Config, a) -> None:
     from .weights import upload
 
-    upload(cfg, Path(a.from_dir).expanduser() if a.from_dir else None)
+    upload(cfg, cfg.one_selfhosted(a.backend), Path(a.from_dir).expanduser() if a.from_dir else None)
 
 
 def cmd_images(cfg: Config, a) -> None:
     from . import images
 
-    if a.which in ("ocr", "all"):
-        images.build_ocr(cfg, skip_mirror=a.skip_mirror)
+    sh = cfg.selfhosted()
+    if a.which not in ("all", "bench", *sh):
+        raise SystemExit(f"images: choose all, bench or a self-hosted backend ({', '.join(sh) or 'none'})")
+    for name in sh if a.which == "all" else [a.which] if a.which in sh else []:
+        if not cfg.backend(name).get("direct_url"):
+            images.build_selfhosted(cfg, name)
     if a.which in ("bench", "all"):
         images.build_bench(cfg)
 
@@ -127,21 +142,24 @@ def cmd_images(cfg: Config, a) -> None:
 def cmd_endpoint(cfg: Config, a) -> None:
     from . import aws
 
-    def up(c):
+    name = cfg.one_selfhosted(a.backend)
+
+    def up(c, n):
         role = None
         with contextlib.suppress(SystemExit):
             role = outputs(c).get("scheduler_role_arn")
-        aws.endpoint_up(c, role)
+        aws.endpoint_up(c, n, role)
 
     {
         "up": up,
         "down": aws.endpoint_down,
         "wait": aws.endpoint_wait,
-        "status": lambda c: print(aws.endpoint_instance_type(c) or "no endpoint"),
-    }[a.action](cfg)
+        "status": lambda c, n: print(f"{n}: {aws.endpoint_instance_type(c, n) or 'no endpoint'}"),
+    }[a.action](cfg, name)
 
 
 def cmd_transcribe(cfg: Config, a) -> None:
+    from . import prompts
     from .transcribe import run
 
     asyncio.run(
@@ -149,6 +167,7 @@ def cmd_transcribe(cfg: Config, a) -> None:
             cfg,
             Path(a.docs),
             Path(a.out),
+            prompt=prompts.resolve(cfg["bench"])["transcribe"],
             backend=a.backend,
             concurrency=a.concurrency,
             variant=a.variant,
@@ -172,7 +191,7 @@ def _parse_stages(s: str) -> list[str]:
 
 def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
     """Run stages over runs/<id>/. `sync` (optional) is called after each stage (Fargate: upload to S3)."""
-    from . import runs
+    from . import prompts, runs
     from .extract import run as extract_run
     from .score import score
     from .transcribe import run as transcribe_run
@@ -191,6 +210,7 @@ def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
                         cfg,
                         docs,
                         d,
+                        prompt=prompts.of(meta, "transcribe"),
                         backend=it["backend"],
                         concurrency=int(it.get("concurrency", 1)),
                         variant=it.get("variant", "both"),
@@ -207,6 +227,7 @@ def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
                     cfg,
                     docs,
                     d,
+                    meta=meta,
                     pipelines=meta["extraction"]["pipelines"],
                     variant=variants.pop() if len(variants) == 1 else "both",
                     limit=lim,
@@ -263,10 +284,11 @@ def cmd_run(cfg: Config, a) -> None:
         d = runs.create(cfg, a.plan, docs, a.id)
         print(f"new run {d.name}: {d}")
     meta = runs.load(d)
-    if "transcribe" in stages and any(it["backend"] == "ocr" for it in meta.get("plan_items") or []):
-        runs.record_endpoint(cfg, d)
-        o = runs.load(d)["ocr"]
-        print(f"OCR host: {o.get('instance_type')} ({o.get('gpu')}), {o.get('price_per_hour_usd')} USD/h")
+    if "transcribe" in stages:
+        for name in dict.fromkeys(it["backend"] for it in meta.get("plan_items") or []):
+            if cfg.kind(name) == "selfhosted":
+                b = runs.record_endpoint(cfg, d, name)
+                print(f"{name} host: {b.get('instance_type')} ({b.get('gpu')}), {b.get('price_per_hour_usd')} USD/h")
     if cfg["runner"]["mode"] == "local":
         execute_stages(cfg, d, stages)
     else:
@@ -346,9 +368,9 @@ def cmd_list(cfg: Config, a) -> None:
     from . import runs
 
     for m in runs.all_runs():
-        o = m.get("ocr") or {}
+        gpus = [b.get("instance_type") or "?" for b in m["backends"].values() if b["kind"] == "selfhosted"]
         done = ",".join(m.get("stages", {})) or "-"
-        print(f"{m['id']:32s} plan={m.get('plan'):8s} gpu={o.get('instance_type') or '-':16s} stages={done}")
+        print(f"{m['id']:32s} plan={m.get('plan'):8s} gpu={','.join(gpus) or '-':16s} stages={done}")
 
 
 def cmd_probe_models(cfg: Config, a) -> None:
@@ -358,8 +380,8 @@ def cmd_probe_models(cfg: Config, a) -> None:
     from .backends import Request, get_backend
 
     async def go():
-        for name, spec in cfg["llm_backends"].items():
-            if spec.get("provider") != "openai_compatible" or (a.backend and name not in a.backend):
+        for name, spec in cfg.backends.items():
+            if spec["kind"] != "openai_compatible" or (a.backend and name not in a.backend):
                 continue
             be = get_backend(cfg, name)
             print(f"\n== {name} ({spec['base_url']})", flush=True)
@@ -427,12 +449,13 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("tf-vars")
     p.add_argument("--with-model", action="store_true", help="also create the SageMaker model (weights + image ready)")
     p = sub.add_parser("upload-weights")
+    p.add_argument("--backend", default=None, help="self-hosted backend (optional if there is only one)")
     p.add_argument("--from-dir", default=None, help="folder with browser-downloaded large files")
     p = sub.add_parser("images")
-    p.add_argument("which", choices=["ocr", "bench", "all"])
-    p.add_argument("--skip-mirror", action="store_true", help="reuse the already-mirrored :mirror tag")
+    p.add_argument("which", help="all | bench | <self-hosted backend name>")
     p = sub.add_parser("endpoint")
     p.add_argument("action", choices=["up", "down", "wait", "status"])
+    p.add_argument("--backend", default=None, help="self-hosted backend (optional if there is only one)")
     p = sub.add_parser("transcribe", help="low-level: one stage-1 run into an arbitrary folder")
     p.add_argument("--docs", default=str(ROOT / "docs-out"))
     p.add_argument("--out", required=True)
@@ -460,7 +483,7 @@ def main(argv: list[str] | None = None) -> None:
             name, help="check which model ids a gateway accepts" + (" (from Fargate)" if name == "probe-task" else "")
         )
         p.add_argument("--model", action="append", help="model id to try (repeatable); default: the configured one")
-        p.add_argument("--backend", action="append", help="limit to these llm_backends keys")
+        p.add_argument("--backend", action="append", help="limit to these backends")
         p.add_argument("--filter", default=None, help="only list /v1/models ids containing this")
 
     a = ap.parse_args(argv)

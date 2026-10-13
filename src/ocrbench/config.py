@@ -70,15 +70,8 @@ class Config:
         return f"{self.prefix}-artifacts"
 
     @property
-    def endpoint_name(self) -> str:
-        return f"{self.prefix}-ocr"
-
-    @property
-    def model_name(self) -> str:
-        return f"{self.prefix}-ocr-model"
-
-    @property
-    def ocr_repo(self) -> str:
+    def selfhosted_repo(self) -> str:
+        """One ECR repo for every self-hosted image; tags are per backend (<name>-sagemaker)."""
         return f"{self.prefix}-vllm"
 
     @property
@@ -89,15 +82,47 @@ class Config:
     def registry(self) -> str:
         return f"{self.raw['aws']['account_id']}.dkr.ecr.{self.region}.amazonaws.com"
 
-    @property
-    def model_prefix(self) -> str:
-        return "models/ocr"
+    # ---- per self-hosted backend ----
+    def endpoint_name(self, name: str) -> str:
+        return f"{self.prefix}-{name}"
 
-    def llm(self, name: str) -> dict:
+    def model_name(self, name: str) -> str:
+        return f"{self.prefix}-{name}-model"
+
+    def model_prefix(self, name: str) -> str:
+        return f"models/{name}"
+
+    # ---- backends ----
+    @property
+    def backends(self) -> dict[str, dict]:
+        return self.raw["backends"]
+
+    def backend(self, name: str) -> dict:
         try:
-            return self.raw["llm_backends"][name]
+            return self.raw["backends"][name]
         except KeyError:
-            raise KeyError(f"llm backend {name!r} not defined under llm_backends in {self.path}") from None
+            raise KeyError(f"backend {name!r} not defined under backends in {self.path}") from None
+
+    def kind(self, name: str) -> str:
+        return self.backend(name)["kind"]
+
+    def selfhosted(self) -> list[str]:
+        return [k for k, v in self.raw["backends"].items() if v["kind"] == "selfhosted"]
+
+    def one_selfhosted(self, name: str | None = None) -> str:
+        """`name` if given (and self-hosted), else the only self-hosted backend in the config."""
+        sh = self.selfhosted()
+        if name:
+            if name not in sh:
+                raise SystemExit(f"{name!r} is not a self-hosted backend (self-hosted: {', '.join(sh) or 'none'})")
+            return name
+        if len(sh) != 1:
+            raise SystemExit(
+                f"several self-hosted backends ({', '.join(sh)}): name one"
+                if sh
+                else "no self-hosted backend in the config"
+            )
+        return sh[0]
 
     def plan(self, name: str) -> list[dict]:
         try:
@@ -111,7 +136,7 @@ DEFAULTS: dict = {
     "terraform_state": {"bucket": None, "key": "ocr-bench/terraform.tfstate", "dynamodb_table": None},
     "network": {"mode": "create", "existing": {}, "create": {"cidr": "10.42.0.0/24"}},
     "ecs": {"cluster": "create"},
-    "llm_backends": {},
+    "backends": {},
     "runner": {
         "mode": "fargate",
         "cpu": 2048,
@@ -129,14 +154,69 @@ def _merge(base: dict, over: dict) -> dict:
     return out
 
 
+KINDS = ("selfhosted", "bedrock", "openai_compatible")
+_SELFHOSTED_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,30}")
+
+
+def upgrade(raw: dict) -> dict:
+    """Configs written before `backends:` existed: `ocr:` (one self-hosted model, recorded as "ocr") and
+    `llm_backends:` (kind = provider). Returns the same config in the current shape."""
+    if "ocr" not in raw and "llm_backends" not in raw:
+        return raw
+    raw = copy.deepcopy(raw)
+    backends: dict = {}
+    if "ocr" in raw:
+        o = raw.pop("ocr")
+        o.pop("name", None)  # never used: results always said "ocr"
+        strip = o.pop("strip_grounding_tokens", True)
+        backends["ocr"] = {"kind": "selfhosted", "postprocess": ["strip_grounding"] if strip else [], **o}
+    for k, v in (raw.pop("llm_backends", None) or {}).items():
+        backends[k] = {"kind": v.get("provider"), **{x: y for x, y in v.items() if x != "provider"}}
+    raw["backends"] = {**backends, **(raw.get("backends") or {})}
+    (raw.get("bench") or {}).pop("transcribers", None)
+    return raw
+
+
+def validate(raw: dict, p: Path) -> None:
+    from .postprocess import REGISTRY
+
+    if not raw["backends"]:
+        raise ValueError(f"{p}: no backends defined")
+    for k, v in raw["backends"].items():
+        if v.get("kind") not in KINDS:
+            raise ValueError(f"{p}: backends.{k}.kind must be one of {', '.join(KINDS)}, got {v.get('kind')!r}")
+        for name in v.get("postprocess") or []:
+            if name not in REGISTRY:
+                raise ValueError(f"{p}: backends.{k}.postprocess: unknown step {name!r} ({', '.join(REGISTRY)})")
+        if v["kind"] == "selfhosted":
+            if not _SELFHOSTED_NAME.fullmatch(k):
+                raise ValueError(
+                    f"{p}: self-hosted backend name {k!r} must be 1-31 chars of [a-z0-9-] (it names AWS resources)"
+                )
+            if len(f"{raw['name_prefix']}-{k}-model") > 63:
+                raise ValueError(f"{p}: name_prefix + backend name {k!r} too long for SageMaker (63 chars)")
+    ex = raw["bench"].get("extraction") or {}
+    for role, key in (
+        ("bench.extraction.agent", ex.get("agent")),
+        ("bench.summary.agent", (raw["bench"].get("summary") or {}).get("agent")),
+    ):
+        if key and key not in raw["backends"]:
+            raise ValueError(f"{p}: {role} {key!r} is not a backend")
+    for plan, items in (raw["bench"].get("plans") or {}).items():
+        for it in items:
+            if it["backend"] not in raw["backends"]:
+                raise ValueError(f"{p}: bench.plans.{plan}: backend {it['backend']!r} is not defined under backends")
+
+
 def load(path: str | Path | None = None) -> Config:
     p = Path(path or os.environ.get("OCRBENCH_CONFIG") or os.environ.get("CONFIG") or ROOT / "config" / "example.yaml")
-    raw = _merge(DEFAULTS, _expand(yaml.safe_load(p.read_text()) or {}))
-    for key in ("name_prefix", "aws", "ocr", "bench"):
+    raw = _merge(DEFAULTS, upgrade(_expand(yaml.safe_load(p.read_text()) or {})))
+    for key in ("name_prefix", "aws", "bench"):
         if key not in raw:
             raise ValueError(f"{p}: missing top-level key {key!r}")
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,30}", raw["name_prefix"]):
         raise ValueError(f"{p}: name_prefix must be 3-31 chars of [a-z0-9-] (it names S3 buckets and ECR repos)")
+    validate(raw, p)
     in_aws_runtime = any(os.environ.get(k) for k in ("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_EXECUTION_ENV"))
     if raw["aws"].get("profile") and not in_aws_runtime:
         os.environ.setdefault("AWS_PROFILE", raw["aws"]["profile"])

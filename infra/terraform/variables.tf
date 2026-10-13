@@ -68,37 +68,24 @@ variable "bench_image_tag" {
   default = "latest"
 }
 
-# ---- OCR model ----
-variable "create_ocr_model" {
-  description = "Create the SageMaker model (needs the image in ECR and weights in S3 first)"
+# ---- self-hosted models ----
+variable "selfhosted" {
+  description = "Self-hosted backends (config kind: selfhosted): name -> pinned image (repo@sha256:..., empty = <name>-sagemaker tag) and network isolation. Endpoint permissions cover every name here."
+  type = map(object({
+    image_ref         = string
+    network_isolation = bool
+  }))
+  default = {}
+}
+variable "create_selfhosted_models" {
+  description = "Create the SageMaker models (needs the images in ECR and weights in S3 first)"
   type        = bool
   default     = false
-}
-variable "ocr_image_ref" {
-  description = "Pinned OCR image (repo@sha256:...) written by `ocrbench images`; empty = use ocr_image_tag"
-  type        = string
-  default     = ""
 }
 variable "bench_image_ref" {
   description = "Pinned bench image (repo@sha256:...); empty = use bench_image_tag"
   type        = string
   default     = ""
-}
-variable "ocr_image_tag" {
-  type    = string
-  default = "sagemaker"
-}
-variable "model_s3_prefix" {
-  type    = string
-  default = "models/ocr"
-}
-variable "sagemaker_network_isolation" {
-  type    = bool
-  default = true
-}
-variable "max_num_seqs" {
-  type    = string
-  default = "64"
 }
 
 # ---- permissions for LLM backends ----

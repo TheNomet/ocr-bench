@@ -77,28 +77,47 @@ runs/<id>/
   docs/                     copy of the document set (section 1 layout)
   runs.jsonl transcripts.jsonl extractions.jsonl outputs/     (sections 2-3)
   scores.json               stage 3 (section 4)
-  summary.md                stage 4: LLM-written findings; first line is an HTML comment naming the model
+  summary.md                stage 4: the LLM-written recommendation
+  summary.json              who wrote it (backend, model), token counts, and numbers not found in the key facts
   report.md                 findings + setup + legend + result tables
 ```
 
 ### run.json
 
 ```json
-{"id": "2026-10-09-ocr-vs-claude45", "plan": "ocr-vs-claude45", "plan_items": [{"backend": "ocr", "concurrency": 1}],
+{"schema_version": 2,
+ "id": "2026-10-09-ocr-vs-claude45", "plan": "ocr-vs-claude45",
+ "plan_items": [{"backend": "unlimited-ocr", "concurrency": 1}],
  "created": "...", "git_commit": "90b8e41", "region": "eu-west-1",
  "runner": {"mode": "fargate", "cpu": 2048, "memory": 4096},
  "documents": {"count": 48, "pages": 54, "page_images": 108, "seed": 7, "per_type": 6,
                "types": {"invoice": {"docs": 6, "pages": 6, "description": "...", "fields": ["..."]}}},
- "ocr": {"hf_repo": "...", "hf_revision": "...", "instance_type": "ml.g5.xlarge", "gpu": "NVIDIA A10G, 24 GB",
-         "host": "4 vCPU, 16 GB RAM", "price_per_hour_usd": 1.49, "image_digest": "sha256:...", "...": "..."},
- "llm_backends": {"bedrock-sonnet": {"provider": "bedrock", "model": "...", "via": "AWS Bedrock",
-                                     "price_per_mtok": {"input": 3.0, "output": 15.0}}},
- "transcribers": ["ocr", "bedrock-sonnet"], "extraction": {"agent": "...", "pipelines": ["..."]},
+ "backends": {
+   "unlimited-ocr": {"kind": "selfhosted", "model": "baidu/Unlimited-OCR", "label": null,
+                     "hf_repo": "...", "hf_revision": "...", "source_image": "...", "serve_args": ["..."],
+                     "request": {"prompt": "...", "max_tokens": 8192, "temperature": 0.0, "extra_body": {}},
+                     "postprocess": ["strip_grounding"], "instance_type": "ml.g5.xlarge",
+                     "gpu": "NVIDIA A10G, 24 GB", "host": "4 vCPU, 16 GB RAM", "price_per_hour_usd": 1.49,
+                     "image_digest": "sha256:...", "via": "vLLM on SageMaker real-time endpoint", "...": "..."},
+   "sonnet-4.5": {"kind": "bedrock", "model": "...", "label": null, "via": "AWS Bedrock", "temperature": 0.0,
+                  "price_per_mtok": {"input": 3.0, "output": 15.0}, "postprocess": []}},
+ "prompts": {"transcribe": {"system": "...", "user": "...", "max_tokens": 8192},
+             "extract": {"system": "...", "rules": "...", "max_tokens": 2048},
+             "summarize": {"system": "...", "max_tokens": 12000, "temperature": 0.2}},
+ "transcribers": ["unlimited-ocr", "sonnet-4.5"],
+ "extraction": {"agent": "sonnet-4.5", "pipelines": ["..."], "agents": {"<pipeline>": "<extractor>"}},
  "summary": {"agent": "..."},
+ "report": {"hide_backends": []},
  "stages": {"transcribe": {"finished": "...", "seconds": 3600.0}}}
 ```
 
-`llm_backends` holds model identity and price only: never hosts, auth or credentials.
+`backends` holds model identity, settings and price only: never hosts, URLs, auth or
+credentials. The stages read prices, post-processing and prompts from here, never from the
+live config, so a run re-scores identically anywhere.
+
+`schema_version` 1 (no field) is the layout before several self-hosted backends existed: an
+`ocr` block for the one self-hosted model and `llm_backends` for the rest. `runs.load()`
+upgrades it on read; such runs used the default prompts.
 
 ## 2a. Transcription records (inside the run folder)
 
@@ -114,17 +133,17 @@ runs/<id>/
 ### runs.jsonl
 
 ```json
-{"run_id": "20261008-141236", "backend": "ocr", "model": "baidu/Unlimited-OCR@sagemaker",
+{"run_id": "20261008-141236", "backend": "unlimited-ocr", "model": "baidu/Unlimited-OCR@sagemaker",
  "concurrency": 16, "pages": 96, "wall_s": 120.4, "started": 1791462025.1}
 ```
 
 ### transcripts.jsonl
 
 ```json
-{"run_id": "...", "backend": "ocr", "model": "...", "doc_id": "invoice-03", "page": 1,
+{"run_id": "...", "backend": "unlimited-ocr", "model": "...", "doc_id": "invoice-03", "page": 1,
  "variant": "clean", "concurrency": 16, "started": 1791462025.2, "latency_s": 3.1, "ok": true,
  "prompt_tokens": 1192, "completion_tokens": 490, "finish_reason": "stop", "retries": 0,
- "error": null, "output_file": "outputs/ocr/invoice-03.p1.clean.r20261008-141236.md"}
+ "error": null, "output_file": "outputs/unlimited-ocr/invoice-03.p1.clean.r20261008-141236.md"}
 ```
 
 ## 3. Extraction runs (same run directory)
@@ -135,20 +154,23 @@ runs/<id>/
   outputs/extract/<pipeline_slug>/<doc_id>.<variant>.json   # parsed fields returned by the agent
 ```
 
-`pipeline` is `"<source>->agent"`, where source is a transcriber backend name, or `"image"`
-for direct extraction from the page images. In file names, `->` becomes `__`.
+`pipeline` is `"<source>-><extractor>"`. The source is a transcriber backend name, or `"image"`
+for direct extraction from the page images; the extractor is `agent` (the run's default
+extraction agent) or a backend name. In file names, `->` becomes `__`.
 
 ### extractions.jsonl
 
 ```json
-{"pipeline": "ocr->agent", "source": "ocr", "agent": "bedrock-sonnet", "agent_model": "...",
+{"pipeline": "unlimited-ocr->agent", "source": "unlimited-ocr", "agent": "sonnet-4.5", "agent_model": "...",
  "doc_id": "invoice-03", "variant": "degraded", "latency_s": 4.2, "ok": true,
  "prompt_tokens": 2100, "completion_tokens": 160, "error": null,
- "output_file": "outputs/extract/ocr__agent/invoice-03.degraded.json"}
+ "output_file": "outputs/extract/unlimited-ocr__agent/invoice-03.degraded.json"}
 ```
 
-When the source is a transcriber, the agent reads that transcriber's **first successful**
-transcript of every page of the document, in page order. The source's transcription latency
+When the source is a transcriber, the extractor reads the same transcript of each page that
+scoring uses (the successful one from the lowest-concurrency run, the latest if several),
+after the transcriber's `postprocess` steps, in page order. A document with a page the source
+failed on is recorded as a failed extraction. The source's transcription latency
 is **not** included in `latency_s`; the report adds the two together for end-to-end figures.
 
 ## 4. Scores and site

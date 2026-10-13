@@ -23,15 +23,15 @@ import shutil
 import statistics
 import unicodedata
 from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
+from .. import metrics
+from ..metrics import DASH, Metric, _num, fmt
 from . import markdown_lite
 from .assets import CSS, JS
 
-DASH = "–"
 VARIANTS = ("clean", "degraded")
 
 
@@ -43,37 +43,6 @@ def e(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
-def _num(v: Any) -> float | None:
-    if isinstance(v, bool) or v is None:
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
-def fmt(v: Any, kind: str) -> str:
-    """Format a metric value. Kinds: pct, sec, rate, int, f1, usd, text."""
-    if kind == "text":
-        return DASH if v is None or v == "" else str(v)
-    n = _num(v)
-    if n is None:
-        return DASH
-    if kind == "pct":
-        return f"{n * 100:.1f}%"
-    if kind == "sec":
-        return f"{n:.2f}"
-    if kind == "rate":
-        return f"{n:.3f}"
-    if kind == "int":
-        return f"{n:,.0f}".replace(",", " ")
-    if kind == "f1":
-        return f"{n:.1f}"
-    if kind == "usd":
-        return f"${n:,.2f}"
-    return str(v)
-
-
 def _doc_href(doc_id: str) -> str:
     return quote(f"{doc_id}.html")
 
@@ -81,60 +50,8 @@ def _doc_href(doc_id: str) -> str:
 # --------------------------------------------------------------------------- tables
 
 
-@dataclass(frozen=True)
-class Col:
-    key: str
-    label: str
-    kind: str = "text"
-    better: str | None = None  # "low" | "high" | None
-    title: str = ""
-
-
-SPEED_COLS = [
-    Col("backend", "Backend"),
-    Col("model", "Model"),
-    Col("concurrency", "Conc.", "int"),
-    Col("pages", "Pages", "int"),
-    Col("ok", "OK", "int", "high"),
-    Col("errors", "Errors", "int", "low"),
-    Col("wall_s", "Wall (s)", "sec", "low"),
-    Col("pages_per_min", "Pages/min", "f1", "high"),
-    Col("p50_s", "p50 (s)", "sec", "low"),
-    Col("p95_s", "p95 (s)", "sec", "low"),
-    Col("max_s", "max (s)", "sec", "low"),
-    Col("mean_prompt_tokens", "Prompt tok", "int", None, "Mean prompt tokens per page"),
-    Col("mean_completion_tokens", "Compl. tok", "int", None, "Mean completion tokens per page"),
-    Col("retries", "Retries", "int", "low"),
-    Col("cost_per_1k_pages_usd", "$/1k pages", "usd", "low"),
-]
-
-TRANSCRIPTION_COLS = [
-    Col("backend", "Backend"),
-    Col("variant", "Variant"),
-    Col("pages", "Pages", "int"),
-    Col("cer", "CER mean", "rate", "low", "Character error rate, mean over pages"),
-    Col("cer_median", "CER median", "rate", "low", "Character error rate of the typical page"),
-    Col("runaway", "Runaway", "int", "low", "Pages whose output is >3x the page length (repetition loop)"),
-    Col("wer", "WER", "rate", "low", "Word error rate"),
-    Col("word_recall", "Word recall", "pct", "high"),
-    Col("word_precision", "Word precision", "pct", "high"),
-    Col("num_recall", "Number recall", "pct", "high", "Share of ground-truth numbers found"),
-    Col("num_missing", "Numbers missing", "int", "low"),
-    Col("num_hallucinated", "Numbers hallucinated", "int", "low"),
-]
-
-EXTRACTION_COLS = [
-    Col("label", "Input → extractor"),
-    Col("pipeline", "Pipeline id"),
-    Col("variant", "Variant"),
-    Col("docs", "Docs", "int"),
-    Col("field_accuracy", "Field accuracy", "pct", "high"),
-    Col("fields_correct", "Correct", "int"),
-    Col("fields_total", "Total", "int"),
-    Col("mean_latency_s", "Agent latency (s)", "sec", "low", "Mean extraction-agent latency per document"),
-    Col("end_to_end_latency_s", "End-to-end (s)", "sec", "low", "Transcription + extraction latency per document"),
-    Col("cost_per_1k_docs_usd", "$/1k docs", "usd", "low"),
-]
+Col = Metric  # a table column is a metric from the shared registry
+SPEED_COLS, TRANSCRIPTION_COLS, EXTRACTION_COLS = metrics.SPEED, metrics.TRANSCRIPTION, metrics.EXTRACTION
 
 
 def _best_cells(rows: list[dict], cols: list[Col], group_key: str | None) -> set[tuple[int, str]]:
@@ -837,81 +754,49 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
     assets.mkdir(parents=True, exist_ok=True)
     (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
     (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
-    from ..explain import AGENT_INPUT, model_label, ocr_label
+    from .. import view
+    from ..explain import AGENT_INPUT
 
+    notes = {
+        view.ROLE_AGENT: f"Reads {AGENT_INPUT}; returns the fields as JSON.",
+        view.ROLE_WRITER: "Writes the bottom line and recommendation from the computed key facts",
+    }
     cards = []
     for r in runs:
         m, h = r.get("card_meta") or r["meta"], r.get("headline") or {}
-        o, be = m.get("ocr") or {}, m.get("llm_backends") or {}
         docs = m.get("documents") or {}
 
-        def model_row(role: str, key: str, label: str, mid: str | None, note: str = "") -> str:
-            return (
-                f'<tr><td class="role">{e(role)}</td><td><code>{e(key)}</code></td>'
-                f'<td><div class="mname">{e(label)}</div><div class="mid">{e(mid or "")}</div>'
+        rows = []
+        for mr in view.model_rows(m):
+            note = " ".join(notes[x] for x in mr.roles if x in notes)
+            if view.ROLE_WRITER in mr.roles:
+                note += f"; reasoning effort {mr.reasoning_effort}." if mr.reasoning_effort else "."
+            chip = f'<span class="chip warmchip">temperature {mr.temperature:g}</span>' if mr.temperature else ""
+            rows.append(
+                f'<tr><td class="role">{e(", ".join(mr.roles))}</td><td><code>{e(mr.key)}</code></td><td>{chip}'
+                f'<div class="mname">{e(mr.label)}</div><div class="mid">{e(mr.detail)}</div>'
                 + (f'<div class="mnote">{markdown_lite.inline(note)}</div>' if note else "")
                 + "</td></tr>"
             )
 
-        rows = []
-        for t in m.get("transcribers") or []:
-            if t == "ocr":
-                rows.append(
-                    model_row(
-                        "transcriber, self-hosted", "ocr", ocr_label(o), f"HF revision {o.get('hf_revision', '?')}"
-                    )
-                )
-            else:
-                mid = be.get(t, {}).get("model")
-                rows.append(model_row("transcriber", t, model_label(mid), mid))
-        agent = (m.get("extraction") or {}).get("agent")
-        amodel = be.get(agent, {}).get("model")
-        rows.append(
-            model_row(
-                "extraction agent",
-                agent or "?",
-                model_label(amodel),
-                amodel,
-                f"Reads {AGENT_INPUT}; returns the fields as JSON.",
-            )
-        )
-        ex = m.get("extraction") or {}
-        for k in dict.fromkeys(v for v in (ex.get("agents") or {}).values() if v != agent):
-            mid = be.get(k, {}).get("model")
-            rows.append(model_row("extractor", k, model_label(mid), mid))
-        sk = (m.get("summary") or {}).get("agent")
-        if sk:
-            mid = be.get(sk, {}).get("model")
-            effort = be.get(sk, {}).get("reasoning_effort")
-            rows.append(
-                model_row(
-                    "recommendation writer",
-                    sk,
-                    model_label(mid),
-                    mid,
-                    "Writes the bottom line and recommendation from the computed key facts"
-                    + (f"; reasoning effort {effort}." if effort else "."),
-                )
-            )
-        for k, spec in be.items():  # flag sampling models: their results vary between runs
-            t = spec.get("temperature")
-            if t:
-                tag = f"<code>{e(k)}</code></td><td>"
-                rows = [r.replace(tag, tag + f'<span class="chip warmchip">temperature {t:g}</span>', 1) for r in rows]
-
-        price = o.get("price_per_hour_usd")
-        price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
-        if "ocr" not in (m.get("transcribers") or []):
+        sh = view.selfhosted_in_run(m)
+        if not sh:
             gpu = '<p class="muted">No self-hosted model in this run.</p>'
         else:
-            gpu = (
-                f'<div class="kv"><span>Instance</span><code>{e(o.get("instance_type") or "?")}</code></div>'
-                f'<div class="kv"><span>GPU</span><span>{e(o.get("gpu") or "?")}</span></div>'
-                f'<div class="kv"><span>Host</span><span>{e(o.get("host") or "?")}</span></div>'
-                f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
-                '<span class="muted">on-demand, billed while idle too</span></span></div>'
-                f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
-            )
+            parts = []
+            for name in sh:
+                b = view.spec(m, name)
+                price = b.get("price_per_hour_usd")
+                price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
+                parts.append(
+                    (f'<div class="kv"><span>Model</span><code>{e(name)}</code></div>' if len(sh) > 1 else "")
+                    + f'<div class="kv"><span>Instance</span><code>{e(b.get("instance_type") or "?")}</code></div>'
+                    f'<div class="kv"><span>GPU</span><span>{e(b.get("gpu") or "?")}</span></div>'
+                    f'<div class="kv"><span>Host</span><span>{e(b.get("host") or "?")}</span></div>'
+                    f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
+                    '<span class="muted">on-demand, billed while idle too</span></span></div>'
+                )
+            gpu = "".join(parts) + f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
 
         pipes = h.get("pipelines") or {}
         best = {v: (h.get("best") or {}).get(v, {}).get("pipeline") for v in ("clean", "degraded")}
@@ -923,10 +808,8 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
                 cls = ' class="win"' if x and best.get(v) == p else ""
                 cells.append(f"<td{cls}>{e(fmt(x['acc'], 'pct')) if x else '&ndash;'}</td>")
             c = vs.get("clean") or vs.get("degraded") or {}
-            from ..explain import pipeline_label
-
             prow.append(
-                f'<tr><td title="{e(p)}">{e(pipeline_label(m, p))}</td>{"".join(cells)}'
+                f'<tr><td title="{e(p)}">{e(view.pipeline_label(m, p))}</td>{"".join(cells)}'
                 f"<td>{e(fmt(c.get('s'), 'sec'))} s</td><td>{e(fmt(c.get('cost'), 'usd'))}</td></tr>"
             )
         results = (
@@ -960,7 +843,7 @@ def build_experiments_index(runs: list[dict], out_dir: Path, comparison_md: str 
             )
             + '<div class="run-grid">'
             f'<div class="block wide"><h4>Models</h4><table class="models">{"".join(rows)}</table></div>'
-            f'<div class="block"><h4>GPU (OCR model)</h4>{gpu}</div>'
+            f'<div class="block"><h4>GPU (self-hosted models)</h4>{gpu}</div>'
             f'<div class="block"><h4>Results</h4>{results}</div>'
             "</div></details>"
         )

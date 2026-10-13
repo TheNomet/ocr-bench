@@ -65,20 +65,31 @@ def compute(meta: dict, scores: dict) -> dict:
             "at_concurrency": best["concurrency"],
         }
 
-    # OCR transcription is cheaper than an LLM transcriber above this many pages/hour (GPU billed even when idle)
-    price = (meta.get("ocr") or {}).get("price_per_hour_usd")
-    break_even = {}
-    if price:
+    # A self-hosted model is cheaper than a token-priced transcriber above this many pages/hour: its GPU
+    # is billed per hour, busy or idle.
+    be = meta["backends"]
+    basis = (scores.get("method") or {}).get("cost_basis") or {}
+    selfhosted = {}
+    for name in sorted({s["backend"] for s in sp if (be.get(s["backend"]) or {}).get("kind") == "selfhosted"}):
+        price = be[name].get("price_per_hour_usd")
+        if not price:
+            continue
+        break_even = {}
         for s in sp:
-            if s["backend"] != "ocr" and s["concurrency"] == 1 and s.get("cost_per_1k_pages_usd"):
-                pph = price / s["cost_per_1k_pages_usd"] * 1000
+            other = be.get(s["backend"]) or {}
+            if other.get("kind") != "selfhosted" and s["concurrency"] == 1 and s.get("cost_per_1k_pages_usd"):
                 break_even[s["backend"]] = {
                     "llm_cost_per_1k_pages_usd": s["cost_per_1k_pages_usd"],
-                    "ocr_cheaper_above_pages_per_hour": round(pph),
+                    "cheaper_above_pages_per_hour": round(price / s["cost_per_1k_pages_usd"] * 1000),
                 }
-        ocr_max = throughput.get("ocr", {}).get("max_pages_per_min")
-        if ocr_max:
-            break_even["_ocr_capacity_pages_per_hour"] = round(ocr_max * 60)
+        cap = throughput.get(name, {}).get("max_pages_per_min")
+        selfhosted[name] = {
+            "gpu_price_per_hour_usd": price,
+            "instance_type": be[name].get("instance_type"),
+            "capacity_pages_per_hour": round(cap * 60) if cap else None,
+            "cost_basis": basis.get(name),
+            "break_even": break_even,
+        }
     misses: dict[str, dict[str, int]] = {}
     for d in scores["extraction"]["docs"]:
         for fld, x in d["fields"].items():
@@ -90,9 +101,7 @@ def compute(meta: dict, scores: dict) -> dict:
         "pipelines": pipelines,
         "reading": reading,
         "throughput": throughput,
-        "break_even": break_even,
-        "gpu_price_per_hour_usd": price,
-        "cost_basis": ((scores.get("method") or {}).get("cost_basis") or {}).get("ocr"),
+        "selfhosted": selfhosted,
         "most_missed": {p: sorted(m.items(), key=lambda x: -x[1])[:4] for p, m in sorted(misses.items())},
     }
 
@@ -163,28 +172,28 @@ def to_md(f: dict) -> str:
     for b, t in f["throughput"].items():
         p50 = "–" if t["p50_s_at_concurrency_1"] is None else f"{t['p50_s_at_concurrency_1']:.1f}"
         out.append(f"| `{b}` | {p50} | {t['max_pages_per_min']:.0f} ({t['at_concurrency']}) |")
-    be = {k: v for k, v in f["break_even"].items() if not k.startswith("_")}
-    if be:
-        cap = f["break_even"].get("_ocr_capacity_pages_per_hour")
+    for name, x in (f.get("selfhosted") or {}).items():
+        cap = x.get("capacity_pages_per_hour")
         out += [
             "",
-            f"OCR transcription costs {usd(f['gpu_price_per_hour_usd'])}/hour whether busy or idle"
-            + (f"; one GPU handled at most ~{cap} pages/hour in this run." if cap else "."),
+            f"`{name}` runs on its own GPU ({x.get('instance_type') or '?'}), which costs "
+            f"{usd(x['gpu_price_per_hour_usd'])}/hour whether busy or idle"
+            + (f"; it handled at most ~{cap} pages/hour in this run." if cap else "."),
             "",
         ]
-        cb = f.get("cost_basis") or {}
+        cb = x.get("cost_basis") or {}
         if cb.get("cost_per_1k_pages_usd") is not None:
             c1 = cb.get("cost_at_concurrency_1")
             out += [
-                f"Pipeline costs that include OCR use {usd(cb['cost_per_1k_pages_usd'])}/1k pages: the cost at its "
-                f"{cb['basis']}"
+                f"Pipeline costs that include `{name}` use {usd(cb['cost_per_1k_pages_usd'])}/1k pages: the cost at "
+                f"its {cb['basis']}"
                 + (f". One request at a time it would be {usd(c1)}/1k pages." if c1 is not None else "."),
                 "",
             ]
-        for b, x in be.items():
+        for b, y in x["break_even"].items():
             out.append(
-                f"- cheaper than `{b}` transcription ({usd(x['llm_cost_per_1k_pages_usd'])}/1k pages) above "
-                f"**~{x['ocr_cheaper_above_pages_per_hour']} pages/hour** sustained"
+                f"- `{name}` is cheaper than `{b}` transcription ({usd(y['llm_cost_per_1k_pages_usd'])}/1k pages) "
+                f"above **~{y['cheaper_above_pages_per_hour']} pages/hour** sustained"
             )
     mm = f.get("most_missed") or {}
     if mm:

@@ -17,7 +17,7 @@ TEXT = {".json", ".jsonl", ".md", ".yaml", ".yml"}
 
 def rewrite(text: str, mapping: list[tuple[str, str]], redact: bool) -> str:
     for old, new in mapping:
-        text = re.sub(rf"(?<![A-Za-z0-9.])(?<![A-Za-z0-9.]-){re.escape(old)}(?![A-Za-z0-9.]|-(?!>))", new, text)
+        text = re.sub(rf"(?<![A-Za-z0-9._])(?<![A-Za-z0-9.]-){re.escape(old)}(?![A-Za-z0-9._]|-(?!>))", new, text)
     if redact:
         text = re.sub(r"@sagemaker:[A-Za-z0-9-]+", "@sagemaker", text)
     return text

@@ -14,14 +14,8 @@ from pathlib import Path
 from .backends import HTTPError, Request, get_backend
 from .backends.base import RETRYABLE
 from .config import Config
+from .prompts import DEFAULTS
 from .redact import error_text
-
-SYSTEM = "You are a precise OCR engine. You transcribe documents; you never summarise, translate or correct them."
-PROMPT = (
-    "Transcribe this document page to Markdown. Reproduce all text exactly as written, in reading order, "
-    "including every number, date, account number and table (as Markdown tables). Do not summarise, "
-    "translate, correct or add anything. Output only the transcription."
-)
 
 
 @dataclass
@@ -89,10 +83,15 @@ async def call_with_retries(fn, max_retries: int):
             raise
 
 
-async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries, rep=0, sink=None) -> Transcript:
+def request(prompt: dict, image: Path) -> Request:
+    """A self-hosted backend builds its own body from backends.<name>.request and ignores these texts."""
+    return Request(prompt["system"], prompt["user"], [image], max_tokens=int(prompt["max_tokens"]))
+
+
+async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries, prompt, rep=0, sink=None) -> Transcript:
     async with sem:
         t0, started = time.perf_counter(), time.time()
-        req = Request(SYSTEM, PROMPT, [ref.path])
+        req = request(prompt, ref.path)
         try:
             resp, retries, lat = await call_with_retries(lambda: be.complete(req), max_retries)
         except Exception as e:  # noqa: BLE001 — record and keep the batch going
@@ -143,12 +142,14 @@ async def run(
     out_dir: Path,
     *,
     backend: str,
+    prompt: dict | None = None,
     concurrency: int = 1,
     variant: str = "both",
     limit: int = 0,
     repeat: int = 1,
     warmup: bool = True,
 ) -> dict:
+    prompt = prompt or DEFAULTS["transcribe"]
     base = pages(docs, variant, limit)
     refs = [(r, i) for i in range(repeat) for r in base]
     be = get_backend(cfg, backend)
@@ -160,7 +161,7 @@ async def run(
     await be.warmup()
     if warmup and refs:  # untimed: token fetch, CUDA graphs, connection pools
         try:
-            await be.complete(Request(SYSTEM, PROMPT, [refs[0][0].path]))
+            await be.complete(request(prompt, refs[0][0].path))
         except Exception as e:  # noqa: BLE001
             print(f"  warmup failed: {e}", flush=True)
     sem = asyncio.Semaphore(concurrency)
@@ -172,7 +173,12 @@ async def run(
         fh.flush()
 
     kw = dict(
-        conc=concurrency, run_id=run_id, out_dir=out_dir, max_retries=cfg["bench"].get("max_retries", 4), sink=sink
+        conc=concurrency,
+        run_id=run_id,
+        out_dir=out_dir,
+        max_retries=cfg["bench"].get("max_retries", 4),
+        prompt=prompt,
+        sink=sink,
     )
     try:
         results = await asyncio.gather(*(_one(be, r, sem, rep=i, **kw) for r, i in refs))

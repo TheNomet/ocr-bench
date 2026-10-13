@@ -1,10 +1,10 @@
-# Names here must match ocrbench/config.py (Config.bucket, endpoint_name, model_name, ...).
+# Names here must match ocrbench/config.py (Config.bucket, endpoint_name(), model_name(), ...).
 locals {
-  p             = var.name_prefix
-  bucket        = "${local.p}-artifacts"
-  endpoint_name = "${local.p}-ocr"
-  model_name    = "${local.p}-ocr-model"
-  registry      = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com"
+  p        = var.name_prefix
+  bucket   = "${local.p}-artifacts"
+  registry = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com"
+  # one SageMaker endpoint per self-hosted backend: <prefix>-<name>
+  endpoint_arns = [for k in keys(var.selfhosted) : "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/${local.p}-${k}"]
 }
 
 # ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ resource "aws_ecr_repository" "repo" {
 }
 
 # ---------------------------------------------------------------------------
-# SageMaker model (endpoint itself is created by `ocrbench endpoint up`)
+# SageMaker models, one per self-hosted backend (endpoints are created by `ocrbench endpoint up <name>`)
 # ---------------------------------------------------------------------------
 resource "aws_iam_role" "sagemaker" {
   name_prefix          = "${substr(local.p, 0, 20)}-sm-"
@@ -151,7 +151,7 @@ resource "aws_iam_role_policy" "sagemaker" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = ["s3:GetObject", "s3:ListBucket"],
-      Resource = [aws_s3_bucket.artifacts.arn, "${aws_s3_bucket.artifacts.arn}/${var.model_s3_prefix}/*"] },
+      Resource = [aws_s3_bucket.artifacts.arn, "${aws_s3_bucket.artifacts.arn}/models/*"] },
       { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = "*" },
       { Effect = "Allow", Action = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"],
       Resource = aws_ecr_repository.repo["vllm"].arn },
@@ -162,21 +162,20 @@ resource "aws_iam_role_policy" "sagemaker" {
   })
 }
 
-resource "aws_sagemaker_model" "ocr" {
-  count                    = var.create_ocr_model ? 1 : 0
-  name                     = local.model_name
+resource "aws_sagemaker_model" "selfhosted" {
+  for_each                 = var.create_selfhosted_models ? var.selfhosted : {}
+  name                     = "${local.p}-${each.key}-model"
   execution_role_arn       = aws_iam_role.sagemaker.arn
-  enable_network_isolation = var.sagemaker_network_isolation
+  enable_network_isolation = each.value.network_isolation
   primary_container {
-    image = var.ocr_image_ref != "" ? var.ocr_image_ref : "${aws_ecr_repository.repo["vllm"].repository_url}:${var.ocr_image_tag}"
+    image = each.value.image_ref != "" ? each.value.image_ref : "${aws_ecr_repository.repo["vllm"].repository_url}:${each.key}-sagemaker"
     model_data_source {
       s3_data_source {
-        s3_uri           = "s3://${local.bucket}/${var.model_s3_prefix}/"
+        s3_uri           = "s3://${local.bucket}/models/${each.key}/"
         s3_data_type     = "S3Prefix"
         compression_type = "None"
       }
     }
-    environment = { MAX_NUM_SEQS = var.max_num_seqs }
   }
   depends_on = [aws_iam_role_policy.sagemaker]
 }
@@ -241,9 +240,9 @@ resource "aws_iam_role_policy" "task" {
       [
         { Effect = "Allow", Action = ["s3:ListBucket"], Resource = aws_s3_bucket.artifacts.arn },
         { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject"], Resource = "${aws_s3_bucket.artifacts.arn}/runs/*" },
-        { Effect = "Allow", Action = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"],
-        Resource = "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/${local.endpoint_name}" },
       ],
+      length(local.endpoint_arns) > 0 ? [{ Effect = "Allow", Action = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"],
+      Resource = local.endpoint_arns }] : [],
       length(var.kms_sign_key_arns) > 0 ? [{ Effect = "Allow", Action = ["kms:Sign"], Resource = var.kms_sign_key_arns }] : [],
       length(var.bedrock_model_ids) > 0 ? [{
         # Converse is authorised by InvokeModel. A cross-region profile id ("eu.anthropic...") needs the
@@ -312,13 +311,14 @@ resource "aws_iam_role" "scheduler" {
 }
 
 resource "aws_iam_role_policy" "scheduler" {
-  role = aws_iam_role.scheduler.id
+  count = length(local.endpoint_arns) > 0 ? 1 : 0
+  role  = aws_iam_role.scheduler.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = ["sagemaker:DeleteEndpoint"]
-      Resource = "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/${local.endpoint_name}"
+      Resource = local.endpoint_arns
     }]
   })
 }

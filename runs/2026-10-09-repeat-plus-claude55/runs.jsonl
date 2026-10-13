@@ -1,6 +1,6 @@
-{"run_id": "20261009-120609", "backend": "ocr", "model": "baidu/Unlimited-OCR@sagemaker", "concurrency": 1, "pages": 108, "wall_s": 666.705369711, "started": 1791547579.2334812, "instance_type": "ml.g5.xlarge"}
-{"run_id": "20261009-121725", "backend": "ocr", "model": "baidu/Unlimited-OCR@sagemaker", "concurrency": 4, "pages": 108, "wall_s": 270.7530791140001, "started": 1791548253.431022, "instance_type": "ml.g5.xlarge"}
-{"run_id": "20261009-122204", "backend": "ocr", "model": "baidu/Unlimited-OCR@sagemaker", "concurrency": 16, "pages": 108, "wall_s": 224.91089209099982, "started": 1791548531.66733, "instance_type": "ml.g5.xlarge"}
+{"run_id": "20261009-120609", "backend": "unlimited-ocr", "model": "baidu/Unlimited-OCR@sagemaker", "concurrency": 1, "pages": 108, "wall_s": 666.705369711, "started": 1791547579.2334812, "instance_type": "ml.g5.xlarge"}
+{"run_id": "20261009-121725", "backend": "unlimited-ocr", "model": "baidu/Unlimited-OCR@sagemaker", "concurrency": 4, "pages": 108, "wall_s": 270.7530791140001, "started": 1791548253.431022, "instance_type": "ml.g5.xlarge"}
+{"run_id": "20261009-122204", "backend": "unlimited-ocr", "model": "baidu/Unlimited-OCR@sagemaker", "concurrency": 16, "pages": 108, "wall_s": 224.91089209099982, "started": 1791548531.66733, "instance_type": "ml.g5.xlarge"}
 {"run_id": "20261009-122556", "backend": "sonnet-4.5", "model": "anthropic.claude-sonnet-4-5-20250929-v1:0", "concurrency": 1, "pages": 108, "wall_s": 1797.7790574889998, "started": 1791548773.923029, "instance_type": null}
 {"run_id": "20261009-125611", "backend": "haiku-4.5", "model": "anthropic.claude-haiku-4-5-20251001-v1:0", "concurrency": 1, "pages": 108, "wall_s": 853.1696768909997, "started": 1791550580.292746, "instance_type": null}
 {"run_id": "20261009-131033", "backend": "sonnet-5.5", "model": "anthropic.claude-sonnet-5-5", "concurrency": 1, "pages": 108, "wall_s": 559.0240982810001, "started": 1791551439.8827353, "instance_type": null}

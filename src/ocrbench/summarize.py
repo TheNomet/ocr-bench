@@ -13,17 +13,11 @@ import json
 import re
 from pathlib import Path
 
-from . import explain
+from . import explain, prompts, view
 from .backends import Request, get_backend
 from .config import Config
 from .facts import compute, to_md
 from .transcribe import call_with_retries
-
-SYSTEM = (
-    "You are a careful technical analyst. An engineering team must choose how to read documents. You are "
-    "given key facts that were computed exactly from a benchmark. Your job is to interpret them: explain "
-    "what they mean, the trade-offs, and what to choose for which goal. You never compute new numbers."
-)
 
 INSTRUCTIONS = """Write Markdown with exactly these sections:
 
@@ -32,12 +26,12 @@ INSTRUCTIONS = """Write Markdown with exactly these sections:
 
 ## What the facts say
 4-6 bullets interpreting the key facts: what explains the differences between pipelines and readers, what the
-failure patterns (most-missed fields, runaway pages, degraded pages) suggest, where the self-hosted model helps
-or doesn't.
+failure patterns (most-missed fields, runaway pages, degraded pages) suggest, where self-hosted models help
+or don't.
 
 ## Recommendation
 A table: goal -> choice -> why. Goals: highest accuracy, lowest latency, lowest cost, checking/second opinion,
-and when (if ever) to self-host the OCR model. "Lowest cost" and "lowest latency" must name the cheapest and
+and when (if ever) to self-host a model. "Lowest cost" and "lowest latency" must name the cheapest and
 fastest pipeline from the key facts.
 
 ## Caveats
@@ -56,40 +50,39 @@ def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
     scores = visible(meta, scores)
     meta = focused_meta(meta)
     facts_md = to_md(compute(meta, scores))
-    be, o = meta["llm_backends"], meta["ocr"]
     agent = meta["extraction"]["agent"]
-    agents = meta["extraction"].get("agents") or {}
     lines = []
     for t in meta.get("transcribers") or []:
-        if t == "ocr":
+        b = view.spec(meta, t)
+        if b.get("kind") == "selfhosted":
             lines.append(
-                f"- `ocr`: self-hosted {explain.ocr_label(o)} on {o.get('instance_type')} "
-                f"({o.get('gpu')}, {o.get('host')})"
+                f"- `{t}`: self-hosted {view.label(meta, t)} on {b.get('instance_type')} "
+                f"({b.get('gpu')}, {b.get('host')}) (transcriber)"
             )
         else:
-            b = be.get(t, {})
-            lines.append(
-                f"- `{t}`: {explain.model_label(b.get('model'))}, temperature {b.get('temperature', 0.0)} (transcriber)"
-            )
-    others = sorted({v for v in agents.values() if v != agent})
-    a = be.get(agent, {})
-    lines.append(f"- {explain.agent_note(a.get('model'), a.get('temperature', 0.0), others)}")
+            lines.append(f"- `{t}`: {view.label(meta, t)}, temperature {b.get('temperature', 0.0)} (transcriber)")
+    others = sorted({view.extractor(meta, p) for p in meta["extraction"]["pipelines"]} - {agent})
+    a = view.spec(meta, agent)
+    lines.append(
+        "- "
+        + explain.agent_note(
+            a.get("model"),
+            a.get("temperature", 0.0),
+            others,
+            label=view.label(meta, agent),
+            max_tokens=int(prompts.of(meta, "extract")["max_tokens"]),
+        )
+    )
     lines.append(
         "- Extractor per pipeline (the model after the arrow): "
-        + "; ".join(
-            f"`{p}` -> {explain.model_label(be.get(agents.get(p, agent), {}).get('model'))}"
-            for p in meta["extraction"]["pipelines"]
-        )
+        + "; ".join(f"`{p}` -> {view.label(meta, view.extractor(meta, p))}" for p in meta["extraction"]["pipelines"])
     )
     d = meta["documents"]
     lines.append(
         f"- documents: {d['count']} synthetic Norwegian documents, {d['page_images']} page images, "
         f"types: {', '.join(d['types'])}; each page clean and degraded (simulated phone photo)"
     )
-    pipes = "\n".join(
-        f"- `{p}`: {explain.pipeline_text(p, o.get('hf_repo', 'ocr'), agents.get(p, agent))}"
-        for p in meta["extraction"]["pipelines"]
-    )
+    pipes = "\n".join(f"- `{p}`: {view.pipeline_text(meta, p)}" for p in meta["extraction"]["pipelines"])
     setup = "\n".join(lines)
     prompt = f"{INSTRUCTIONS}\n\n# Setup\n{setup}\n\n# Pipelines\n{explain.ARROW}\n{pipes}\n\n# Key facts\n{facts_md}"
     return prompt, facts_md + "\n" + setup
@@ -137,11 +130,13 @@ def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
     name = (cfg["bench"].get("summary") or {}).get("agent") or cfg["bench"]["extraction"]["agent"]
     be = get_backend(cfg, name)
     prompt, source = build_prompt(meta, scores)
+    pr = prompts.of(meta, "summarize")
 
     async def go():
         await be.warmup()
+        req = Request(pr["system"], prompt, max_tokens=int(pr["max_tokens"]), temperature=float(pr["temperature"]))
         resp, _, _ = await call_with_retries(
-            lambda: be.complete(Request(SYSTEM, prompt, max_tokens=12000, temperature=0.2)),
+            lambda: be.complete(req),
             cfg["bench"].get("max_retries", 4),
         )
         return resp

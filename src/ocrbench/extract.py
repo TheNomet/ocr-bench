@@ -1,8 +1,10 @@
 """Stage 2: an LLM agent extracts the per-type fields for every document.
 
-Pipelines (bench.extraction.pipelines):
-  "<transcriber>->agent"  the agent reads that transcriber's text (all pages, in order)
+Pipelines (bench.extraction.pipelines), `<input>-><extractor>`:
+  "<transcriber>->agent"  the default agent reads that transcriber's text (all pages, in order),
+                          after the transcriber's post-processing steps
   "image->agent"          the agent reads the page images directly (one-step baseline)
+  "<input>-><backend>"    that backend extracts instead of the default agent
 
 The agent gets the type's schema and must answer with one JSON object. Values must be
 copied exactly as written so they can be compared to the ground truth.
@@ -15,19 +17,14 @@ import json
 import time
 from pathlib import Path
 
+from . import postprocess, prompts
 from .backends import Request, get_backend
-from .backends.vllm_ocr import strip_grounding
 from .config import Config
 from .redact import error_text
 from .transcribe import call_with_retries, load_manifest
 
-SYSTEM = (
-    "You extract structured data from documents. You copy values exactly as they appear in the "
-    "document (same number formatting, same spelling). You answer with one JSON object and nothing else."
-)
 
-
-def prompt(doc_type: str, schema: dict, source_kind: str) -> str:
+def prompt(doc_type: str, schema: dict, source_kind: str, rules: str = prompts.DEFAULTS["extract"]["rules"]) -> str:
     lines = []
     for k, f in schema["fields"].items():
         kind = "list of strings" if f["type"] == "list" else "string"
@@ -40,10 +37,7 @@ def prompt(doc_type: str, schema: dict, source_kind: str) -> str:
     )
     return (
         f"Document type: {doc_type} — {schema['description']}.\n"
-        f"From {src}, extract these fields:\n"
-        + "\n".join(lines)
-        + "\nCopy values verbatim. For list fields, return every matching item. "
-        "If a value is genuinely absent, omit the key. Reply with JSON only."
+        f"From {src}, extract these fields:\n" + "\n".join(lines) + "\n" + rules
     )
 
 
@@ -83,9 +77,18 @@ def latest_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str]
 
 
 async def run(
-    cfg: Config, docs: Path, run_dir: Path, *, pipelines: list[str] | None = None, variant: str = "both", limit: int = 0
+    cfg: Config,
+    docs: Path,
+    run_dir: Path,
+    *,
+    meta: dict,
+    pipelines: list[str] | None = None,
+    variant: str = "both",
+    limit: int = 0,
 ) -> None:
     ex = cfg["bench"]["extraction"]
+    pr = prompts.of(meta, "extract")
+    steps = {k: b.get("postprocess") or [] for k, b in meta["backends"].items()}
     agents: dict = {}
 
     async def agent_for(pipe: str):
@@ -108,7 +111,6 @@ async def run(
         chosen = sorted(manifest, key=lambda d: (int(d["id"].rsplit("-", 1)[1]), d["id"]))[: limit or None]
         targets = {(d["id"], v) for d in chosen for v in variants}
     sem = asyncio.Semaphore(int(ex.get("concurrency", 8)))
-    strip = bool(cfg["ocr"].get("strip_grounding_tokens", True))
     max_retries = cfg["bench"].get("max_retries", 4)
     out = run_dir / "extractions.jsonl"
     if out.exists():  # a re-run replaces the previous extraction pass instead of mixing with it
@@ -126,10 +128,10 @@ async def run(
                     continue
                 if source == "image":
                     req = Request(
-                        SYSTEM,
-                        prompt(d["type"], schemas[d["type"]], "image"),
+                        pr["system"],
+                        prompt(d["type"], schemas[d["type"]], "image", pr["rules"]),
                         [docs / p[v] for p in d["pages"]],
-                        max_tokens=2048,
+                        max_tokens=int(pr["max_tokens"]),
                     )
                 else:
                     files = [texts.get((d["id"], p["n"], v)) for p in d["pages"]]
@@ -138,14 +140,12 @@ async def run(
                         continue
                     parts = []
                     for p, f in zip(d["pages"], files, strict=True):
-                        t = f.read_text(encoding="utf-8")
-                        if source == "ocr" and strip:
-                            t = strip_grounding(t)
+                        t = postprocess.apply(steps.get(source), f.read_text(encoding="utf-8"))
                         parts.append(f"--- page {p['n']} ---\n{t}")
                     req = Request(
-                        SYSTEM,
-                        prompt(d["type"], schemas[d["type"]], "text") + "\n\n" + "\n\n".join(parts),
-                        max_tokens=2048,
+                        pr["system"],
+                        prompt(d["type"], schemas[d["type"]], "text", pr["rules"]) + "\n\n" + "\n\n".join(parts),
+                        max_tokens=int(pr["max_tokens"]),
                     )
                 jobs.append((d, v, req))
         if not jobs:

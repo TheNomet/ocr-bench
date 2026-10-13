@@ -10,20 +10,12 @@ import json
 import re
 from pathlib import Path
 
-from . import explain
-
-
-def _f(v, fmt="{:.2f}", none="–"):
-    return none if v is None else fmt.format(v)
-
-
-def _usd(v):
-    return _f(v, "${:.2f}")
+from . import explain, metrics, prompts, view
 
 
 # --------------------------------------------------------------------------- setup + legend
 def setup_md(meta: dict) -> str:
-    o, docs = meta["ocr"], meta["documents"]
+    docs = meta["documents"]
     out = [
         "## Setup",
         "",
@@ -32,52 +24,28 @@ def setup_md(meta: dict) -> str:
         "| role | name in tables | model | model id | served by | temperature | price |",
         "|---|---|---|---|---|---|---|",
     ]
-    gpu_price = f"{_usd(o.get('price_per_hour_usd'))}/hour (on-demand)" if o.get("price_per_hour_usd") else "–"
-    uses_ocr = "ocr" in (meta.get("transcribers") or [])
-    if uses_ocr:
-        out.append(
-            f"| transcriber (self-hosted) | `ocr` | {explain.ocr_label(o)} | `{o.get('served_model_name')}` | "
-            f"vLLM on {o.get('serving', 'SageMaker')} | {o.get('request_temperature', 0):g} | {gpu_price} |"
-        )
-    roles: dict[str, list[str]] = {}
-    for t in meta.get("transcribers") or []:
-        if t != "ocr":
-            roles.setdefault(t, []).append("transcriber")
-    agents = meta["extraction"].get("agents") or {}
-    roles.setdefault(meta["extraction"]["agent"], []).append("extraction agent (default)")
-    for k in dict.fromkeys(v for v in agents.values() if v != meta["extraction"]["agent"]):
-        roles.setdefault(k, []).append("extractor")
-    roles.setdefault(meta.get("summary", {}).get("agent") or meta["extraction"]["agent"], []).append("summary writer")
-    for name, rs in roles.items():
-        b = meta["llm_backends"].get(name, {})
-        p = b.get("price_per_mtok") or {}
-        price = f"${p.get('input')} in / ${p.get('output')} out per 1M tokens" if p else "–"
-        temp = b.get("temperature", 0.0)
-        out.append(
-            f"| {', '.join(rs)} | `{name}` | {explain.model_label(b.get('model'))} | `{b.get('model', '?')}` | "
-            f"{b.get('via', '?')} | {'default' if temp is None else f'{temp:g}'} | {price} |"
-        )
-    a = meta["llm_backends"].get(meta["extraction"]["agent"], {})
-    others = [f"`{k}`" for k in dict.fromkeys(v for v in agents.values() if v != meta["extraction"]["agent"])]
-    out += ["", "### The extraction agent", "", explain.agent_note(a.get("model"), a.get("temperature", 0.0), others)]
-    if any((b.get("temperature") or 0) > 0 for b in meta["llm_backends"].values()):
+    for r in view.model_rows(meta):
+        temp = "default" if r.temperature is None else f"{r.temperature:g}"
+        out.append(f"| {', '.join(r.roles)} | `{r.key}` | {r.label} | `{r.model_id}` | {r.via} | {temp} | {r.price} |")
+    agent = meta["extraction"]["agent"]
+    a = view.spec(meta, agent)
+    others = [
+        f"`{k}`" for k in dict.fromkeys(view.extractor(meta, p) for p in meta["extraction"]["pipelines"]) if k != agent
+    ]
+    note = explain.agent_note(
+        a.get("model"),
+        a.get("temperature", 0.0),
+        others,
+        label=view.label(meta, agent),
+        max_tokens=int(prompts.of(meta, "extract")["max_tokens"]),
+    )
+    out += ["", "### The extraction agent", "", note]
+    if view.sampling(meta):
         out += [
             "",
             "Models with temperature above 0 sample their output, so their results vary slightly between "
             "runs; differences of a point or two are within noise.",
         ]
-    gpu_rows = [
-        "| | |",
-        "|---|---|",
-        f"| instance | `{o.get('instance_type') or 'unknown'}` (picked from pools: {', '.join(o.get('instance_pools') or []) or '–'}) |",
-        f"| GPU | {o.get('gpu', '?')} |",
-        f"| host | {o.get('host', '?')} |",
-        f"| price | {gpu_price}, billed while the endpoint exists, busy or idle |",
-        f"| region | {meta.get('region')} |",
-        f"| host image | `{o.get('inference_ami_version') or '–'}` |",
-        f"| container | `{o.get('source_image')}` (digest `{(o.get('image_digest') or '–')[:19]}`) |",
-        f"| serving flags | `{' '.join(o.get('serve_args') or [])}` |",
-    ]
     hidden = focus_backends(meta)
     if hidden:
         out += [
@@ -86,7 +54,13 @@ def setup_md(meta: dict) -> str:
             + ", ".join(f"`{h}`" for h in sorted(hidden))
             + ".",
         ]
-    out += ["", "### GPU", ""] + (gpu_rows if uses_ocr else ["No self-hosted model in this run, so no GPU was used."])
+    sh = view.selfhosted_in_run(meta)
+    out += ["", "### GPU", ""]
+    if not sh:
+        out.append("No self-hosted model in this run, so no GPU was used.")
+    for i, name in enumerate(sh):
+        out += ([""] if i else []) + ([f"`{name}`:", ""] if len(sh) > 1 else []) + ["| | |", "|---|---|"]
+        out += [f"| {k} | {v} |" for k, v in view.gpu_rows(meta, name)]
     out += [
         "",
         "### Run",
@@ -113,11 +87,16 @@ def setup_md(meta: dict) -> str:
 def legend_md(meta: dict) -> str:
     out = ["## How to read this report", "", "### Stages", ""]
     out += [f"- **{a}**: {b}" for a, b in explain.STAGES]
-    out += ["", "### Pipelines (the arrows)", "", explain.ARROW, "", "| pipeline | what the agent reads |", "|---|---|"]
-    for p in meta["extraction"]["pipelines"]:
-        ext = (meta["extraction"].get("agents") or {}).get(p) or meta["extraction"]["agent"]
-        label = explain.model_label(meta["llm_backends"].get(ext, {}).get("model"))
-        out.append(f"| `{p}` | {explain.pipeline_text(p, meta['ocr'].get('hf_repo', 'ocr'), f'`{ext}` ({label})')} |")
+    out += [
+        "",
+        "### Pipelines (the arrows)",
+        "",
+        explain.ARROW,
+        "",
+        "| pipeline | what the extractor reads |",
+        "|---|---|",
+    ]
+    out += [f"| `{p}` | {view.pipeline_text(meta, p)} |" for p in meta["extraction"]["pipelines"]]
     out += ["", "### Page variants", ""] + [f"- **{k}**: {v}" for k, v in explain.VARIANTS.items()]
     out += [
         "",
@@ -137,56 +116,21 @@ def legend_md(meta: dict) -> str:
         "",
         "### Metrics",
         "",
-    ] + [f"- **{k}**: {v}" for k, v in explain.METRICS]
+    ] + [f"- **{k}**: {v}" for k, v in metrics.GLOSSARY]
     return "\n".join(out)
 
 
 # --------------------------------------------------------------------------- result tables (markdown)
 def results_md(scores: dict) -> str:
     out = ["## Results"]
-    speed = scores["speed"]
-    if speed:
-        out += [
-            "",
-            "### Speed and cost (stage 1)",
-            "",
-            "| backend | conc | pages | ok | pages/min | p50 s | p95 s | $ / 1k pages |",
-            "|---|---|---|---|---|---|---|---|",
-        ]
-        for s in speed:
-            out.append(
-                f"| {s['backend']} | {s['concurrency']} | {s['pages']} | {s['ok']} | {s['pages_per_min']:.1f} | "
-                f"{_f(s['p50_s'])} | {_f(s['p95_s'])} | {_f(s['cost_per_1k_pages_usd'])} |"
-            )
+    if scores["speed"]:
+        out += ["", "### Speed and cost (stage 1)", ""] + metrics.markdown_table(scores["speed"], metrics.SPEED_MD)
     ta = scores["transcription"]["aggregate"]
     if ta:
-        out += [
-            "",
-            "### Transcription quality (stage 1)",
-            "",
-            "| backend | variant | pages | CER mean | CER median | runaway | word recall | number recall | missing nums | invented nums |",
-            "|---|---|---|---|---|---|---|---|---|---|",
-        ]
-        for a in ta:
-            out.append(
-                f"| {a['backend']} | {a['variant']} | {a['pages']} | {a['cer']:.3f} | {a.get('cer_median', 0):.3f} | "
-                f"{a.get('runaway', 0)} | {a['word_recall']:.1%} | {a['num_recall']:.1%} | {a['num_missing']} | "
-                f"{a['num_hallucinated']} |"
-            )
+        out += ["", "### Transcription quality (stage 1)", ""] + metrics.markdown_table(ta, metrics.TRANSCRIPTION_MD)
     ea = scores["extraction"]["aggregate"]
     if ea:
-        out += [
-            "",
-            "### Field extraction (stage 2)",
-            "",
-            "| pipeline | variant | docs | field accuracy | agent s | end-to-end s | $ / 1k docs |",
-            "|---|---|---|---|---|---|---|",
-        ]
-        for a in ea:
-            out.append(
-                f"| {a['pipeline']} | {a['variant']} | {a['docs']} | {a['field_accuracy']:.1%} | "
-                f"{a['mean_latency_s']:.2f} | {a['end_to_end_latency_s']:.2f} | {_f(a['cost_per_1k_docs_usd'])} |"
-            )
+        out += ["", "### Field extraction (stage 2)", ""] + metrics.markdown_table(ea, metrics.EXTRACTION_MD)
         misses: dict[str, dict[str, int]] = {}
         for d in scores["extraction"]["docs"]:
             for f, x in d["fields"].items():
@@ -239,8 +183,6 @@ def headline(meta: dict, scores: dict) -> dict:
         if rows:
             b = max(rows, key=lambda a: a["field_accuracy"])
             best[v] = {"pipeline": b["pipeline"], "field_accuracy": b["field_accuracy"]}
-    ocr_rows = [s for s in scores["speed"] if s["backend"] == "ocr"]
-    c1 = [s for s in ocr_rows if s["concurrency"] == 1]
     pipes: dict[str, dict] = {}
     for a in ea:
         pipes.setdefault(a["pipeline"], {})[a["variant"]] = {
@@ -248,12 +190,7 @@ def headline(meta: dict, scores: dict) -> dict:
             "cost": a["cost_per_1k_docs_usd"],
             "s": a["end_to_end_latency_s"],
         }
-    return {
-        "best": best,
-        "pipelines": pipes,
-        "ocr_p50_s": c1[0]["p50_s"] if c1 else None,
-        "ocr_max_pages_per_min": max((s["pages_per_min"] for s in ocr_rows), default=None),
-    }
+    return {"best": best, "pipelines": pipes}
 
 
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
@@ -301,7 +238,7 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
         "setup_md": setup_md(meta),
         "plan_description": meta.get("plan_description", ""),
         "hide_backends": sorted(focus_backends(meta)),
-        "pipeline_labels": {p: explain.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
+        "pipeline_labels": {p: view.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
     }
     return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], sections=sections)
 
@@ -312,8 +249,6 @@ def comparison(items: list[dict]) -> dict:
     Rows are keyed by what was actually measured (pipeline + extractor model id, or backend + model id),
     so a renamed config key never silently compares different models.
     """
-    from . import explain
-
     runs_ = [i["meta"]["id"] for i in items]
     extraction: dict[str, dict] = {}
     reading: dict[str, dict] = {}
@@ -321,23 +256,26 @@ def comparison(items: list[dict]) -> dict:
     for it in items:
         m, rid = it["meta"], it["meta"]["id"]
         s = visible(m, it["scores"], focus=False)
-        be = m.get("llm_backends") or {}
         for a in s["extraction"]["aggregate"]:
-            label = explain.pipeline_label(m, a["pipeline"])
+            label = view.pipeline_label(m, a["pipeline"])
             extraction.setdefault(label, {}).setdefault(rid, {})[a["variant"]] = a["field_accuracy"]
         for a in s["transcription"]["aggregate"]:
-            model = (
-                explain.ocr_label(m["ocr"])
-                if a["backend"] == "ocr"
-                else explain.model_label(be.get(a["backend"], {}).get("model"))
-            )
+            model = view.label(m, a["backend"])
             reading.setdefault(model, {}).setdefault(rid, {})[a["variant"]] = (a.get("cer_median"), a["num_recall"])
         for sp in s["speed"]:
-            if sp["backend"] == "ocr":
-                key = f"ocr on {m['ocr'].get('instance_type')}"
-                speed.setdefault(rid, {}).setdefault(sp["concurrency"], sp["pages_per_min"])
-                speed[rid]["_host"] = key
-    return {"runs": runs_, "extraction": extraction, "reading": reading, "ocr_speed": speed}
+            if view.is_selfhosted(m, sp["backend"]):
+                b = view.spec(m, sp["backend"])
+                row = speed.setdefault(
+                    f"{rid}|{sp['backend']}",
+                    {
+                        "run": rid,
+                        "model": view.short_label(m, sp["backend"]),
+                        "host": b.get("instance_type") or "?",
+                        "by_concurrency": {},
+                    },
+                )
+                row["by_concurrency"].setdefault(sp["concurrency"], sp["pages_per_min"])
+    return {"runs": runs_, "extraction": extraction, "reading": reading, "selfhosted_speed": speed}
 
 
 def comparison_md(c: dict) -> str:
@@ -373,20 +311,22 @@ def comparison_md(c: dict) -> str:
             x = (per.get(r) or {}).get("degraded")
             cells.append("–" if not x else f"{x[0]:.3f} / {x[1]:.1%}")
         out.append(f"| {model} | " + " | ".join(cells) + " |")
-    if c["ocr_speed"]:
+    rows = c.get("selfhosted_speed") or {}
+    if rows:
+        concs = sorted({k for r in rows.values() for k in r["by_concurrency"]})
         out += [
             "",
-            "### OCR throughput (pages/min by concurrency)",
+            "### Self-hosted throughput (pages/min by concurrency)",
             "",
-            "| run | host | c1 | c4 | c16 | c32 |",
-            "|---|---|---|---|---|---|",
+            "| run | model | host | " + " | ".join(f"c{k}" for k in concs) + " |",
+            "|---" * (3 + len(concs)) + "|",
         ]
         for r in runs_:
-            sp = c["ocr_speed"].get(r)
-            if sp:
+            for row in (x for x in rows.values() if x["run"] == r):
+                bc = row["by_concurrency"]
                 out.append(
-                    f"| `{r}` | {sp['_host']} | "
-                    + " | ".join(f"{sp[k]:.1f}" if k in sp else "–" for k in (1, 4, 16, 32))
+                    f"| `{r}` | {row['model']} | {row['host']} | "
+                    + " | ".join(f"{bc[k]:.1f}" if k in bc else "–" for k in concs)
                     + " |"
                 )
     return "\n".join(out)
@@ -410,7 +350,7 @@ def focused_meta(meta: dict) -> dict:
         for p in ex.get("pipelines", [])
         if p.split("->")[0] not in hidden
         and agents.get(p, ex.get("agent")) not in hidden
-        and not explain.same_model(meta, p)  # hidden everywhere: one model reading and extracting
+        and not view.same_model(meta, p)  # hidden everywhere: one model reading and extracting
     ]
     ex["pipelines"] = keep
     if ex.get("agent") in hidden:
@@ -435,7 +375,7 @@ def visible(meta: dict, scores: dict, focus: bool = True) -> dict:
 
     def pipe_hidden(p: str) -> bool:
         src = p.split("->")[0]
-        return explain.same_model(meta, p) or src in hidden_be or explain._extractor(meta, p) in hidden_be
+        return view.same_model(meta, p) or src in hidden_be or view.extractor(meta, p) in hidden_be
 
     ex = scores.get("extraction") or {}
     tr = scores.get("transcription") or {}
@@ -463,8 +403,8 @@ def guide_md(latest: dict | None) -> str:
         "A pipeline is written **input → extractor**. The input is what the extracting model gets to read:",
         "",
         "- **page images**: the extractor looks at the images itself (one step).",
-        "- **<OCR model> text**: our self-hosted OCR model first transcribes every page; the extractor gets only "
-        "that text.",
+        "- **<self-hosted model> text**: a model on our own GPU first transcribes every page; the extractor gets "
+        "only that text.",
         "- **<LLM> text**: an LLM first transcribes every page; a **different** LLM extracts from the text.",
         "",
         "Pipelines where the same model both transcribes and extracts are not shown: they only measure a model "
@@ -472,7 +412,8 @@ def guide_md(latest: dict | None) -> str:
         "",
         "### The extractor",
         "",
-        f"Whatever model extracts, it gets {explain.AGENT_INPUT}, and returns {explain.AGENT_OUTPUT}. "
+        f"Whatever model extracts, it gets {explain.AGENT_INPUT}, and returns "
+        f"{explain.agent_output(int(prompts.of(latest or {}, 'extract')['max_tokens']))}. "
         "It never sees the ground truth. Run pages list the exact model and settings.",
         "",
         "### Pages",
@@ -492,5 +433,5 @@ def guide_md(latest: dict | None) -> str:
         ]
         for t, d in latest["documents"]["types"].items():
             out.append(f"| `{t}` | {d['description']} | {explain.CHALLENGES.get(t, '')} | {', '.join(d['fields'])} |")
-    out += ["", "### Metrics", ""] + [f"- **{k}**: {v}" for k, v in explain.METRICS]
+    out += ["", "### Metrics", ""] + [f"- **{k}**: {v}" for k, v in metrics.GLOSSARY]
     return "\n".join(out)

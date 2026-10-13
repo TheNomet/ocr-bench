@@ -65,14 +65,14 @@ def _list_tree(repo: str, rev: str) -> list[dict]:
     return out
 
 
-def upload(cfg: Config, from_dir: Path | None = None) -> None:
-    o = cfg["ocr"]
-    repo, rev, prefix, bucket = o["hf_repo"], o["hf_revision"], cfg.model_prefix, cfg.bucket
+def upload(cfg: Config, name: str, from_dir: Path | None = None) -> None:
+    o = cfg.backend(name)
+    repo, rev, prefix, bucket = o["hf_repo"], o["hf_revision"], cfg.model_prefix(name), cfg.bucket
     skip = tuple(o.get("hf_skip_prefixes") or [])
     s3 = boto3.client("s3")
     tcfg = TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=4)
     if not re.fullmatch(r"[0-9a-f]{40}", rev):
-        raise SystemExit(f"ocr.hf_revision must be a full 40-character commit hash, got {rev!r}")
+        raise SystemExit(f"backends.{name}.hf_revision must be a full 40-character commit hash, got {rev!r}")
     tree = _list_tree(repo, rev)
     files = [f for f in tree if f["type"] == "file" and not f["path"].startswith(skip)]
     manifest = {"repo": repo, "revision": rev, "files": []}

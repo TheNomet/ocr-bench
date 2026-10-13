@@ -1,17 +1,18 @@
 {
+ "schema_version": 2,
  "id": "2026-10-09-repeat-plus-claude55",
  "plan": "repeat-plus-claude55",
  "plan_items": [
   {
-   "backend": "ocr",
+   "backend": "unlimited-ocr",
    "concurrency": 1
   },
   {
-   "backend": "ocr",
+   "backend": "unlimited-ocr",
    "concurrency": 4
   },
   {
-   "backend": "ocr",
+   "backend": "unlimited-ocr",
    "concurrency": 16
   },
   {
@@ -175,87 +176,8 @@
   "seed": 7,
   "per_type": 6
  },
- "ocr": {
-  "name": "unlimited-ocr",
-  "hf_repo": "baidu/Unlimited-OCR",
-  "hf_revision": "07dea832e22aefee32ad281d4b80551282e1c168",
-  "served_model_name": "baidu/Unlimited-OCR",
-  "source_image": "docker.io/vllm/vllm-openai:unlimited-ocr",
-  "serving": "SageMaker real-time endpoint",
-  "inference_ami_version": "al2023-ami-sagemaker-inference-gpu-4-1",
-  "instance_pools": [
-   "ml.g6.xlarge",
-   "ml.g6e.xlarge",
-   "ml.g5.xlarge",
-   "ml.g5.2xlarge"
-  ],
-  "serve_args": [
-   "--trust-remote-code",
-   "--logits_processors",
-   "vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor",
-   "--no-enable-prefix-caching",
-   "--mm-processor-cache-gb",
-   "0",
-   "--max-num-seqs",
-   "64",
-   "--max-model-len",
-   "32768",
-   "--gpu-memory-utilization",
-   "0.90"
-  ],
-  "prompt": "<image>document parsing.",
-  "instance_type": "ml.g5.xlarge",
-  "price_per_hour_usd": 1.4938,
-  "image_digest": "sha256:f86770951a9d1d28f9115867627144a96417dfdbb7d8d72aef70c5f61ea8002f",
-  "gpu": "NVIDIA A10G, 24 GB",
-  "host": "4 vCPU, 16 GB RAM"
- },
- "llm_backends": {
-  "sonnet-4.5": {
-   "provider": "openai_compatible",
-   "model": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-   "price_per_mtok": {
-    "input": 3.0,
-    "output": 15.0
-   },
-   "temperature": 0.0,
-   "via": "OpenAI-compatible gateway"
-  },
-  "haiku-4.5": {
-   "provider": "openai_compatible",
-   "model": "anthropic.claude-haiku-4-5-20251001-v1:0",
-   "price_per_mtok": {
-    "input": 1.0,
-    "output": 5.0
-   },
-   "temperature": 0.0,
-   "via": "OpenAI-compatible gateway"
-  },
-  "sonnet-5.5": {
-   "provider": "openai_compatible",
-   "model": "anthropic.claude-sonnet-5-5",
-   "price_per_mtok": null,
-   "temperature": 1,
-   "via": "OpenAI-compatible gateway"
-  },
-  "haiku-5.5": {
-   "provider": "openai_compatible",
-   "model": "anthropic.claude-haiku-5-5",
-   "price_per_mtok": null,
-   "temperature": 1,
-   "via": "OpenAI-compatible gateway"
-  },
-  "opus-5.5": {
-   "provider": "openai_compatible",
-   "model": "anthropic.claude-opus-5-5",
-   "price_per_mtok": null,
-   "temperature": 1,
-   "reasoning_effort": "medium",
-   "via": "OpenAI-compatible gateway"
-  }
- },
  "transcribers": [
-  "ocr",
+  "unlimited-ocr",
   "sonnet-4.5",
   "haiku-4.5",
   "sonnet-5.5",
@@ -264,20 +186,20 @@
  "extraction": {
   "agent": "sonnet-4.5",
   "pipelines": [
-   "ocr->agent",
+   "unlimited-ocr->agent",
    "sonnet-4.5->agent",
    "image->agent",
-   "ocr->sonnet-5.5",
+   "unlimited-ocr->sonnet-5.5",
    "sonnet-5.5->sonnet-5.5",
    "image->sonnet-5.5",
    "image->haiku-4.5",
    "image->haiku-5.5"
   ],
   "agents": {
-   "ocr->agent": "sonnet-4.5",
+   "unlimited-ocr->agent": "sonnet-4.5",
    "sonnet-4.5->agent": "sonnet-4.5",
    "image->agent": "sonnet-4.5",
-   "ocr->sonnet-5.5": "sonnet-5.5",
+   "unlimited-ocr->sonnet-5.5": "sonnet-5.5",
    "sonnet-5.5->sonnet-5.5": "sonnet-5.5",
    "image->sonnet-5.5": "sonnet-5.5",
    "image->haiku-4.5": "haiku-4.5",
@@ -297,7 +219,7 @@
    "seconds": 198.8
   },
   "score": {
-   "finished": "2026-10-13T08:38:41",
+   "finished": "2026-10-13T10:33:27",
    "seconds": 0.8
   },
   "summarize": {
@@ -311,5 +233,130 @@
    "sonnet-4.5",
    "haiku-4.5"
   ]
+ },
+ "backends": {
+  "unlimited-ocr": {
+   "kind": "selfhosted",
+   "model": "baidu/Unlimited-OCR",
+   "via": "vLLM on SageMaker real-time endpoint",
+   "hf_repo": "baidu/Unlimited-OCR",
+   "hf_revision": "07dea832e22aefee32ad281d4b80551282e1c168",
+   "served_model_name": "baidu/Unlimited-OCR",
+   "source_image": "docker.io/vllm/vllm-openai:unlimited-ocr",
+   "serving": "SageMaker real-time endpoint",
+   "inference_ami_version": "al2023-ami-sagemaker-inference-gpu-4-1",
+   "instance_pools": [
+    "ml.g6.xlarge",
+    "ml.g6e.xlarge",
+    "ml.g5.xlarge",
+    "ml.g5.2xlarge"
+   ],
+   "serve_args": [
+    "--trust-remote-code",
+    "--logits_processors",
+    "vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor",
+    "--no-enable-prefix-caching",
+    "--mm-processor-cache-gb",
+    "0",
+    "--max-num-seqs",
+    "64",
+    "--max-model-len",
+    "32768",
+    "--gpu-memory-utilization",
+    "0.90"
+   ],
+   "instance_type": "ml.g5.xlarge",
+   "price_per_hour_usd": 1.4938,
+   "image_digest": "sha256:f86770951a9d1d28f9115867627144a96417dfdbb7d8d72aef70c5f61ea8002f",
+   "gpu": "NVIDIA A10G, 24 GB",
+   "host": "4 vCPU, 16 GB RAM",
+   "request": {
+    "prompt": "<image>document parsing.",
+    "max_tokens": 8192,
+    "temperature": 0.0,
+    "extra_body": {
+     "skip_special_tokens": false,
+     "vllm_xargs": {
+      "ngram_size": 35,
+      "window_size": 128
+     }
+    }
+   },
+   "temperature": 0.0,
+   "postprocess": [
+    "strip_grounding"
+   ],
+   "price_per_mtok": null,
+   "label": null
+  },
+  "sonnet-4.5": {
+   "kind": "openai_compatible",
+   "model": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+   "price_per_mtok": {
+    "input": 3.0,
+    "output": 15.0
+   },
+   "temperature": 0.0,
+   "via": "OpenAI-compatible gateway",
+   "postprocess": [],
+   "label": null
+  },
+  "haiku-4.5": {
+   "kind": "openai_compatible",
+   "model": "anthropic.claude-haiku-4-5-20251001-v1:0",
+   "price_per_mtok": {
+    "input": 1.0,
+    "output": 5.0
+   },
+   "temperature": 0.0,
+   "via": "OpenAI-compatible gateway",
+   "postprocess": [],
+   "label": null
+  },
+  "sonnet-5.5": {
+   "kind": "openai_compatible",
+   "model": "anthropic.claude-sonnet-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "via": "OpenAI-compatible gateway",
+   "postprocess": [],
+   "label": null
+  },
+  "haiku-5.5": {
+   "kind": "openai_compatible",
+   "model": "anthropic.claude-haiku-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "via": "OpenAI-compatible gateway",
+   "postprocess": [],
+   "label": null
+  },
+  "opus-5.5": {
+   "kind": "openai_compatible",
+   "model": "anthropic.claude-opus-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "reasoning_effort": "medium",
+   "via": "OpenAI-compatible gateway",
+   "postprocess": [],
+   "label": null
+  }
+ },
+ "prompts": {
+  "transcribe": {
+   "system": "You are a precise OCR engine. You transcribe documents; you never summarise, translate or correct them.",
+   "user": "Transcribe this document page to Markdown. Reproduce all text exactly as written, in reading order, including every number, date, account number and table (as Markdown tables). Do not summarise, translate, correct or add anything. Output only the transcription.",
+   "max_tokens": 8192
+  },
+  "extract": {
+   "system": "You extract structured data from documents. You copy values exactly as they appear in the document (same number formatting, same spelling). You answer with one JSON object and nothing else.",
+   "rules": "Copy values verbatim. For list fields, return every matching item. If a value is genuinely absent, omit the key. Reply with JSON only.",
+   "max_tokens": 2048
+  },
+  "summarize": {
+   "system": "You are a careful technical analyst. An engineering team must choose how to read documents. You are given key facts that were computed exactly from a benchmark. Your job is to interpret them: explain what they mean, the trade-offs, and what to choose for which goal. You never compute new numbers.",
+   "max_tokens": 12000,
+   "temperature": 0.2
+  }
  }
 }

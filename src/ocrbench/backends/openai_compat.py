@@ -129,7 +129,7 @@ class OpenAICompatBackend(Backend):
         self.kms_auth = _KmsJwtAuth(auth, verify) if self.auth_type == "oauth2_kms_jwt" else None
         self.bearer_env = auth.get("env") if self.auth_type == "bearer_env" else None
         if self.auth_type not in ("none", "bearer_env", "oauth2_kms_jwt"):
-            raise ValueError(f"llm_backends.{name}.auth.type {self.auth_type!r} not supported")
+            raise ValueError(f"backends.{name}.auth.type {self.auth_type!r} not supported")
 
     async def _auth(self, force: bool) -> dict:
         if self.kms_auth:

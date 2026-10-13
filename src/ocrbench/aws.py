@@ -78,20 +78,24 @@ def s3_sync_down(bucket: str, prefix: str, local: Path) -> int:
 
 
 # ---------------------------------------------------------------------------- SageMaker
-def _schedule_name(cfg: Config) -> str:
-    return f"{cfg.endpoint_name}-auto-delete"
+def _schedule_name(cfg: Config, name: str) -> str:
+    return f"{cfg.endpoint_name(name)}-auto-delete"
 
 
-def schedule_auto_delete(cfg: Config, role_arn: str | None) -> None:
-    """One-off EventBridge Scheduler job that deletes the endpoint after ocr.sagemaker.max_lifetime_hours."""
-    hours = float(cfg["ocr"].get("sagemaker", {}).get("max_lifetime_hours", 8))
+def _sm_spec(cfg: Config, name: str) -> dict:
+    return cfg.backend(name).get("sagemaker") or {}
+
+
+def schedule_auto_delete(cfg: Config, name: str, role_arn: str | None) -> None:
+    """One-off EventBridge Scheduler job that deletes the endpoint after backends.<name>.sagemaker.max_lifetime_hours."""
+    hours = float(_sm_spec(cfg, name).get("max_lifetime_hours", 8))
     if not role_arn or hours <= 0:
         print("  WARNING: no auto-delete scheduled; remember `endpoint down` (it bills per hour)")
         return
     sch = boto3.client("scheduler", region_name=cfg.region)
     at = (datetime.now(UTC) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
     args = dict(
-        Name=_schedule_name(cfg),
+        Name=_schedule_name(cfg, name),
         ScheduleExpression=f"at({at})",
         ScheduleExpressionTimezone="UTC",
         FlexibleTimeWindow={"Mode": "OFF"},
@@ -99,7 +103,7 @@ def schedule_auto_delete(cfg: Config, role_arn: str | None) -> None:
         Target={
             "Arn": "arn:aws:scheduler:::aws-sdk:sagemaker:deleteEndpoint",
             "RoleArn": role_arn,
-            "Input": json.dumps({"EndpointName": cfg.endpoint_name}),
+            "Input": json.dumps({"EndpointName": cfg.endpoint_name(name)}),
         },
     )
     try:
@@ -107,20 +111,22 @@ def schedule_auto_delete(cfg: Config, role_arn: str | None) -> None:
             sch.create_schedule(**args)
         except sch.exceptions.ConflictException:
             sch.update_schedule(**args)
-        print(f"  auto-delete scheduled at {at} UTC ({hours:g} h); change with ocr.sagemaker.max_lifetime_hours")
+        print(
+            f"  auto-delete scheduled at {at} UTC ({hours:g} h); change with backends.{name}.sagemaker.max_lifetime_hours"
+        )
     except Exception as e:  # noqa: BLE001 — never block the run on this, but say so loudly
         print(f"  WARNING: could not schedule auto-delete ({type(e).__name__}); remember `endpoint down`")
 
 
-def cancel_auto_delete(cfg: Config) -> None:
+def cancel_auto_delete(cfg: Config, name: str) -> None:
     with contextlib.suppress(Exception):  # absent or already fired
-        boto3.client("scheduler", region_name=cfg.region).delete_schedule(Name=_schedule_name(cfg))
+        boto3.client("scheduler", region_name=cfg.region).delete_schedule(Name=_schedule_name(cfg, name))
 
 
-def endpoint_up(cfg: Config, scheduler_role_arn: str | None = None) -> None:
+def endpoint_up(cfg: Config, backend: str, scheduler_role_arn: str | None = None) -> None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
-    s = cfg["ocr"]["sagemaker"]
-    name = cfg.endpoint_name
+    s = _sm_spec(cfg, backend)
+    name = cfg.endpoint_name(backend)
     conf = f"{name}-{datetime.now():%Y%m%d%H%M%S}"
     pools = [{"InstanceType": t, "Priority": i} for i, t in enumerate(s["instance_pools"], start=1)]
     tags = [{"Key": k, "Value": str(v)} for k, v in (cfg["aws"].get("tags") or {}).items()]
@@ -130,7 +136,7 @@ def endpoint_up(cfg: Config, scheduler_role_arn: str | None = None) -> None:
         ProductionVariants=[
             {
                 "VariantName": "primary",
-                "ModelName": cfg.model_name,
+                "ModelName": cfg.model_name(backend),
                 "InitialInstanceCount": 1,
                 "InstancePools": pools,
                 "InferenceAmiVersion": s["inference_ami_version"],
@@ -147,30 +153,30 @@ def endpoint_up(cfg: Config, scheduler_role_arn: str | None = None) -> None:
     except sm.exceptions.ClientError:
         sm.create_endpoint(EndpointName=name, EndpointConfigName=conf, Tags=tags)
         print(f"creating {name} (cold start is typically 10-20 min)")
-    schedule_auto_delete(cfg, scheduler_role_arn)
-    endpoint_wait(cfg)
+    schedule_auto_delete(cfg, backend, scheduler_role_arn)
+    endpoint_wait(cfg, backend)
 
 
-def endpoint_wait(cfg: Config) -> None:
+def endpoint_wait(cfg: Config, backend: str) -> None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     t0 = time.time()
     while True:
-        d = sm.describe_endpoint(EndpointName=cfg.endpoint_name)
+        d = sm.describe_endpoint(EndpointName=cfg.endpoint_name(backend))
         st = d["EndpointStatus"]
         print(f"  {int(time.time() - t0):5d}s {st}", flush=True)
         if st == "InService":
-            print(f"  instance: {endpoint_instance_type(cfg)}")
+            print(f"  instance: {endpoint_instance_type(cfg, backend)}")
             return
         if st in ("Failed", "OutOfService"):
             raise SystemExit(f"endpoint failed: {d.get('FailureReason')}")
         time.sleep(30)
 
 
-def endpoint_info(cfg: Config) -> dict:
+def endpoint_info(cfg: Config, backend: str) -> dict:
     """Live endpoint facts: instance type actually placed (instance pools) and the resolved image digest."""
     sm = boto3.client("sagemaker", region_name=cfg.region)
     try:
-        v = sm.describe_endpoint(EndpointName=cfg.endpoint_name)["ProductionVariants"][0]
+        v = sm.describe_endpoint(EndpointName=cfg.endpoint_name(backend))["ProductionVariants"][0]
     except Exception:  # noqa: BLE001
         return {}
     live = [p["InstanceType"] for p in v.get("InstancePools") or [] if p.get("CurrentInstanceCount")]
@@ -182,10 +188,10 @@ def endpoint_info(cfg: Config) -> dict:
     }
 
 
-def endpoint_instance_type(cfg: Config) -> str | None:
+def endpoint_instance_type(cfg: Config, backend: str) -> str | None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     try:
-        v = sm.describe_endpoint(EndpointName=cfg.endpoint_name)["ProductionVariants"][0]
+        v = sm.describe_endpoint(EndpointName=cfg.endpoint_name(backend))["ProductionVariants"][0]
     except Exception:  # noqa: BLE001
         return None
     pools = v.get("InstancePools") or []
@@ -193,9 +199,9 @@ def endpoint_instance_type(cfg: Config) -> str | None:
     return (live or [v.get("CurrentInstanceType") or v.get("InstanceType")])[0]
 
 
-def endpoint_down(cfg: Config) -> None:
+def endpoint_down(cfg: Config, backend: str) -> None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
-    name = cfg.endpoint_name
+    name = cfg.endpoint_name(backend)
     try:
         sm.delete_endpoint(EndpointName=name)
         print(f"deleting endpoint {name}")
@@ -207,12 +213,34 @@ def endpoint_down(cfg: Config) -> None:
                 break
     except sm.exceptions.ClientError as e:
         print(f"endpoint: {e.response['Error']['Message']}")
-    cancel_auto_delete(cfg)
+    cancel_auto_delete(cfg, backend)
     for page in sm.get_paginator("list_endpoint_configs").paginate(NameContains=name):
         for c in page["EndpointConfigs"]:
             if c["EndpointConfigName"].startswith(f"{name}-"):  # only ours, not e.g. "my{name}-..."
                 sm.delete_endpoint_config(EndpointConfigName=c["EndpointConfigName"])
                 print(f"deleted config {c['EndpointConfigName']}")
+
+
+def instance_specs(region: str, instance_type: str) -> dict:
+    """GPU and host of an ml.* type from EC2 DescribeInstanceTypes (same hardware without the "ml." prefix).
+    {} if the API isn't reachable or doesn't know the type."""
+    try:
+        t = boto3.client("ec2", region_name=region).describe_instance_types(
+            InstanceTypes=[instance_type.removeprefix("ml.")]
+        )["InstanceTypes"][0]
+    except Exception:  # noqa: BLE001
+        return {}
+    gpus = (t.get("GpuInfo") or {}).get("Gpus") or []
+    gpu = "?"
+    if gpus:
+        g = gpus[0]
+        mem = round(g.get("MemoryInfo", {}).get("SizeInMiB", 0) / 1024)
+        gpu = (
+            f"{g['Count']}x " if g.get("Count", 1) > 1 else ""
+        ) + f"{g.get('Manufacturer', '')} {g.get('Name', '')}, {mem} GB".strip()
+    vcpu = t.get("VCpuInfo", {}).get("DefaultVCpus")
+    ram = round(t.get("MemoryInfo", {}).get("SizeInMiB", 0) / 1024)
+    return {"gpu": gpu, "host": f"{vcpu} vCPU, {ram} GB RAM"}
 
 
 def sagemaker_hourly_usd(region: str, instance_type: str) -> float | None:

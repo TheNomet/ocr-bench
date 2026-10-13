@@ -7,14 +7,6 @@ PIPELINES = {
         "One step: the extraction agent reads the page images directly and returns the fields. "
         "This is the baseline: what you get without any separate OCR step."
     ),
-    "ocr": (
-        "Two steps: the self-hosted OCR model transcribes every page to text, then the extraction agent "
-        "reads that text (not the images) and returns the fields."
-    ),
-    "llm": (
-        "Two steps: this LLM transcribes every page to text, then the extraction agent reads that text "
-        "and returns the fields."
-    ),
 }
 
 ARROW = (
@@ -60,39 +52,6 @@ CHALLENGES = {
     "newsletter": "two-column layout with an inline table",
 }
 
-METRICS = [
-    ("CER", "character error rate after removing Markdown/HTML formatting; 0 = perfect. Sensitive to reading order."),
-    ("CER median", "the typical page; the mean can be dominated by a single runaway page"),
-    ("runaway", "pages where the output was more than 3x the page length (a repetition loop)"),
-    (
-        "word recall / precision",
-        "share of the page's words found / share of output words that are on the page; ignores order",
-    ),
-    ("number recall", "share of the amounts, dates, account numbers etc. on the page that appear in the output"),
-    ("invented numbers", "numbers of 3+ characters in the output that are not on the page"),
-    (
-        "field accuracy",
-        "share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored)",
-    ),
-    ("end-to-end", "per document: transcription time of all its pages (concurrency-1 runs) plus the agent call"),
-    (
-        "$/1k",
-        "LLMs: list price x tokens used. OCR model: GPU hourly price / measured throughput, i.e. with the GPU kept busy",
-    ),
-]
-
-
-def pipeline_text(pipe: str, ocr_name: str = "ocr", extractor: str | None = None) -> str:
-    src = pipe.split("->")[0]
-    if src == "image":
-        t = PIPELINES["image"]
-    elif src == "ocr":
-        t = PIPELINES["ocr"].replace("self-hosted OCR model", f"self-hosted OCR model ({ocr_name})")
-    else:
-        t = PIPELINES["llm"].replace("this LLM", f"`{src}`")
-    return t + (f" Extractor: {extractor}." if extractor else "")
-
-
 # --------------------------------------------------------------------------- model names
 _CLAUDE = __import__("re").compile(r"claude-(?P<fam>[a-z]+)-(?P<maj>\d+)(?:-(?P<min>\d))?(?:-(?P<date>\d{8}))?")
 
@@ -109,10 +68,6 @@ def model_label(model_id: str | None) -> str:
     return f"Claude {m['fam'].capitalize()} {ver}" + (f" ({date[:4]}-{date[4:6]}-{date[6:]})" if date else "")
 
 
-def ocr_label(ocr: dict) -> str:
-    return f"{ocr.get('hf_repo', '?')} @ {(ocr.get('hf_revision') or '')[:8]}"
-
-
 # Static description of the extraction agent; only the model is filled in from the run.
 AGENT_INPUT = (
     "the document type's field list (name, type, one-line description), plus either the page images "
@@ -120,10 +75,17 @@ AGENT_INPUT = (
 )
 
 
-AGENT_OUTPUT = "one JSON object with the field values copied verbatim; max 2,048 output tokens"
+def agent_output(max_tokens: int = 2048) -> str:
+    return f"one JSON object with the field values copied verbatim; max {max_tokens:,} output tokens"
 
 
-def agent_note(model_id: str | None, temperature: float | None = 0.0, others: list[str] | None = None) -> str:
+def agent_note(
+    model_id: str | None,
+    temperature: float | None = 0.0,
+    others: list[str] | None = None,
+    label: str | None = None,
+    max_tokens: int = 2048,
+) -> str:
     t = "provider default" if temperature is None else f"{temperature:g}"
     extra = (
         f" Pipelines that name another extractor ({', '.join(others)}) use that model with the same input."
@@ -131,37 +93,9 @@ def agent_note(model_id: str | None, temperature: float | None = 0.0, others: li
         else " It is the same model in every pipeline."
     )
     return (
-        f"The **agent** (default extractor) is {model_label(model_id)} (`{model_id}`), temperature {t}. "
-        f"It gets {AGENT_INPUT}, and returns {AGENT_OUTPUT}. It never sees the ground truth.{extra}"
+        f"The **agent** (default extractor) is {label or model_label(model_id)} (`{model_id}`), temperature {t}. "
+        f"It gets {AGENT_INPUT}, and returns {agent_output(max_tokens)}. It never sees the ground truth.{extra}"
     )
-
-
-# --------------------------------------------------------------------------- pipeline identity
-def _extractor(meta: dict, pipe: str) -> str:
-    ex = meta.get("extraction") or {}
-    return (ex.get("agents") or {}).get(pipe) or ex.get("agent")
-
-
-def same_model(meta: dict, pipe: str) -> bool:
-    """True for `X->Y` where X's transcript is extracted by the same model X (it only measures itself)."""
-    src = pipe.split("->")[0]
-    if src in ("image", "ocr"):
-        return False
-    be = meta.get("llm_backends") or {}
-    return be.get(src, {}).get("model") == be.get(_extractor(meta, pipe), {}).get("model")
-
-
-def pipeline_label(meta: dict, pipe: str) -> str:
-    """Readable form: 'page images → Claude Haiku 5.5', 'Unlimited-OCR text → Claude Sonnet 4.5 (…)'."""
-    be = meta.get("llm_backends") or {}
-    src = pipe.split("->")[0]
-    if src == "image":
-        inp = "page images"
-    elif src == "ocr":
-        inp = f"{(meta.get('ocr') or {}).get('hf_repo', 'OCR').split('/')[-1]} text"
-    else:
-        inp = f"{model_label(be.get(src, {}).get('model'))} text"
-    return f"{inp} → {model_label(be.get(_extractor(meta, pipe), {}).get('model'))}"
 
 
 INTRO = "\n".join(

@@ -46,74 +46,80 @@ ecs:
   cluster: create
 
 # ---------------------------------------------------------------------------
-# Self-hosted OCR model (vLLM on SageMaker)
+# Backends: everything that reads pages or extracts fields. The key is the name used in every
+# record, table and pipeline, so pick a neutral model name (e.g. sonnet-4.5, unlimited-ocr).
+#   kind: selfhosted         a vLLM-served model on its own SageMaker endpoint (<name_prefix>-<key>)
+#                            or at direct_url; any number of them. Key: [a-z0-9-], it names AWS resources.
+#   kind: bedrock            AWS Bedrock (Converse API)
+#   kind: openai_compatible  any /v1/chat/completions endpoint (gateway, proxy, OpenAI, vLLM...)
+# Optional on every backend:
+#   label: "My Model 1.0"    display name (default: derived from the model id)
+#   postprocess: [..]        steps applied to its output before scoring/extraction:
+#                            strip_grounding | strip_think | unwrap_code_fence
 # ---------------------------------------------------------------------------
-ocr:
-  name: unlimited-ocr                       # backend name used in results
-  hf_repo: baidu/Unlimited-OCR
-  hf_revision: 07dea832e22aefee32ad281d4b80551282e1c168
-  hf_skip_prefixes: ["assets/", "wheel/", "Unlimited-OCR.pdf", ".gitattributes"]
-  # Pin by digest for reproducible builds (a tag works, but the build prints the digest to pin):
-  source_image: docker.io/vllm/vllm-openai:unlimited-ocr
-  image_platform: linux/amd64
-  served_model_name: baidu/Unlimited-OCR
-  # Extra `vllm serve` arguments (model path, host and port are added automatically).
-  serve_args:
-    - --trust-remote-code
-    - --logits_processors
-    - vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor
-    - --no-enable-prefix-caching
-    - --mm-processor-cache-gb
-    - "0"
-    - --max-num-seqs
-    - "64"
-    - --max-model-len
-    - "32768"
-    - --gpu-memory-utilization
-    - "0.90"
-  # Per-request body (OpenAI chat format). The image is appended as an image_url part.
-  request:
-    prompt: "<image>document parsing."
-    max_tokens: 8192
-    temperature: 0.0
-    extra_body:
-      skip_special_tokens: false
-      vllm_xargs: {ngram_size: 35, window_size: 128}
-  # Post-processing of the raw output before scoring: unwrap <|ref|>, drop <|det|> boxes.
-  strip_grounding_tokens: true
-  sagemaker:
-    # Tried in priority order (GPU capacity is often scarce; one type alone may fail).
-    instance_pools: [ml.g6.xlarge, ml.g6e.xlarge, ml.g5.xlarge, ml.g5.2xlarge]
-    inference_ami_version: al2023-ami-sagemaker-inference-gpu-4-1   # NVIDIA driver for CUDA 13 images
-    container_startup_timeout_s: 1800
-    model_download_timeout_s: 1800
-    network_isolation: true
-    # The endpoint deletes itself after this many hours (EventBridge Scheduler), in case nobody runs
-    # `endpoint down`. 0 = never.
-    max_lifetime_hours: 8
-    # price_per_hour_usd: null    # default: looked up in the AWS Pricing API for the instance actually used
-  # Optional: talk to an already-running vLLM server instead of SageMaker (local GPU, tunnel...).
-  direct_url: null            # e.g. http://localhost:8000
+backends:
+  unlimited-ocr:
+    kind: selfhosted
+    hf_repo: baidu/Unlimited-OCR
+    hf_revision: 07dea832e22aefee32ad281d4b80551282e1c168   # full commit hash (weights are hash-verified)
+    hf_skip_prefixes: ["assets/", "wheel/", "Unlimited-OCR.pdf", ".gitattributes"]
+    # Pin by digest for reproducible builds (a tag works, but the build prints the digest to pin):
+    source_image: docker.io/vllm/vllm-openai:unlimited-ocr
+    image_platform: linux/amd64
+    served_model_name: baidu/Unlimited-OCR
+    # Extra `vllm serve` arguments (model path, host and port are added automatically).
+    serve_args:
+      - --trust-remote-code
+      - --logits_processors
+      - vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor
+      - --no-enable-prefix-caching
+      - --mm-processor-cache-gb
+      - "0"
+      - --max-num-seqs
+      - "64"
+      - --max-model-len
+      - "32768"
+      - --gpu-memory-utilization
+      - "0.90"
+    # Per-request body (OpenAI chat format). The page image is appended as an image_url part.
+    # Replaces bench.prompts.transcribe for this backend.
+    request:
+      prompt: "<image>document parsing."
+      max_tokens: 8192
+      temperature: 0.0
+      extra_body:
+        skip_special_tokens: false
+        vllm_xargs: {ngram_size: 35, window_size: 128}
+    # DeepSeek-OCR-style output: unwrap <|ref|>, drop <|det|> boxes before scoring.
+    postprocess: [strip_grounding]
+    sagemaker:
+      # Tried in priority order (GPU capacity is often scarce; one type alone may fail).
+      instance_pools: [ml.g6.xlarge, ml.g6e.xlarge, ml.g5.xlarge, ml.g5.2xlarge]
+      inference_ami_version: al2023-ami-sagemaker-inference-gpu-4-1   # NVIDIA driver for CUDA 13 images
+      container_startup_timeout_s: 1800
+      model_download_timeout_s: 1800
+      network_isolation: true
+      # The endpoint deletes itself after this many hours (EventBridge Scheduler), in case nobody runs
+      # `endpoint down`. 0 = never.
+      max_lifetime_hours: 8
+      # price_per_hour_usd: null    # default: looked up in the AWS Pricing API for the instance actually used
+    # Optional: talk to an already-running vLLM server instead of SageMaker (local GPU, tunnel...).
+    direct_url: null            # e.g. http://localhost:8000
 
-# ---------------------------------------------------------------------------
-# LLM backends (transcription + extraction). Reference them by key below.
-# ---------------------------------------------------------------------------
-llm_backends:
-  bedrock-sonnet:
-    provider: bedrock
+  sonnet-4.5:
+    kind: bedrock
     # temperature: 1               # optional override; some models accept only 1. null = don't send
     # reasoning_effort: medium     # optional: low | medium | high, for models with extended thinking
     model_id: anthropic.claude-sonnet-4-5-20250929-v1:0   # or an inference profile id
     region: ${AWS_REGION:-eu-west-1}
     price_per_mtok: {input: 3.0, output: 15.0}            # USD, for the cost table only
-  bedrock-haiku:
-    provider: bedrock
+  haiku-4.5:
+    kind: bedrock
     model_id: anthropic.claude-haiku-4-5-20251001-v1:0
     region: ${AWS_REGION:-eu-west-1}
     price_per_mtok: {input: 1.0, output: 5.0}
-  # Any OpenAI-compatible chat-completions endpoint (gateway, proxy, OpenAI, vLLM...).
   # gateway-sonnet:
-  #   provider: openai_compatible
+  #   kind: openai_compatible
   #   base_url: https://llm-gateway.example.internal       # /v1/chat/completions is appended
   #   model: anthropic.claude-sonnet-4-5-20250929-v1:0
   #   ca_bundle: null            # extra PEM to trust (corporate TLS), path on the runner
@@ -138,27 +144,31 @@ bench:
     per_type: 6            # documents per type (8 types) -> ~96 pages incl. degraded variants
     seed: 7
     scale: 2.0             # pdfium render scale (2.0 ~ 144 dpi, A4 ~ 1190x1684 px)
-  # Backends that transcribe pages: "ocr" = the self-hosted model above, others = llm_backends keys.
-  transcribers: [ocr, bedrock-sonnet, bedrock-haiku]
   # Stage 2 — an LLM agent extracts the per-type fields.
   extraction:
-    agent: bedrock-sonnet                 # llm_backends key that does the extraction
+    agent: sonnet-4.5                     # backend that does the extraction
     # Pipelines to score. "<transcriber>->agent" extracts from that transcriber's text;
     # "image->agent" sends the page images straight to the agent (one step).
     # Don't use "<X>->agent" when X is the agent's own model: it only measures the model against itself
     # (such pipelines are hidden in reports).
-    pipelines: ["ocr->agent", "bedrock-haiku->agent", "image->agent"]
-    # Optional per-plan override. "<input>-><llm key>" makes that backend the extractor instead of `agent`:
+    pipelines: ["unlimited-ocr->agent", "haiku-4.5->agent", "image->agent"]
+    # Optional per-plan override. "<input>-><backend>" makes that backend the extractor instead of `agent`:
     # plan_pipelines:
-    #   compare: ["image->agent", "image->bedrock-haiku"]
+    #   compare: ["image->agent", "image->haiku-4.5"]
     concurrency: 8
-  # Stage 4: an LLM reads the setup + scored tables and writes the findings (runs/<id>/summary.md).
+  # Stage 4: an LLM reads the computed key facts and writes the recommendation (runs/<id>/summary.md).
   summary:
-    agent: bedrock-sonnet                 # llm_backends key; defaults to the extraction agent
+    agent: sonnet-4.5                     # backend; defaults to the extraction agent
+  # Optional: override any prompt or output-token limit (defaults in src/ocrbench/prompts.py). The values
+  # used are recorded in each run's run.json.
+  # prompts:
+  #   transcribe: {system: "...", user: "...", max_tokens: 8192}
+  #   extract:    {system: "...", rules: "...", max_tokens: 2048}
+  #   summarize:  {system: "...", max_tokens: 12000, temperature: 0.2}
   # Optional: backends a plan re-runs only to check reproducibility. Hidden on that run's page and in
   # its recommendation, still in the data and in Compare runs.
   # plan_report:
-  #   repeat: {hide_backends: [bedrock-haiku]}
+  #   repeat: {hide_backends: [haiku-4.5]}
   # One-line description per plan, shown on every run of it (the run id is <date>-<plan>).
   plan_descriptions:
     smoke: "Quick health check: a couple of pages per backend."
@@ -166,17 +176,17 @@ bench:
   # Named run plans: each item is one transcription run.
   plans:
     smoke:
-      - {backend: ocr, concurrency: 1, limit: 2, variant: clean}
-      - {backend: bedrock-sonnet, concurrency: 1, limit: 1, variant: clean}
+      - {backend: unlimited-ocr, concurrency: 1, limit: 2, variant: clean}
+      - {backend: sonnet-4.5, concurrency: 1, limit: 1, variant: clean}
     suite:
-      - {backend: ocr, concurrency: 1}
-      - {backend: bedrock-sonnet, concurrency: 1}
-      - {backend: bedrock-haiku, concurrency: 1}
-      - {backend: ocr, concurrency: 4}
-      - {backend: ocr, concurrency: 16}
-      - {backend: ocr, concurrency: 32}
-      - {backend: bedrock-sonnet, concurrency: 16}
-      - {backend: bedrock-haiku, concurrency: 16}
+      - {backend: unlimited-ocr, concurrency: 1}
+      - {backend: sonnet-4.5, concurrency: 1}
+      - {backend: haiku-4.5, concurrency: 1}
+      - {backend: unlimited-ocr, concurrency: 4}
+      - {backend: unlimited-ocr, concurrency: 16}
+      - {backend: unlimited-ocr, concurrency: 32}
+      - {backend: sonnet-4.5, concurrency: 16}
+      - {backend: haiku-4.5, concurrency: 16}
   max_retries: 4
 
 # Where the bench runs: "fargate" (inside the VPC — needed when endpoints are private)

@@ -6,8 +6,8 @@ import pytest
 from ocrbench import config as config_mod
 from ocrbench.backends import Response
 from ocrbench.backends.openai_compat import _der_to_raw
-from ocrbench.backends.vllm_ocr import strip_grounding
 from ocrbench.extract import parse_json
+from ocrbench.postprocess import strip_grounding
 from ocrbench.score import field_correct, normalise, page_metrics
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,15 +17,19 @@ def test_example_config_loads(monkeypatch):
     monkeypatch.delenv("AWS_REGION", raising=False)
     cfg = config_mod.load(ROOT / "config" / "example.yaml")
     assert cfg.bucket == f"{cfg.prefix}-artifacts"
-    assert cfg.endpoint_name.endswith("-ocr")
+    assert cfg.selfhosted() == ["unlimited-ocr"]
+    assert cfg.endpoint_name("unlimited-ocr") == f"{cfg.prefix}-unlimited-ocr"
     assert cfg.plan("smoke")
-    for t in cfg["bench"]["transcribers"]:
-        assert t == "ocr" or t in cfg["llm_backends"]
+    for it in cfg.plan("suite"):
+        assert it["backend"] in cfg.backends
 
 
 def test_env_expansion(tmp_path, monkeypatch):
     p = tmp_path / "c.yaml"
-    p.write_text("name_prefix: abc-${X:-dflt}\naws: {account_id: '1', region: '${R}'}\nocr: {}\nbench: {}\n")
+    p.write_text(
+        "name_prefix: abc-${X:-dflt}\naws: {account_id: '1', region: '${R}'}\n"
+        "backends: {m: {kind: bedrock, model_id: x}}\nbench: {}\n"
+    )
     monkeypatch.setenv("R", "eu-north-1")
     cfg = config_mod.load(p)
     assert cfg.prefix == "abc-dflt" and cfg.region == "eu-north-1"
@@ -37,6 +41,95 @@ def test_env_expansion(tmp_path, monkeypatch):
 def test_strip_grounding():
     raw = "<|det|>text [1, 2, 3, 4]<|/det|>Hei <|ref|>verden<|/ref|>"
     assert strip_grounding(raw) == "Hei verden"
+
+
+def test_postprocess_registry():
+    from ocrbench import postprocess
+
+    assert postprocess.apply(["strip_think", "unwrap_code_fence"], "<think>hmm</think>```md\nHei\n```") == "Hei"
+    assert postprocess.apply([], "<|ref|>x<|/ref|>") == "<|ref|>x<|/ref|>"  # nothing configured: raw output
+
+
+def _write(tmp_path, text):
+    p = tmp_path / "c.yaml"
+    p.write_text("name_prefix: abc\naws: {account_id: '1', region: r}\n" + text)
+    return p
+
+
+def test_old_config_shape_is_upgraded(tmp_path):
+    p = _write(
+        tmp_path,
+        "ocr: {name: unlimited, served_model_name: m, request: {}, strip_grounding_tokens: true}\n"
+        "llm_backends: {s: {provider: bedrock, model_id: x}}\n"
+        "bench: {transcribers: [ocr, s], extraction: {agent: s, pipelines: [ocr->agent]}, plans: {p: [{backend: ocr}]}}\n",
+    )
+    cfg = config_mod.load(p)
+    assert cfg.selfhosted() == ["ocr"]  # the name results always used, whatever ocr.name said
+    assert cfg.backend("ocr")["postprocess"] == ["strip_grounding"] and cfg.kind("s") == "bedrock"
+    assert "transcribers" not in cfg["bench"]
+
+
+@pytest.mark.parametrize(
+    "body, msg",
+    [
+        ("backends: {m: {kind: gpu}}\nbench: {}\n", "kind must be one of"),
+        ("backends: {My_Model: {kind: selfhosted}}\nbench: {}\n", "names AWS resources"),
+        ("backends: {m: {kind: bedrock, postprocess: [nope]}}\nbench: {}\n", "unknown step"),
+        ("backends: {m: {kind: bedrock}}\nbench: {plans: {p: [{backend: x}]}}\n", "not defined under backends"),
+        ("backends: {m: {kind: bedrock}}\nbench: {extraction: {agent: x}}\n", "is not a backend"),
+    ],
+)
+def test_config_validation(tmp_path, body, msg):
+    with pytest.raises(ValueError, match=msg):
+        config_mod.load(_write(tmp_path, body))
+
+
+def test_one_selfhosted(tmp_path):
+    p = _write(tmp_path, "backends: {a: {kind: selfhosted}, b: {kind: selfhosted}, c: {kind: bedrock}}\nbench: {}\n")
+    cfg = config_mod.load(p)
+    assert cfg.one_selfhosted("b") == "b"
+    with pytest.raises(SystemExit, match="name one"):
+        cfg.one_selfhosted()
+    with pytest.raises(SystemExit, match="not a self-hosted"):
+        cfg.one_selfhosted("c")
+
+
+def test_run_json_v1_is_upgraded():
+    from ocrbench import prompts, runs
+
+    v1 = {
+        "id": "r",
+        "ocr": {
+            "name": "x",
+            "hf_repo": "a/B",
+            "served_model_name": "a/B",
+            "prompt": "<image>p",
+            "price_per_hour_usd": 1.5,
+        },
+        "llm_backends": {"s": {"provider": "openai_compatible", "model": "m", "price_per_mtok": None}},
+    }
+    m = runs.upgrade(v1)
+    assert m["schema_version"] == runs.SCHEMA_VERSION and "ocr" not in m and "llm_backends" not in m
+    assert m["backends"]["ocr"]["kind"] == "selfhosted" and m["backends"]["ocr"]["postprocess"] == ["strip_grounding"]
+    assert m["backends"]["ocr"]["request"]["prompt"] == "<image>p" and m["backends"]["s"]["kind"] == "openai_compatible"
+    assert m["prompts"] == prompts.DEFAULTS
+    assert runs.upgrade(m) is m
+
+
+def test_describe_instance_fallback():
+    from ocrbench.runs import describe_instance
+
+    assert describe_instance("ml.g6e.xlarge") == {"gpu": "NVIDIA L40S, 48 GB", "host": "4 vCPU, 32 GB RAM"}
+    assert describe_instance("ml.g5.2xlarge")["host"] == "8 vCPU, 32 GB RAM"
+
+
+def test_prompts_override_and_unknown_fields():
+    from ocrbench import prompts
+
+    p = prompts.resolve({"prompts": {"extract": {"max_tokens": 512}}})
+    assert p["extract"]["max_tokens"] == 512 and p["extract"]["system"] == prompts.DEFAULTS["extract"]["system"]
+    with pytest.raises(ValueError):
+        prompts.resolve({"prompts": {"extract": {"max_token": 512}}})
 
 
 def test_normalise_and_metrics():
@@ -73,11 +166,13 @@ class GroundTruthBackend:
     def __init__(self, name, docs):
         self.name, self.model, self.docs = name, f"fake:{name}", docs
         self.instance_type = None
+        self.max_tokens = []
 
     async def warmup(self):
         pass
 
     async def complete(self, req):
+        self.max_tokens.append(req.max_tokens)
         if req.images:
             img = req.images[0]
             doc_dir = img.parent
@@ -96,8 +191,14 @@ def test_end_to_end_run_folder(fake_docs, tmp_path, monkeypatch):
 
     cfg = config_mod.load(ROOT / "config" / "example.yaml")
     cfg.raw["runner"]["mode"] = "local"
-    cfg.raw["bench"]["plans"]["t"] = [{"backend": "ocr", "concurrency": 2}]
-    cfg.raw["bench"]["extraction"]["pipelines"] = ["ocr->agent", "image->agent"]
+    # two self-hosted models in one run: nothing about a self-hosted backend's name is special
+    cfg.raw["backends"]["other-ocr"] = {**cfg.backend("unlimited-ocr"), "postprocess": []}
+    cfg.raw["bench"]["plans"]["t"] = [
+        {"backend": "unlimited-ocr", "concurrency": 2},
+        {"backend": "other-ocr", "concurrency": 1},
+    ]
+    cfg.raw["bench"]["extraction"]["pipelines"] = ["unlimited-ocr->agent", "other-ocr->agent", "image->agent"]
+    cfg.raw["bench"]["prompts"] = {"extract": {"max_tokens": 1000}}
     monkeypatch.setattr(runs, "RUNS", tmp_path / "runs")
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     fake = {}
@@ -114,7 +215,16 @@ def test_end_to_end_run_folder(fake_docs, tmp_path, monkeypatch):
             return Response("## Bottom line\nUse image->agent, 1234 is made up.\n\n## Caveats\nx", 900, 40)
 
     monkeypatch.setattr(summarize, "get_backend", lambda c, n: Writer(n, fake_docs))
-    monkeypatch.setattr(runs, "record_endpoint", lambda c, d: None)
+    recorded = []
+
+    def record(c, d, name):
+        recorded.append(name)
+        meta = runs.load(d)
+        meta["backends"][name].update(instance_type="ml.g5.xlarge", price_per_hour_usd=1.5, gpu="g", host="h")
+        runs.save(d, meta)
+        return meta["backends"][name]
+
+    monkeypatch.setattr(runs, "record_endpoint", record)
 
     class A:
         plan, id, stages, docs = "t", None, "all", str(fake_docs)
@@ -122,10 +232,20 @@ def test_end_to_end_run_folder(fake_docs, tmp_path, monkeypatch):
     cli.cmd_run(cfg, A())
     (d,) = (tmp_path / "runs").iterdir()
     meta = runs.load(d)
+    assert recorded == ["unlimited-ocr", "other-ocr"]
+    assert meta["schema_version"] == runs.SCHEMA_VERSION and meta["prompts"]["extract"]["max_tokens"] == 1000
     assert set(meta["stages"]) == {"transcribe", "extract", "score", "summarize"}
+    assert max(fake["sonnet-4.5"].max_tokens) == 1000  # the recorded prompt settings were used
     assert (d / "docs" / "manifest.json").exists() and (d / "config.yaml").exists()
     s = json.loads((d / "scores.json").read_text())
     assert all(a["field_accuracy"] == 1 for a in s["extraction"]["aggregate"])
+    assert {a["pipeline"] for a in s["extraction"]["aggregate"]} == {
+        "unlimited-ocr->agent",
+        "other-ocr->agent",
+        "image->agent",
+    }
+    basis = s["method"]["cost_basis"]
+    assert "best sustained" in basis["unlimited-ocr"]["basis"] and "best sustained" in basis["other-ocr"]["basis"]
     report = (d / "report.md").read_text()
     for needle in (
         "## Recommendation",
@@ -137,6 +257,8 @@ def test_end_to_end_run_folder(fake_docs, tmp_path, monkeypatch):
         "`image->agent`",
         "holiday_survey",
         "## Results",
+        "`other-ocr` runs on its own GPU",
+        "max 1,000 output tokens",
     ):
         assert needle in report, needle
     index = (tmp_path / "site" / "index.html").read_text()
@@ -194,10 +316,11 @@ def test_named_extractor_pipeline(fake_docs, tmp_path, monkeypatch):
         return GroundTruthBackend(n, fake_docs)
 
     monkeypatch.setattr(extract, "get_backend", get)
-    asyncio.run(extract.run(cfg, fake_docs, tmp_path, pipelines=["image->agent", "image->bedrock-haiku"]))
+    meta = {"backends": {}}
+    asyncio.run(extract.run(cfg, fake_docs, tmp_path, meta=meta, pipelines=["image->agent", "image->haiku-4.5"]))
     recs = [json.loads(x) for x in (tmp_path / "extractions.jsonl").read_text().splitlines()]
-    assert {r["agent"] for r in recs} == {cfg["bench"]["extraction"]["agent"], "bedrock-haiku"}
-    assert sorted(set(used)) == sorted({cfg["bench"]["extraction"]["agent"], "bedrock-haiku"})
+    assert {r["agent"] for r in recs} == {cfg["bench"]["extraction"]["agent"], "haiku-4.5"}
+    assert sorted(set(used)) == sorted({cfg["bench"]["extraction"]["agent"], "haiku-4.5"})
 
 
 def test_comparison_matches_on_model_not_key():
@@ -206,14 +329,21 @@ def test_comparison_matches_on_model_not_key():
     def run(rid, agent_model, acc):
         meta = {
             "id": rid,
-            "ocr": {"hf_repo": "x/ocr", "hf_revision": "abcdef12", "instance_type": "ml.g5.xlarge"},
-            "llm_backends": {"a": {"model": agent_model}},
+            "backends": {
+                "o": {
+                    "kind": "selfhosted",
+                    "hf_repo": "x/ocr",
+                    "hf_revision": "abcdef12",
+                    "instance_type": "ml.g5.xlarge",
+                },
+                "a": {"kind": "bedrock", "model": agent_model},
+            },
             "extraction": {"agent": "a", "agents": {"image->agent": "a"}},
         }
         scores = {
             "extraction": {"aggregate": [{"pipeline": "image->agent", "variant": "clean", "field_accuracy": acc}]},
             "transcription": {"aggregate": []},
-            "speed": [{"backend": "ocr", "concurrency": 1, "pages_per_min": 9.0}],
+            "speed": [{"backend": "o", "concurrency": 1, "pages_per_min": 9.0}],
         }
         return {"meta": meta, "scores": scores}
 
@@ -222,23 +352,28 @@ def test_comparison_matches_on_model_not_key():
     )
     md = reporting.comparison_md(c)
     assert "page images → Claude Sonnet 5.5" in md and "page images → Claude Sonnet 4.5 (2025-09-29)" in md
-    assert "ml.g5.xlarge" in md
+    assert "ml.g5.xlarge" in md and "| ocr |" in md  # self-hosted throughput row, labelled by model
 
 
 def test_same_model_pipelines_hidden():
-    from ocrbench import explain, reporting
+    from ocrbench import reporting, view
 
     meta = {
-        "ocr": {"hf_repo": "x/Unlimited-OCR"},
-        "llm_backends": {"s": {"model": "anthropic.claude-sonnet-5-5"}, "h": {"model": "anthropic.claude-haiku-5-5"}},
+        "backends": {
+            "ocr": {"kind": "selfhosted", "hf_repo": "x/Unlimited-OCR"},
+            "s": {"kind": "bedrock", "model": "anthropic.claude-sonnet-5-5"},
+            "h": {"kind": "bedrock", "model": "anthropic.claude-haiku-5-5"},
+        },
         "extraction": {
             "agent": "s",
             "pipelines": ["s->agent", "h->agent", "image->agent", "ocr->h"],
             "agents": {"s->agent": "s", "h->agent": "s", "image->agent": "s", "ocr->h": "h"},
         },
     }
-    assert explain.same_model(meta, "s->agent") and not explain.same_model(meta, "h->agent")
-    assert explain.pipeline_label(meta, "ocr->h") == "Unlimited-OCR text → Claude Haiku 5.5"
+    assert view.same_model(meta, "s->agent") and not view.same_model(meta, "h->agent")
+    assert view.pipeline_label(meta, "ocr->h") == "Unlimited-OCR text → Claude Haiku 5.5"
+    meta["backends"]["h"]["label"] = "Haiku (pinned)"
+    assert view.pipeline_label(meta, "ocr->h") == "Unlimited-OCR text → Haiku (pinned)"
     agg = [{"pipeline": p, "variant": "clean"} for p in meta["extraction"]["pipelines"]]
     vis = reporting.visible(meta, {"extraction": {"aggregate": agg, "docs": []}})
     assert [a["pipeline"] for a in vis["extraction"]["aggregate"]] == ["h->agent", "image->agent", "ocr->h"]
@@ -249,12 +384,12 @@ def test_focus_hides_repeat_backends_but_not_in_comparison():
 
     meta = {
         "id": "r",
-        "ocr": {"hf_repo": "x/ocr"},
         "report": {"hide_backends": ["old"]},
         "transcribers": ["ocr", "old", "new"],
-        "llm_backends": {
-            "old": {"model": "anthropic.claude-sonnet-4-5"},
-            "new": {"model": "anthropic.claude-sonnet-5-5"},
+        "backends": {
+            "ocr": {"kind": "selfhosted", "hf_repo": "x/ocr"},
+            "old": {"kind": "bedrock", "model": "anthropic.claude-sonnet-4-5"},
+            "new": {"kind": "bedrock", "model": "anthropic.claude-sonnet-5-5"},
         },
         "extraction": {
             "agent": "old",

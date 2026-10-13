@@ -14,18 +14,23 @@ The same folder is mirrored to s3://<bucket>/runs/<id>/ when the runner is Farga
 
 from __future__ import annotations
 
+import copy
 import json
 import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from . import prompts
 from .config import ROOT, Config
 
 RUNS = ROOT / "runs"
 STAGES = ["transcribe", "extract", "score", "summarize"]
 
-# What the reader needs to know about each GPU host type (on-demand price comes from the Pricing API).
+SCHEMA_VERSION = 2  # run.json layout; older runs are upgraded on load (see upgrade())
+
+# GPU as marketed (EC2 reports slightly less usable memory); host vCPU/RAM come from the EC2 API,
+# with the per-family ratio below as a fallback.
 GPU_INFO = {
     "ml.g4dn": "NVIDIA T4, 16 GB",
     "ml.g5": "NVIDIA A10G, 24 GB",
@@ -34,20 +39,27 @@ GPU_INFO = {
     "ml.p4d": "8x NVIDIA A100, 40 GB",
     "ml.p5": "8x NVIDIA H100, 80 GB",
 }
-HOST_INFO = {  # vCPU / RAM of the host: matters for image preprocessing
-    "xlarge": "4 vCPU, 16 GB RAM",
-    "2xlarge": "8 vCPU, 32 GB RAM",
-    "4xlarge": "16 vCPU, 64 GB RAM",
-    "8xlarge": "32 vCPU, 128 GB RAM",
-    "12xlarge": "48 vCPU, 192 GB RAM",
-}
+_VCPU = {"xlarge": 4, "2xlarge": 8, "4xlarge": 16, "8xlarge": 32, "12xlarge": 48, "16xlarge": 64}
+_GB_PER_VCPU = {"ml.g4dn": 4, "ml.g5": 4, "ml.g6": 4, "ml.g6e": 8}  # host RAM per vCPU, single-GPU sizes
 
 
-def describe_instance(itype: str | None) -> dict:
+def describe_instance(itype: str | None, region: str | None = None) -> dict:
+    """GPU and host of a SageMaker instance type: from the EC2 API if reachable, else the table above."""
     if not itype:
         return {}
     family, _, size = itype.rpartition(".")
-    return {"gpu": GPU_INFO.get(family, "?"), "host": HOST_INFO.get(size, "?")}
+    vcpu, per = _VCPU.get(size), _GB_PER_VCPU.get(family)
+    out = {"gpu": GPU_INFO.get(family, "?"), "host": f"{vcpu} vCPU, {vcpu * per} GB RAM" if vcpu and per else "?"}
+    if region:
+        from . import aws
+
+        live = aws.instance_specs(region, itype)
+        # EC2 reports usable GPU memory (22 GB for a 24 GB A10G): keep the marketed figure when known
+        out = {
+            "gpu": out["gpu"] if out["gpu"] != "?" else live.get("gpu", "?"),
+            "host": live.get("host") or out["host"],
+        }
+    return out
 
 
 def new_id(plan: str) -> str:
@@ -62,9 +74,39 @@ def run_dir(rid: str) -> Path:
     return RUNS / rid
 
 
+def upgrade(meta: dict) -> dict:
+    """run.json written before schema 2 (`ocr` + `llm_backends` blocks) -> one `backends` map with a kind
+    per backend, plus the prompts. Earlier runs used the default prompts (unchanged since the first release)."""
+    if meta.get("schema_version", 1) >= SCHEMA_VERSION:
+        return meta
+    m = copy.deepcopy(meta)
+    backends: dict[str, dict] = {}
+    o = m.pop("ocr", None)
+    if o is not None:
+        o.pop("name", None)
+        strip = o.pop("strip_grounding_tokens", True)
+        req = {"prompt": o.pop("prompt", None), "temperature": o.pop("request_temperature", 0.0)}
+        backends["ocr"] = {
+            "kind": "selfhosted",
+            "model": o.get("served_model_name"),
+            "via": f"vLLM on {o.get('serving') or 'SageMaker real-time endpoint'}",
+            **o,
+            "request": req,
+            "temperature": req["temperature"],
+            "postprocess": ["strip_grounding"] if strip else [],
+            "price_per_mtok": None,
+        }
+    for k, v in (m.pop("llm_backends", None) or {}).items():
+        v = dict(v)
+        backends[k] = {"kind": v.pop("provider", None), **v, "postprocess": []}
+    m["backends"] = backends
+    m.setdefault("prompts", prompts.DEFAULTS)
+    return {"schema_version": SCHEMA_VERSION, **m}
+
+
 def load(rid_or_dir: str | Path) -> dict:
     d = Path(rid_or_dir) if Path(rid_or_dir).is_dir() else run_dir(str(rid_or_dir))
-    return json.loads((d / "run.json").read_text(encoding="utf-8"))
+    return upgrade(json.loads((d / "run.json").read_text(encoding="utf-8")))
 
 
 def save(d: Path, meta: dict) -> None:
@@ -102,19 +144,42 @@ def documents_summary(docs: Path) -> dict:
     return {"count": len(manifest), "pages": pages, "page_images": pages * 2, "types": types}
 
 
-def backends_summary(cfg: Config) -> dict:
-    """Model identity and price per backend: no hosts, credentials or auth details."""
-    out = {}
-    for k, spec in cfg["llm_backends"].items():
-        out[k] = {
-            "provider": spec.get("provider"),
+def backend_summary(spec: dict) -> dict:
+    """Model identity, settings and price of one backend: no hosts, URLs, credentials or auth details."""
+    common = {"kind": spec["kind"], "label": spec.get("label"), "postprocess": list(spec.get("postprocess") or [])}
+    if spec["kind"] != "selfhosted":
+        return {
+            **common,
             "model": spec.get("model") or spec.get("model_id"),
             "price_per_mtok": spec.get("price_per_mtok"),
             "temperature": spec.get("temperature", 0.0),
             "reasoning_effort": spec.get("reasoning_effort"),
-            "via": "AWS Bedrock" if spec.get("provider") == "bedrock" else "OpenAI-compatible gateway",
+            "via": "AWS Bedrock" if spec["kind"] == "bedrock" else "OpenAI-compatible gateway",
         }
-    return out
+    sm, req = spec.get("sagemaker") or {}, spec.get("request") or {}
+    serving = "direct vLLM URL" if spec.get("direct_url") else "SageMaker real-time endpoint"
+    return {
+        **common,
+        "model": spec["served_model_name"],
+        "hf_repo": spec.get("hf_repo"),
+        "hf_revision": spec.get("hf_revision"),
+        "source_image": spec.get("source_image"),
+        "serve_args": spec.get("serve_args"),
+        "serving": serving,
+        "via": f"vLLM on {serving}",
+        "inference_ami_version": sm.get("inference_ami_version"),
+        "instance_pools": sm.get("instance_pools"),
+        "request": {k: req.get(k) for k in ("prompt", "max_tokens", "temperature", "extra_body")},
+        "temperature": req.get("temperature", 0.0),
+        "price_per_mtok": None,
+        "instance_type": None,
+        "price_per_hour_usd": None,
+        "image_digest": None,
+    }
+
+
+def backends_summary(cfg: Config, names: list[str] | None = None) -> dict:
+    return {k: backend_summary(cfg.backend(k)) for k in (names if names is not None else cfg.backends)}
 
 
 def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
@@ -123,10 +188,11 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     d.mkdir(parents=True)
     shutil.copytree(docs, d / "docs")
     shutil.copy2(cfg.path, d / "config.yaml")
-    o, ex = cfg["ocr"], dict(cfg["bench"]["extraction"])
+    ex = dict(cfg["bench"]["extraction"])
     ex["pipelines"] = (ex.get("plan_pipelines") or {}).get(plan, ex["pipelines"])
     summ = cfg["bench"].get("summary") or {}
     meta = {
+        "schema_version": SCHEMA_VERSION,
         "id": rid,
         "plan": plan,
         "plan_description": (cfg["bench"].get("plan_descriptions") or {}).get(plan, ""),
@@ -140,23 +206,8 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
             **documents_summary(d / "docs"),
             **{k: cfg["bench"]["docs"].get(k) for k in ("seed", "per_type")},
         },
-        "ocr": {
-            "name": o.get("name", "ocr"),
-            "hf_repo": o["hf_repo"],
-            "hf_revision": o["hf_revision"],
-            "served_model_name": o["served_model_name"],
-            "source_image": o["source_image"],
-            "serving": "direct vLLM URL" if o.get("direct_url") else "SageMaker real-time endpoint",
-            "inference_ami_version": o.get("sagemaker", {}).get("inference_ami_version"),
-            "instance_pools": o.get("sagemaker", {}).get("instance_pools"),
-            "serve_args": o.get("serve_args"),
-            "prompt": o.get("request", {}).get("prompt"),
-            "strip_grounding_tokens": bool(o.get("strip_grounding_tokens", True)),
-            "instance_type": None,
-            "price_per_hour_usd": None,
-            "image_digest": None,
-        },
-        "llm_backends": backends_summary(cfg),
+        "backends": backends_summary(cfg),
+        "prompts": prompts.resolve(cfg["bench"]),
         "transcribers": list(
             dict.fromkeys(it["backend"] for it in (cfg.plan(plan) if plan in cfg["bench"]["plans"] else []))
         ),
@@ -174,21 +225,23 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     return d
 
 
-def record_endpoint(cfg: Config, d: Path) -> None:
-    """Fill in the GPU host actually serving the model, its price and the deployed image digest."""
+def record_endpoint(cfg: Config, d: Path, name: str) -> dict:
+    """Fill in the GPU host actually serving a self-hosted backend, its price and the deployed image digest."""
     from . import aws
 
     meta = load(d)
-    if cfg["ocr"].get("direct_url"):
-        meta["ocr"]["instance_type"] = "external (ocr.direct_url)"
+    spec, b = cfg.backend(name), meta["backends"][name]
+    if spec.get("direct_url"):
+        b["instance_type"] = "external (direct_url)"
     else:
-        info = aws.endpoint_info(cfg)
-        meta["ocr"].update(info)
+        info = aws.endpoint_info(cfg, name)
+        b.update(info)
         if info.get("instance_type"):
-            override = cfg["ocr"].get("sagemaker", {}).get("price_per_hour_usd")
-            meta["ocr"]["price_per_hour_usd"] = override or aws.sagemaker_hourly_usd(cfg.region, info["instance_type"])
-            meta["ocr"].update(describe_instance(info["instance_type"]))
+            override = (spec.get("sagemaker") or {}).get("price_per_hour_usd")
+            b["price_per_hour_usd"] = override or aws.sagemaker_hourly_usd(cfg.region, info["instance_type"])
+            b.update(describe_instance(info["instance_type"], cfg.region))
     save(d, meta)
+    return b
 
 
 def stage(d: Path, name: str, **info) -> None:
@@ -215,14 +268,17 @@ def refresh_summary_setup(cfg: Config, d: Path) -> None:
     """
     import yaml
 
+    from .config import upgrade as upgrade_config
+
     meta = load(d)
     key = (cfg["bench"].get("summary") or {}).get("agent") or cfg["bench"]["extraction"]["agent"]
-    snap = yaml.safe_load((d / "config.yaml").read_text(encoding="utf-8"))
-    snap.setdefault("llm_backends", {})[key] = cfg["llm_backends"][key]
+    snap = upgrade_config(yaml.safe_load((d / "config.yaml").read_text(encoding="utf-8")))
+    snap.setdefault("backends", {})[key] = cfg.backend(key)
     snap.setdefault("bench", {})["summary"] = {"agent": key}
     (d / "config.yaml").write_text(yaml.safe_dump(snap, sort_keys=False, allow_unicode=True), encoding="utf-8")
     meta["summary"] = {"agent": key}
-    meta["llm_backends"][key] = backends_summary(cfg)[key]
+    meta["backends"][key] = backend_summary(cfg.backend(key))
+    meta.setdefault("prompts", {})["summarize"] = prompts.resolve(cfg["bench"])["summarize"]
     desc = (cfg["bench"].get("plan_descriptions") or {}).get(meta["plan"])
     if desc:
         meta["plan_description"] = desc

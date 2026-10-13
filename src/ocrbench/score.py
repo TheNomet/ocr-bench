@@ -25,7 +25,7 @@ from pathlib import Path
 
 from rapidfuzz.distance import Levenshtein
 
-from .backends.vllm_ocr import strip_grounding
+from . import postprocess
 
 _TAGS = re.compile(r"</?[a-zA-Z][^>]*>")
 # One number token: digits joined by . , : / - (dates, decimals, account numbers). Spaces separate tokens;
@@ -162,8 +162,8 @@ def _read(path: Path) -> str | None:
 
 # --------------------------------------------------------------------------- score
 def speed_rows(meta: dict, runs: list[dict], transcripts: list[dict]) -> list[dict]:
-    prices = {k: v.get("price_per_mtok") for k, v in (meta.get("llm_backends") or {}).items()}
-    gpu_hour = (meta.get("ocr") or {}).get("price_per_hour_usd")
+    be = meta["backends"]
+    prices = {k: v.get("price_per_mtok") for k, v in be.items()}
     rows = []
     for run in runs:
         rs = [r for r in transcripts if r["run_id"] == run["run_id"] and r["backend"] == run["backend"]]
@@ -173,7 +173,8 @@ def speed_rows(meta: dict, runs: list[dict], transcripts: list[dict]) -> list[di
         ct = st.mean([r["completion_tokens"] for r in ok if r.get("completion_tokens")] or [0])
         ppm = len(ok) / run["wall_s"] * 60 if run["wall_s"] else 0
         per_page = _token_cost(prices.get(run["backend"]), pt, ct)
-        if per_page is None and run["backend"] == "ocr" and gpu_hour and ppm:
+        gpu_hour = (be.get(run["backend"]) or {}).get("price_per_hour_usd")  # self-hosted: billed per hour
+        if per_page is None and gpu_hour and ppm:
             per_page = gpu_hour / (ppm * 60)
         rows.append(
             {
@@ -197,8 +198,9 @@ def speed_rows(meta: dict, runs: list[dict], transcripts: list[dict]) -> list[di
     return rows
 
 
-def cost_basis(speed: list[dict]) -> dict[str, dict]:
-    """Per backend: the per-page cost used for pipeline totals, and why."""
+def cost_basis(speed: list[dict], hourly: set[str]) -> dict[str, dict]:
+    """Per backend: the per-page cost used for pipeline totals, and why. `hourly`: backends billed per hour
+    (self-hosted), whose cost per page falls with throughput."""
     out: dict[str, dict] = {}
     for be in sorted({s["backend"] for s in speed}):
         rows = [s for s in speed if s["backend"] == be and s["cost_per_1k_pages_usd"] is not None]
@@ -206,7 +208,7 @@ def cost_basis(speed: list[dict]) -> dict[str, dict]:
             out[be] = {"cost_per_1k_pages_usd": None, "basis": "no price configured"}
             continue
         c1 = next((s for s in rows if s["concurrency"] == 1), None)
-        if be == "ocr":
+        if be in hourly:
             ok = [s for s in rows if s["pages"] and s["errors"] / s["pages"] <= SUSTAINED_MAX_ERROR_RATE]
             best = max(ok or rows, key=lambda s: s["pages_per_min"])
             out[be] = {
@@ -235,7 +237,7 @@ def pick_transcript(current: dict | None, new: dict) -> dict | None:
 
 
 def transcription(meta: dict, docs: Path, run_dir: Path, transcripts: list[dict], manifest: dict) -> tuple[list, list]:
-    strip = bool((meta.get("ocr") or {}).get("strip_grounding_tokens", True))
+    steps = {k: b.get("postprocess") or [] for k, b in meta["backends"].items()}
     attempted: dict[tuple, dict | None] = {}
     for r in transcripts:  # see pick_transcript; failed attempts still mark the page as expected
         k = (r["backend"], r["doc_id"], r["page"], r["variant"])
@@ -253,8 +255,7 @@ def transcription(meta: dict, docs: Path, run_dir: Path, transcripts: list[dict]
         if hyp is None:
             m, ok = failed_page_metrics(nums), False
         else:
-            if be == "ocr" and strip:
-                hyp = strip_grounding(hyp)
+            hyp = postprocess.apply(steps.get(be), hyp)
             m, ok = page_metrics(gt, nums, hyp), True
         pages.append(
             {
@@ -306,7 +307,7 @@ def extraction(
     transcripts: list[dict],
     basis: dict[str, dict],
 ) -> tuple[list, list]:
-    prices = {k: v.get("price_per_mtok") for k, v in (meta.get("llm_backends") or {}).items()}
+    prices = {k: v.get("price_per_mtok") for k, v in meta["backends"].items()}
     latest: dict[tuple, dict] = {}
     for e in records:  # latest record per (pipeline, doc, variant); successes beat failures
         k = (e["pipeline"], e["doc_id"], e["variant"])
@@ -401,12 +402,15 @@ def extraction(
 
 def score(meta: dict, run_dir: Path) -> dict:
     """Score runs/<id>/ using only its own files."""
+    from .runs import upgrade
+
+    meta = upgrade(meta)
     run_dir = Path(run_dir)
     docs = run_dir / "docs"
     manifest = {d["id"]: d for d in json.loads((docs / "manifest.json").read_text(encoding="utf-8"))}
     transcripts = _jsonl(run_dir / "transcripts.jsonl")
     speed = speed_rows(meta, _jsonl(run_dir / "runs.jsonl"), transcripts)
-    basis = cost_basis(speed)
+    basis = cost_basis(speed, {k for k, b in meta["backends"].items() if b["kind"] == "selfhosted"})
     tagg, tpages = transcription(meta, docs, run_dir, transcripts, manifest)
     eagg, edocs = extraction(meta, docs, run_dir, _jsonl(run_dir / "extractions.jsonl"), manifest, transcripts, basis)
     return {
