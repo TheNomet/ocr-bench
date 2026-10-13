@@ -23,8 +23,8 @@
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
-| `sonnet-5.5` | 5.3 | 175 (16) |
 | `haiku-5.5` | 4.3 | 136 (16) |
+| `sonnet-5.5` | 5.3 | 175 (16) |
 | `ocr` | 6.1 | 29 (16) |
 
 Fields missed most often (count over clean + degraded documents):
