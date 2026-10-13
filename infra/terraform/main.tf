@@ -133,6 +133,30 @@ resource "aws_ecr_repository" "repo" {
   }
 }
 
+# Rebuilds move the tags, leaving the previous images untagged; deployments pin digests and every
+# rebuild re-applies, so untagged images can go. Mirrors of source images (mirror-<digest>, vllm repo)
+# are big: keep the two newest (an expired one is simply mirrored again by the next `just images`).
+resource "aws_ecr_lifecycle_policy" "repo" {
+  for_each   = aws_ecr_repository.repo
+  repository = each.value.name
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "keep the two newest source-image mirrors"
+        selection    = { tagStatus = "tagged", tagPrefixList = ["mirror-"], countType = "imageCountMoreThan", countNumber = 2 }
+        action       = { type = "expire" }
+      },
+      {
+        rulePriority = 2
+        description  = "expire untagged images after 14 days"
+        selection    = { tagStatus = "untagged", countType = "sinceImagePushed", countUnit = "days", countNumber = 14 }
+        action       = { type = "expire" }
+      },
+    ]
+  })
+}
+
 # ---------------------------------------------------------------------------
 # SageMaker models, one per self-hosted backend (endpoints are created by `ocrbench endpoint up <name>`)
 # ---------------------------------------------------------------------------
@@ -145,6 +169,16 @@ resource "aws_iam_role" "sagemaker" {
   })
 }
 
+# Endpoint logs. SageMaker would create these itself, without retention; Terraform owns them so they
+# expire (and the role needs no logs:CreateLogGroup). A stack whose endpoints ran before this existed
+# already has the groups: import each one once, e.g.
+#   just tf import 'aws_cloudwatch_log_group.endpoint["<name>"]' /aws/sagemaker/Endpoints/<name_prefix>-<name>
+resource "aws_cloudwatch_log_group" "endpoint" {
+  for_each          = var.selfhosted
+  name              = "/aws/sagemaker/Endpoints/${local.p}-${each.key}"
+  retention_in_days = 14
+}
+
 resource "aws_iam_role_policy" "sagemaker" {
   role = aws_iam_role.sagemaker.id
   policy = jsonencode({
@@ -155,7 +189,7 @@ resource "aws_iam_role_policy" "sagemaker" {
       { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = "*" },
       { Effect = "Allow", Action = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"],
       Resource = aws_ecr_repository.repo["vllm"].arn },
-      { Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"],
+      { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"],
       Resource = "arn:aws:logs:${var.region}:${var.account_id}:log-group:/aws/sagemaker/*" },
       { Effect = "Allow", Action = ["cloudwatch:PutMetricData"], Resource = "*" },
     ]
@@ -177,7 +211,7 @@ resource "aws_sagemaker_model" "selfhosted" {
       }
     }
   }
-  depends_on = [aws_iam_role_policy.sagemaker]
+  depends_on = [aws_iam_role_policy.sagemaker, aws_cloudwatch_log_group.endpoint] # groups exist before any endpoint
 }
 
 # ---------------------------------------------------------------------------

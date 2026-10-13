@@ -18,10 +18,11 @@ import copy
 import json
 import shutil
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import prompts
+from . import prompts, view
 from .config import ROOT, Config
 
 RUNS = ROOT / "runs"
@@ -187,8 +188,8 @@ def plan_pipelines(cfg: Config, plan: str) -> list[str]:
     transcript the plan doesn't produce: they could only fail."""
     ex = cfg["bench"]["extraction"]
     pipes = (ex.get("plan_pipelines") or {}).get(plan, ex["pipelines"])
-    made = {it["backend"] for it in cfg.plan(plan)} if plan in cfg["bench"]["plans"] else set()
-    keep = [p for p in pipes if p.split("->")[0] in made | {"image"}]
+    made = {it["backend"] for it in cfg.plan(plan)}
+    keep = [p for p in pipes if view.source(p) in made | {"image"}]
     dropped = [p for p in pipes if p not in keep]
     if dropped:
         print(f"note: plan {plan!r} doesn't transcribe with their source, so skipping {', '.join(dropped)}")
@@ -196,6 +197,8 @@ def plan_pipelines(cfg: Config, plan: str) -> list[str]:
 
 
 def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
+    """New runs/<id>/ for `plan`. Raises KeyError (before creating anything) if the plan isn't defined."""
+    items = cfg.plan(plan)
     rid = rid or new_id(plan)
     d = run_dir(rid)
     d.mkdir(parents=True)
@@ -203,35 +206,30 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     shutil.copy2(cfg.path, d / "config.yaml")
     ex = dict(cfg["bench"]["extraction"])
     ex["pipelines"] = plan_pipelines(cfg, plan)
-    summ = cfg["bench"].get("summary") or {}
     meta = {
         "schema_version": SCHEMA_VERSION,
         "id": rid,
         "plan": plan,
-        "plan_description": (cfg["bench"].get("plan_descriptions") or {}).get(plan, ""),
-        "plan_items": cfg.plan(plan) if plan in cfg["bench"]["plans"] else [],
-        "report": {"hide_backends": ((cfg["bench"].get("plan_report") or {}).get(plan) or {}).get("hide_backends", [])},
+        "plan_description": cfg.plan_description(plan),
+        "plan_items": items,
+        "report": {"hide_backends": cfg.plan_report(plan).get("hide_backends") or []},
         "created": datetime.now().isoformat(timespec="seconds"),
         "git_commit": _git_commit(),
         "region": cfg.region,
         "runner": {k: cfg["runner"].get(k) for k in ("mode", "cpu", "memory")},
         "documents": {
             **documents_summary(d / "docs"),
-            **{k: cfg["bench"]["docs"].get(k) for k in ("seed", "per_type")},
+            **{k: cfg["bench"]["docs"][k] for k in ("seed", "per_type")},
         },
         "backends": backends_summary(cfg),
         "prompts": prompts.resolve(cfg["bench"]),
-        "transcribers": list(
-            dict.fromkeys(it["backend"] for it in (cfg.plan(plan) if plan in cfg["bench"]["plans"] else []))
-        ),
+        "transcribers": list(dict.fromkeys(it["backend"] for it in items)),
         "extraction": {
             "agent": ex["agent"],
             "pipelines": ex["pipelines"],
-            "agents": {
-                p: (ex["agent"] if p.split("->", 1)[1] == "agent" else p.split("->", 1)[1]) for p in ex["pipelines"]
-            },
+            "agents": {p: view.extractor_key(ex["agent"], p) for p in ex["pipelines"]},
         },
-        "summary": {"agent": summ.get("agent", ex["agent"])},
+        "summary": {"agent": cfg.summary_agent},
         "stages": {},
     }
     save(d, meta)
@@ -253,6 +251,18 @@ def record_endpoint(cfg: Config, d: Path, name: str) -> dict:
             override = (spec.get("sagemaker") or {}).get("price_per_hour_usd")
             b["price_per_hour_usd"] = override or aws.sagemaker_hourly_usd(cfg.region, info["instance_type"])
             b.update(describe_instance(info["instance_type"], cfg.region))
+            if b["price_per_hour_usd"] is None:
+                print(
+                    f"warning: no hourly price found for {info['instance_type']} ({name}): its costs will be "
+                    f"missing; set backends.{name}.sagemaker.price_per_hour_usd",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                f"warning: could not read the instance type of endpoint {cfg.endpoint_name(name)} ({name}): "
+                "GPU, host and price will be missing from run.json",
+                file=sys.stderr,
+            )
     save(d, meta)
     return b
 
@@ -284,7 +294,7 @@ def refresh_summary_setup(cfg: Config, d: Path) -> None:
     from .config import upgrade as upgrade_config
 
     meta = load(d)
-    key = (cfg["bench"].get("summary") or {}).get("agent") or cfg["bench"]["extraction"]["agent"]
+    key = cfg.summary_agent
     snap = upgrade_config(yaml.safe_load((d / "config.yaml").read_text(encoding="utf-8")))
     snap.setdefault("backends", {})[key] = cfg.backend(key)
     snap.setdefault("bench", {})["summary"] = {"agent": key}
@@ -292,7 +302,7 @@ def refresh_summary_setup(cfg: Config, d: Path) -> None:
     meta["summary"] = {"agent": key}
     meta["backends"][key] = backend_summary(cfg.backend(key))
     meta.setdefault("prompts", {})["summarize"] = prompts.resolve(cfg["bench"])["summarize"]
-    desc = (cfg["bench"].get("plan_descriptions") or {}).get(meta["plan"])
+    desc = cfg.plan_description(meta["plan"])
     if desc:
         meta["plan_description"] = desc
     save(d, meta)

@@ -136,8 +136,7 @@ def make_fixture(tmp_path: Path) -> tuple[Path, Path, dict]:
             )
 
     scores = {
-        "tag": "suite",
-        "generated": "2026-10-08T17:00:00",
+        "run_id": "suite",
         "speed": [
             {
                 "backend": "ocr",
@@ -275,7 +274,10 @@ def test_build_site(tmp_path: Path) -> None:
     out = tmp_path / "site"
     page = RunPage(
         facts_md="## Key facts\n\n| question | clean |\n|---|---|\n| most accurate | `ocr->agent` |",
-        recommendation="## Bottom line\n\nThe **ocr** backend is `fast`.\n\n- point one\n- point <two>\n\n| a | b |\n|---|---|\n| 1 | 2 |",
+        recommendation=(
+            "## Bottom line\n\nThe **ocr** backend is `fast`.\n\n- point one\n- point <two>\n\n"
+            "## Recommendation\n\n| a | b |\n|---|---|\n| 1 | 2 |"
+        ),
         recommendation_author="LLM comment by w (m)",
         unverified_numbers=["1234"],
         setup_md="## Setup\n\n### Models\n\n| role | name |\n|---|---|\n| transcriber | `ocr` |",
@@ -302,6 +304,12 @@ def test_build_site(tmp_path: Path) -> None:
     ]:
         assert (out / "assets" / rel).is_file(), rel
     assert (out / "assets/invoice-01/p1.png").read_bytes() == (docs / "invoice-01/p1.png").read_bytes()
+    # Grid thumbnail of each document's first clean page, regenerated only when the source is newer.
+    thumb = out / "assets/invoice-01/p1.thumb.webp"
+    assert thumb.read_bytes()[8:12] == b"WEBP" and not (out / "assets/invoice-01/p2.thumb.webp").exists()
+    mtime = thumb.stat().st_mtime_ns
+    build_site(docs, run, scores, out, page)
+    assert thumb.stat().st_mtime_ns == mtime
 
     idx_html = index.read_text(encoding="utf-8")
     inv_html = inv.read_text(encoding="utf-8")
@@ -325,7 +333,8 @@ def test_build_site(tmp_path: Path) -> None:
         "0.030",
         "3.10",
         'href="docs/invoice-01.html"',
-        'src="assets/invoice-01/p1.png"',
+        'src="assets/invoice-01/p1.thumb.webp" alt="invoice-01 page 1" width="1" height="1" loading="lazy" '
+        'decoding="async"',
         "Søknad &lt;skjema&gt;",
         'id="facts"',
         "Unverified numbers (not in the key facts): 1234",
@@ -351,6 +360,23 @@ def test_build_site(tmp_path: Path) -> None:
     assert "Page 2" in inv_html
     # Diff markup: llm's 48218 vs truth 48213.
     assert "<del>48213</del>" in inv_html and "<ins>48218</ins>" in inv_html
+    assert "<h3>Word diff vs ground truth: llm</h3>" in inv_html
+    # The document page keeps the full-size images.
+    assert 'src="../assets/invoice-01/p1.png"' in inv_html
+
+    # Run page headings: the four sections are <h2>; the LLM's own "Recommendation" section is renamed.
+    for h in ("Key facts", "Recommendation", "Setup", "Results"):
+        assert re.search(rf"<h2[^>]*>{h}", idx_html), h
+    assert "<h3>Models</h3>" in idx_html and "<h3>Choice by goal</h3>" in idx_html
+    assert "<h3>Recommendation</h3>" not in idx_html
+
+    # Accessible tabs and toggles.
+    assert 'role="tablist"' in inv_html
+    assert 'role="tab" id="tab-p1-clean-0" aria-controls="panel-p1-clean-0"' in inv_html
+    assert 'class="active" aria-selected="true"' in inv_html and 'aria-selected="false"' in inv_html
+    assert 'role="tabpanel" id="panel-p1-clean-0" aria-labelledby="tab-p1-clean-0"' in inv_html
+    assert 'data-variant="clean" aria-pressed="true"' in inv_html
+    assert 'data-variant="degraded" aria-pressed="false"' in inv_html
     # Unscored transcript still offered (raw output fallback).
     assert "Skjema Navn: Ola" in form_html
 
@@ -362,11 +388,11 @@ def test_build_site(tmp_path: Path) -> None:
 
     # Every href/src is relative (no absolute paths, no external URLs), except the top-bar repo link
     # (and the inline favicon).
-    from ocrbench.report.site import REPO_URL
+    from ocrbench.report.shell import repo_url
 
     for page in (idx_html, inv_html, form_html):
         for url in re.findall(r'(?:href|src)="([^"]*)"', page):
-            if url == REPO_URL or url.startswith("data:image/svg+xml"):
+            if url == repo_url() or url.startswith("data:image/svg+xml"):
                 continue
             assert not url.startswith(("/", "http:", "https:", "file:")), url
             assert str(tmp_path) not in url
@@ -375,8 +401,7 @@ def test_build_site(tmp_path: Path) -> None:
 def test_empty_scores(tmp_path: Path) -> None:
     docs, run, _ = make_fixture(tmp_path)
     scores = {
-        "tag": "empty",
-        "generated": "",
+        "run_id": "empty",
         "speed": [],
         "transcription": {"aggregate": [], "pages": []},
         "extraction": {"aggregate": [], "docs": []},
@@ -389,7 +414,9 @@ def test_empty_scores(tmp_path: Path) -> None:
 
 
 def test_markdown_lite_escapes() -> None:
-    out = render_md("## T <x>\n\nhello **b** `<c>` & d")
+    out = render_md("## T <x>\n\nhello **b** `<c>` & d *see* a * b")
     assert "<h3>T &lt;x&gt;</h3>" in out
+    assert "<em>see</em> a * b" in out
+    assert render_md("## T", shift=0) == "<h2>T</h2>"
     assert "<strong>b</strong>" in out and "<code>&lt;c&gt;</code>" in out and "&amp; d" in out
     assert render_md("") == ""

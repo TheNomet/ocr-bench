@@ -45,12 +45,8 @@ Rules:
 
 
 def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
-    from .reporting import focused_meta, visible
-
-    scores = visible(meta, scores)
-    meta = focused_meta(meta)
-    facts_md = to_md(compute(meta, scores))
-    agent = meta["extraction"]["agent"]
+    meta, scores = view.focus(meta, scores)
+    facts_md = to_md(compute(meta, scores), view.pipeline_labels(meta))
     lines = []
     for t in meta.get("transcribers") or []:
         b = view.spec(meta, t)
@@ -61,18 +57,7 @@ def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
             )
         else:
             lines.append(f"- `{t}`: {view.label(meta, t)}, temperature {b.get('temperature', 0.0)} (transcriber)")
-    others = sorted({view.extractor(meta, p) for p in meta["extraction"]["pipelines"]} - {agent})
-    a = view.spec(meta, agent)
-    lines.append(
-        "- "
-        + explain.agent_note(
-            a.get("model"),
-            a.get("temperature", 0.0),
-            others,
-            label=view.label(meta, agent),
-            max_tokens=int(prompts.of(meta, "extract")["max_tokens"]),
-        )
-    )
+    lines.append("- " + view.agent_note(meta))
     lines.append(
         "- Extractor per pipeline (the model after the arrow): "
         + "; ".join(f"`{p}` -> {view.label(meta, view.extractor(meta, p))}" for p in meta["extraction"]["pipelines"])
@@ -127,7 +112,7 @@ def unverified_numbers(text: str, source: str) -> list[str]:
 
 
 def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
-    name = (cfg["bench"].get("summary") or {}).get("agent") or cfg["bench"]["extraction"]["agent"]
+    name = cfg.summary_agent
     be = get_backend(cfg, name)
     prompt, source = build_prompt(meta, scores)
     pr = prompts.of(meta, "summarize")
@@ -135,10 +120,7 @@ def run(cfg: Config, run_dir: Path, meta: dict, scores: dict) -> str:
     async def go():
         await be.warmup()
         req = Request(pr["system"], prompt, max_tokens=int(pr["max_tokens"]), temperature=float(pr["temperature"]))
-        resp, _, _ = await call_with_retries(
-            lambda: be.complete(req),
-            cfg["bench"].get("max_retries", 4),
-        )
+        resp, _, _ = await call_with_retries(lambda: be.complete(req), int(cfg["bench"]["max_retries"]))
         return resp
 
     resp = asyncio.run(go())

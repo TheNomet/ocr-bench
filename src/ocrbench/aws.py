@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import boto3
 from boto3.s3.transfer import TransferConfig
+from botocore.exceptions import BotoCoreError, ClientError
 
 from .config import Config
-
-SM_POOL_NOTE = (
-    "Endpoint config + endpoint are created here, not in Terraform: they use "
-    "ProductionVariant.InstancePools (GPU-type fallback), which the AWS provider lacks."
-)
-
 
 # ---------------------------------------------------------------------------- S3
 # Files are uploaded in one part (up to 256 MB), so an object's ETag is the MD5 of its content and a sync can
@@ -119,17 +114,36 @@ def schedule_auto_delete(cfg: Config, name: str, role_arn: str | None) -> None:
 
 
 def cancel_auto_delete(cfg: Config, name: str) -> None:
-    with contextlib.suppress(Exception):  # absent or already fired
+    try:
         boto3.client("scheduler", region_name=cfg.region).delete_schedule(Name=_schedule_name(cfg, name))
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") != "ResourceNotFoundException":  # absent or already fired
+            raise
+
+
+# Endpoint configs are named <endpoint>-<timestamp> (endpoint_up); endpoint_down deletes only those.
+_CONFIG_STAMP = "%Y%m%d%H%M%S"
+
+
+def endpoint_config_name(endpoint: str, at: datetime) -> str:
+    return f"{endpoint}-{at:{_CONFIG_STAMP}}"
+
+
+def is_endpoint_config_of(endpoint: str, config_name: str) -> bool:
+    """True only for configs endpoint_up made for this endpoint: not for another backend whose endpoint
+    name starts the same way (`<prefix>-ocr` vs `<prefix>-ocr-v2`)."""
+    return re.fullmatch(re.escape(endpoint) + r"-\d{14}", config_name) is not None
 
 
 def endpoint_up(cfg: Config, backend: str, scheduler_role_arn: str | None = None) -> None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     s = _sm_spec(cfg, backend)
     name = cfg.endpoint_name(backend)
-    conf = f"{name}-{datetime.now():%Y%m%d%H%M%S}"
+    conf = endpoint_config_name(name, datetime.now())
     pools = [{"InstanceType": t, "Priority": i} for i, t in enumerate(s["instance_pools"], start=1)]
-    tags = [{"Key": k, "Value": str(v)} for k, v in (cfg["aws"].get("tags") or {}).items()]
+    # Same Stack tag as the Terraform-managed resources, so GPU spend is attributable per stack.
+    tag_map = {"ManagedBy": "ocrbench", "Stack": cfg.prefix, **(cfg["aws"].get("tags") or {})}
+    tags = [{"Key": k, "Value": str(v)} for k, v in tag_map.items()]
     sm.create_endpoint_config(
         EndpointConfigName=conf,
         Tags=tags,
@@ -177,7 +191,7 @@ def endpoint_info(cfg: Config, backend: str) -> dict:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     try:
         v = sm.describe_endpoint(EndpointName=cfg.endpoint_name(backend))["ProductionVariants"][0]
-    except Exception:  # noqa: BLE001
+    except (BotoCoreError, ClientError, KeyError, IndexError):  # no endpoint, or no variant yet
         return {}
     live = [p["InstanceType"] for p in v.get("InstancePools") or [] if p.get("CurrentInstanceCount")]
     imgs = v.get("DeployedImages") or [{}]
@@ -192,7 +206,7 @@ def endpoint_instance_type(cfg: Config, backend: str) -> str | None:
     sm = boto3.client("sagemaker", region_name=cfg.region)
     try:
         v = sm.describe_endpoint(EndpointName=cfg.endpoint_name(backend))["ProductionVariants"][0]
-    except Exception:  # noqa: BLE001
+    except (BotoCoreError, ClientError, KeyError, IndexError):  # no endpoint, or no variant yet
         return None
     pools = v.get("InstancePools") or []
     live = [p["InstanceType"] for p in pools if p.get("CurrentInstanceCount")]
@@ -216,7 +230,7 @@ def endpoint_down(cfg: Config, backend: str) -> None:
     cancel_auto_delete(cfg, backend)
     for page in sm.get_paginator("list_endpoint_configs").paginate(NameContains=name):
         for c in page["EndpointConfigs"]:
-            if c["EndpointConfigName"].startswith(f"{name}-"):  # only ours, not e.g. "my{name}-..."
+            if is_endpoint_config_of(name, c["EndpointConfigName"]):
                 sm.delete_endpoint_config(EndpointConfigName=c["EndpointConfigName"])
                 print(f"deleted config {c['EndpointConfigName']}")
 
@@ -228,7 +242,7 @@ def instance_specs(region: str, instance_type: str) -> dict:
         t = boto3.client("ec2", region_name=region).describe_instance_types(
             InstanceTypes=[instance_type.removeprefix("ml.")]
         )["InstanceTypes"][0]
-    except Exception:  # noqa: BLE001
+    except (BotoCoreError, ClientError, KeyError, IndexError):  # unreachable, or an unknown type
         return {}
     gpus = (t.get("GpuInfo") or {}).get("Gpus") or []
     gpu = "?"
@@ -261,7 +275,7 @@ def sagemaker_hourly_usd(region: str, instance_type: str) -> float | None:
             for t in p["terms"]["OnDemand"].values():
                 for dim in t["priceDimensions"].values():
                     return float(dim["pricePerUnit"]["USD"])
-    except Exception:  # noqa: BLE001 — pricing is informational
+    except (BotoCoreError, ClientError, KeyError, ValueError, TypeError):  # pricing is informational
         return None
     return None
 

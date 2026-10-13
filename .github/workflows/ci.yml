@@ -1,12 +1,12 @@
-# Lint, type check, tests and a secret scan on every push and pull request.
-# Actions are pinned by commit SHA (the tag is in the comment); the Chrome rendering tests
-# need a working headless Chrome and run locally with `just test-all`.
+# Lint, type check, tests, Terraform validation, workflow lint and a secret scan on every push and pull request.
+# Actions are pinned by commit SHA (the exact tag is in the comment); Dependabot keeps them current.
 name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,13 +18,16 @@ concurrency:
 jobs:
   python:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.12"
           enable-cache: true
-      - run: uv sync --frozen --extra dev
+      - run: uv sync --locked --extra dev
       - name: ruff
         run: uv run ruff check src tests scripts && uv run ruff format --check src tests scripts
       - name: pyright
@@ -32,24 +35,89 @@ jobs:
       - name: pytest
         run: uv run pytest -q
 
-  terraform:
+  # The headless-Chrome rendering test (excluded from the default run): Chrome comes with the runner image.
+  chrome:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      # Ubuntu 24.04 blocks the unprivileged user namespaces Chrome's sandbox needs (no-op where unset)
+      - name: allow Chrome's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # The test is skipped when no Chrome is found; here that must be an error, not a silent pass
+      - name: Chrome present
+        run: uv run python -c "from ocrbench.docgen.render import find_chrome as f; c = f(); assert c, 'no Chrome found'; print(c)"
+      - name: pytest -m chrome
+        shell: bash
+        run: |
+          uv run pytest -m chrome -rs | tee pytest.out
+          if grep -q SKIPPED pytest.out; then echo "::error::chrome tests were skipped"; exit 1; fi
+
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The lock file pins provider checksums; the cache only saves the download (keyed on the lock file).
+      TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.9.8 # same as scripts/get_tools.sh
           terraform_wrapper: false
+      - name: provider cache dir
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('infra/terraform/.terraform.lock.hcl') }}
       - run: terraform -chdir=infra/terraform fmt -check -recursive
       - run: terraform -chdir=infra/terraform init -backend=false -input=false
       - run: terraform -chdir=infra/terraform validate
 
+  lint-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 # linux_amd64 tarball
+      ZIZMOR_VERSION: 1.30.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: actionlint
+        run: |
+          tgz="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$tgz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$tgz"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+      - name: zizmor
+        run: uvx "zizmor@${ZIZMOR_VERSION}" --format=github .github
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   secrets:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

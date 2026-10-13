@@ -26,6 +26,7 @@ from pathlib import Path
 from rapidfuzz.distance import Levenshtein
 
 from . import postprocess
+from .fileio import read_jsonl, read_text
 
 _TAGS = re.compile(r"</?[a-zA-Z][^>]*>")
 # One number token: digits joined by . , : / - (dates, decimals, account numbers). Spaces separate tokens;
@@ -132,12 +133,6 @@ def field_correct(truth, pred) -> bool:
 
 
 # --------------------------------------------------------------------------- helpers
-def _jsonl(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
-
-
 def _pct(xs: list[float], p: float) -> float | None:
     if not xs:
         return None
@@ -151,13 +146,6 @@ def _token_cost(price: dict | None, pt: float, ct: float) -> float | None:
     if not price:
         return None
     return (pt * price.get("input", 0) + ct * price.get("output", 0)) / 1e6
-
-
-def _read(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return None
 
 
 # --------------------------------------------------------------------------- score
@@ -249,9 +237,9 @@ def transcription(meta: dict, docs: Path, run_dir: Path, transcripts: list[dict]
         pg = next((p for p in manifest[doc_id]["pages"] if p["n"] == page), None)
         if pg is None:
             continue
-        gt = _read(docs / pg["gt"]) or ""
-        nums = json.loads(_read(docs / pg["gt_meta"]) or '{"numbers": []}')["numbers"]
-        hyp = _read(run_dir / r["output_file"]) if r else None
+        gt = read_text(docs / pg["gt"]) or ""
+        nums = json.loads(read_text(docs / pg["gt_meta"]) or '{"numbers": []}')["numbers"]
+        hyp = read_text(run_dir / r["output_file"]) if r else None
         if hyp is None:
             m, ok = failed_page_metrics(nums), False
         else:
@@ -310,7 +298,7 @@ def latest_extractions(records: list[dict], manifest: dict) -> dict[tuple[str, s
 
 def score_extraction(e: dict, truth: dict, run_dir: Path) -> dict:
     """Field-by-field score of one extraction record. A failed extraction gets every field wrong."""
-    raw = _read(run_dir / e["output_file"]) if e["ok"] and e.get("output_file") else None
+    raw = read_text(run_dir / e["output_file"]) if e["ok"] and e.get("output_file") else None
     pred = json.loads(raw) if raw else {}
     fields = {
         f: {"truth": t, "predicted": pred.get(f), "correct": field_correct(t, pred.get(f))} for f, t in truth.items()
@@ -383,7 +371,7 @@ def extraction(
     prices = {k: v.get("price_per_mtok") for k, v in meta["backends"].items()}
     docs_out = []
     for (_, doc_id, _), e in sorted(latest_extractions(records, manifest).items()):
-        truth = json.loads(_read(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
+        truth = json.loads(read_text(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
         docs_out.append(score_extraction(e, truth, run_dir))
     src_lat = source_latency(transcripts)
 
@@ -427,11 +415,13 @@ def score(meta: dict, run_dir: Path) -> dict:
     run_dir = Path(run_dir)
     docs = run_dir / "docs"
     manifest = {d["id"]: d for d in json.loads((docs / "manifest.json").read_text(encoding="utf-8"))}
-    transcripts = _jsonl(run_dir / "transcripts.jsonl")
-    speed = speed_rows(meta, _jsonl(run_dir / "runs.jsonl"), transcripts)
+    transcripts = read_jsonl(run_dir / "transcripts.jsonl")
+    speed = speed_rows(meta, read_jsonl(run_dir / "runs.jsonl"), transcripts)
     basis = cost_basis(speed, {k for k, b in meta["backends"].items() if b["kind"] == "selfhosted"})
     tagg, tpages = transcription(meta, docs, run_dir, transcripts, manifest)
-    eagg, edocs = extraction(meta, docs, run_dir, _jsonl(run_dir / "extractions.jsonl"), manifest, transcripts, basis)
+    eagg, edocs = extraction(
+        meta, docs, run_dir, read_jsonl(run_dir / "extractions.jsonl"), manifest, transcripts, basis
+    )
     return {
         "run_id": meta["id"],
         "method": {

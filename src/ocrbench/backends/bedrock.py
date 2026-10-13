@@ -16,12 +16,13 @@ class BedrockBackend(Backend):
 
         self.name = name
         self.model = spec["model_id"]
-        self.price_per_mtok = spec.get("price_per_mtok")
         self._init_temperature(spec)
         self.client = boto3.client(
             "bedrock-runtime",
             region_name=spec.get("region"),
-            config=BotoConfig(max_pool_connections=128, read_timeout=600, retries={"max_attempts": 1}),
+            config=BotoConfig(
+                max_pool_connections=128, read_timeout=600, retries={"total_max_attempts": 1, "mode": "standard"}
+            ),
         )
 
     async def complete(self, req: Request) -> Response:

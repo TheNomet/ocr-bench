@@ -47,7 +47,6 @@ _UNSET = object()
 class Backend:
     name: str
     model: str
-    price_per_mtok: dict | None = None
     # Config `temperature:` overrides the request's value (some models only accept 1); null = don't send it.
     temperature_override: object = _UNSET
 
@@ -63,9 +62,3 @@ class Backend:
 
     async def complete(self, req: Request) -> Response:
         raise NotImplementedError
-
-    def cost_usd(self, prompt_tokens: float, completion_tokens: float) -> float | None:
-        p = self.price_per_mtok
-        if not p:
-            return None
-        return (prompt_tokens * p.get("input", 0) + completion_tokens * p.get("output", 0)) / 1e6

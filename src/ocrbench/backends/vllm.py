@@ -22,7 +22,6 @@ class _Vllm(Backend):
         self.name = name
         self.served = spec["served_model_name"]
         self.req_cfg = spec["request"]
-        self.price_per_mtok = None
 
     def body(self, req: Request) -> dict:
         rc = self.req_cfg
@@ -81,7 +80,9 @@ class SageMakerVllm(_Vllm):
         self.rt = boto3.client(
             "sagemaker-runtime",
             region_name=cfg.region,
-            config=BotoConfig(max_pool_connections=256, read_timeout=120, retries={"max_attempts": 1}),
+            config=BotoConfig(
+                max_pool_connections=256, read_timeout=120, retries={"total_max_attempts": 1, "mode": "standard"}
+            ),
         )
 
     async def warmup(self) -> None:

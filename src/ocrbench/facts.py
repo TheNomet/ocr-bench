@@ -132,12 +132,22 @@ def compute(meta: dict, scores: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- markdown
-def _md_winners(p: dict) -> list[str]:
+def _name(pipe: str, labels: dict[str, str]) -> str:
+    """A pipeline as Markdown: its readable label (view.pipeline_label) with the raw key, or just the key."""
+    lbl = labels.get(pipe)
+    return f"{lbl} (`{pipe}`)" if lbl and lbl != pipe else f"`{pipe}`"
+
+
+def _md_winners(p: dict, labels: dict[str, str]) -> list[str]:
     out = ["| question | clean pages | degraded pages |", "|---|---|---|"]
+
+    def n(d: dict) -> str:
+        return _name(d["pipeline"], labels)
+
     for label, key, fmt in (
-        ("most accurate pipeline", "most_accurate", lambda d: f"`{d['pipeline']}` {_pct(d['field_accuracy'])}"),
-        ("cheapest pipeline", "cheapest", lambda d: f"`{d['pipeline']}` {_usd(d['cost_per_1k_docs_usd'])}/1k docs"),
-        ("fastest pipeline", "fastest", lambda d: f"`{d['pipeline']}` {d['end_to_end_latency_s']:.1f} s/doc"),
+        ("most accurate pipeline", "most_accurate", lambda d: f"{n(d)}: {_pct(d['field_accuracy'])}"),
+        ("cheapest pipeline", "cheapest", lambda d: f"{n(d)}: {_usd(d['cost_per_1k_docs_usd'])}/1k docs"),
+        ("fastest pipeline", "fastest", lambda d: f"{n(d)}: {d['end_to_end_latency_s']:.1f} s/doc"),
     ):
         cells = [fmt(p[v][key]) if v in p and p[v].get(key) else "–" for v in ("clean", "degraded")]
         if key == "cheapest" and any(p[v].get("unpriced") for v in p):
@@ -155,7 +165,7 @@ def _md_winners(p: dict) -> list[str]:
     return out
 
 
-def _md_every_pipeline(p: dict) -> list[str]:
+def _md_every_pipeline(p: dict, labels: dict[str, str]) -> list[str]:
     names = sorted({n for v in p.values() for n in v.get("all", {})})
     if not names:
         return []
@@ -171,7 +181,7 @@ def _md_every_pipeline(p: dict) -> list[str]:
         dg = (p.get("degraded") or {}).get("all", {}).get(n, {})
         sec = c.get("end_to_end_latency_s")
         out.append(
-            f"| `{n}` | {_pct(c.get('field_accuracy'))} | {_pct(dg.get('field_accuracy'))} | "
+            f"| {_name(n, labels)} | {_pct(c.get('field_accuracy'))} | {_pct(dg.get('field_accuracy'))} | "
             f"{'–' if sec is None else f'{sec:.1f}'} | {_usd(c.get('cost_per_1k_docs_usd'))} |"
         )
     return out
@@ -222,15 +232,17 @@ def _md_selfhosted(name: str, x: dict) -> list[str]:
     return out
 
 
-def to_md(f: dict) -> str:
+def to_md(f: dict, labels: dict[str, str] | None = None) -> str:
+    """The key facts as Markdown. `labels`: readable pipeline names (view.pipeline_labels), shown with the raw key."""
+    labels = labels or {}
     out = ["## Key facts (computed, not LLM-written)", ""]
-    out += _md_winners(f["pipelines"])
-    out += _md_every_pipeline(f["pipelines"])
+    out += _md_winners(f["pipelines"], labels)
+    out += _md_every_pipeline(f["pipelines"], labels)
     out += _md_readers(f["reading"], f["throughput"])
     for name, x in (f.get("selfhosted") or {}).items():
         out += _md_selfhosted(name, x)
     mm = f.get("most_missed") or {}
     if mm:
         out += ["", "Fields missed most often (count over clean + degraded documents):", ""]
-        out += [f"- `{p}`: " + ", ".join(f"`{k}` ({n})" for k, n in items) for p, items in mm.items()]
+        out += [f"- {_name(p, labels)}: " + ", ".join(f"`{k}` ({n})" for k, n in items) for p, items in mm.items()]
     return "\n".join(out)

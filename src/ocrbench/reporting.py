@@ -7,11 +7,12 @@ site show exactly the same information (the site renders it with markdown_lite).
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from . import explain, metrics, prompts, view
-from .report.site import RunCard
+from .facts import compute, most_missed, pipeline_facts, to_md
+from .fileio import write_if_changed
+from .report import RunCard, RunPage, build_site
 
 
 # --------------------------------------------------------------------------- setup + legend
@@ -29,26 +30,15 @@ def _md_models(meta: dict) -> list[str]:
 
 
 def _md_agent(meta: dict) -> list[str]:
-    agent = meta["extraction"]["agent"]
-    a = view.spec(meta, agent)
-    others = [
-        f"`{k}`" for k in dict.fromkeys(view.extractor(meta, p) for p in meta["extraction"]["pipelines"]) if k != agent
-    ]
-    note = explain.agent_note(
-        a.get("model"),
-        a.get("temperature", 0.0),
-        others,
-        label=view.label(meta, agent),
-        max_tokens=int(prompts.of(meta, "extract")["max_tokens"]),
-    )
-    out = ["### The extraction agent", "", note]
+    title = "### The extraction agent" if view.default_agent_shown(meta) else "### The extractors"
+    out = [title, "", view.agent_note(meta)]
     if view.sampling(meta):
         out += [
             "",
             "Models with temperature above 0 sample their output, so their results vary slightly between "
             "runs; differences of a point or two are within noise.",
         ]
-    hidden = focus_backends(meta)
+    hidden = view.hidden_backends(meta)
     if hidden:
         out += [
             "",
@@ -146,39 +136,21 @@ def results_md(scores: dict) -> str:
     ea = scores["extraction"]["aggregate"]
     if ea:
         out += ["", "### Field extraction (stage 2)", ""] + metrics.markdown_table(ea, metrics.EXTRACTION_MD)
-        misses: dict[str, dict[str, int]] = {}
-        for d in scores["extraction"]["docs"]:
-            for f, x in d["fields"].items():
-                if not x["correct"]:
-                    key = f"{d['doc_id'].rsplit('-', 1)[0]}.{f}"
-                    misses.setdefault(d["pipeline"], {}).setdefault(key, 0)
-                    misses[d["pipeline"]][key] += 1
+        misses = most_missed(scores["extraction"]["docs"], n=5)
         if misses:
             out += ["", "Most-missed fields (count over clean + degraded):", ""]
-            for p, m in sorted(misses.items()):
-                out.append(
-                    f"- **{p}**: " + ", ".join(f"`{k}` ({v})" for k, v in sorted(m.items(), key=lambda x: -x[1])[:5])
-                )
+            out += [f"- **{p}**: " + ", ".join(f"`{k}` ({v})" for k, v in m) for p, m in misses.items()]
     return "\n".join(out)
 
 
 def read_summary(run_dir: Path) -> tuple[str, dict]:
-    """(markdown body, info) of the LLM recommendation; info from summary.json.
-
-    Older runs kept the info in an HTML comment on the first line of summary.md; that is still read.
-    """
+    """(markdown body, info) of the LLM recommendation; info (who wrote it, unverified numbers) from summary.json."""
     p = run_dir / "summary.md"
     if not p.exists():
         return "", {}
-    text = p.read_text(encoding="utf-8")
     info_p = run_dir / "summary.json"
-    if info_p.exists():
-        return text.strip(), json.loads(info_p.read_text(encoding="utf-8"))
-    m = re.match(r"<!--\s*LLM comment by (\S+) \((.*?)\).*?unverified numbers: (.*?)\s*-->\n?", text)
-    if not m:
-        return text.strip(), {}
-    bad = [] if m.group(3).strip() == "none" else [x.strip() for x in m.group(3).split(",")]
-    return text[m.end() :].strip(), {"backend": m.group(1), "model": m.group(2), "unverified_numbers": bad}
+    info = json.loads(info_p.read_text(encoding="utf-8")) if info_p.exists() else {}
+    return p.read_text(encoding="utf-8").strip(), info
 
 
 def author_line(info: dict) -> str:
@@ -187,17 +159,10 @@ def author_line(info: dict) -> str:
     return f"LLM comment by {info.get('backend')} ({info.get('model')}) on the computed key facts"
 
 
-def headline(meta: dict, scores: dict) -> dict:
-    """Short facts for the experiments index."""
-    scores = visible(meta, scores)
-    meta = focused_meta(meta)
+def headline(scores: dict) -> dict:
+    """Short facts for the experiments index, from the scores a run page shows (view.visible)."""
     ea = scores["extraction"]["aggregate"]
-    best = {}
-    for v in ("clean", "degraded"):
-        rows = [a for a in ea if a["variant"] == v]
-        if rows:
-            b = max(rows, key=lambda a: a["field_accuracy"])
-            best[v] = {"pipeline": b["pipeline"], "field_accuracy": b["field_accuracy"]}
+    best = {v: f["most_accurate"] for v, f in pipeline_facts(ea).items()}
     pipes: dict[str, dict] = {}
     for a in ea:
         pipes.setdefault(a["pipeline"], {})[a["variant"]] = {
@@ -208,10 +173,8 @@ def headline(meta: dict, scores: dict) -> dict:
     return {"best": best, "pipelines": pipes}
 
 
-def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
-    scores = visible(meta, scores)
-    meta = focused_meta(meta)
-    body, info = read_summary(run_dir)
+def _report_md(meta: dict, scores: dict, facts_md: str, body: str, info: dict) -> str:
+    """report.md from the focused run.json and visible scores (view.focus)."""
     bad = info.get("unverified_numbers") or []
     recommendation = (
         ["## Recommendation", "", f"*{author_line(info)}. It interprets the key facts above.*", ""]
@@ -220,12 +183,10 @@ def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
         if body
         else ["## Recommendation", "", "*No LLM recommendation yet. Run the `summarize` stage.*"]
     )
-    from .facts import compute, to_md
-
     parts = [
         f"# ocr-bench run `{meta['id']}`",
         "",
-        to_md(compute(meta, scores)),
+        facts_md,
         "\n".join(recommendation),
         setup_md(meta),
         legend_md(meta),
@@ -234,28 +195,30 @@ def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
-    from .fileio import write_if_changed
-    from .report import RunPage, build_site
-
-    write_if_changed(run_dir / "scores.json", json.dumps(scores, ensure_ascii=False, indent=1))
-    write_if_changed(run_dir / "report.md", report_md(meta, scores, run_dir))
-    from .facts import compute, to_md
-
+def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
+    fm, vis = view.focus(meta, scores)
     body, info = read_summary(run_dir)
-    vis = visible(meta, scores)
-    meta = focused_meta(meta)
+    return _report_md(fm, vis, to_md(compute(fm, vis), view.pipeline_labels(fm)), body, info)
+
+
+def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
+    fm, vis = view.focus(meta, scores)
+    body, info = read_summary(run_dir)
+    labels = view.pipeline_labels(fm)
+    facts_md = to_md(compute(fm, vis), labels)
+    write_if_changed(run_dir / "scores.json", json.dumps(scores, ensure_ascii=False, indent=1))
+    write_if_changed(run_dir / "report.md", _report_md(fm, vis, facts_md, body, info))
     page = RunPage(
-        facts_md=to_md(compute(meta, vis)),
+        facts_md=facts_md,
         recommendation=body,
         recommendation_author=author_line(info),
         unverified_numbers=info.get("unverified_numbers") or [],
-        setup_md=setup_md(meta),
-        plan_description=meta.get("plan_description", ""),
-        hide_backends=sorted(focus_backends(meta)),
-        pipeline_labels={p: view.pipeline_label(meta, p) for p in meta["extraction"]["pipelines"]},
+        setup_md=setup_md(fm),
+        plan_description=fm.get("plan_description", ""),
+        hide_backends=sorted(view.hidden_backends(fm)),
+        pipeline_labels=labels,
     )
-    return build_site(run_dir / "docs", run_dir, vis, site_root / meta["id"], page)
+    return build_site(run_dir / "docs", run_dir, vis, site_root / fm["id"], page)
 
 
 def bottom_line(run_dir: Path) -> str:
@@ -266,13 +229,8 @@ def bottom_line(run_dir: Path) -> str:
 
 
 def run_card(meta: dict, scores: dict, run_dir: Path) -> RunCard:
-    return RunCard(
-        meta=meta,
-        card_meta=focused_meta(meta),
-        scores=scores,
-        headline=headline(meta, scores),
-        bottom_line=bottom_line(run_dir),
-    )
+    fm, vis = view.focus(meta, scores)
+    return RunCard(meta=meta, card_meta=fm, scores=scores, headline=headline(vis), bottom_line=bottom_line(run_dir))
 
 
 def comparison(items: list[RunCard]) -> dict:
@@ -287,7 +245,7 @@ def comparison(items: list[RunCard]) -> dict:
     speed: dict[str, dict] = {}
     for it in items:
         m, rid = it.meta, it.meta["id"]
-        s = visible(m, it.scores, focus=False)
+        s = view.visible(m, it.scores, focus=False)
         for a in s["extraction"]["aggregate"]:
             label = view.pipeline_label(m, a["pipeline"])
             extraction.setdefault(label, {}).setdefault(rid, {})[a["variant"]] = a["field_accuracy"]
@@ -365,66 +323,6 @@ def comparison_md(c: dict) -> str:
 
 
 # --------------------------------------------------------------------------- shared guide (main page)
-def focus_backends(meta: dict) -> set[str]:
-    """Backends a run reports on but doesn't focus on (run.json `report.hide_backends`): e.g. models
-    re-run only as a reproducibility check. Their data stays on disk and in the cross-run comparison."""
-    return set((meta.get("report") or {}).get("hide_backends") or [])
-
-
-def focused_meta(meta: dict) -> dict:
-    """run.json as a run page should describe it: hidden backends removed from transcribers and pipelines,
-    and the default agent replaced by a shown extractor if it was hidden."""
-    hidden = focus_backends(meta)
-    ex = dict(meta.get("extraction") or {})
-    agents = ex.get("agents") or {}
-    keep = [
-        p
-        for p in ex.get("pipelines", [])
-        if p.split("->")[0] not in hidden
-        and agents.get(p, ex.get("agent")) not in hidden
-        and not view.same_model(meta, p)  # hidden everywhere: one model reading and extracting
-    ]
-    ex["pipelines"] = keep
-    if ex.get("agent") in hidden:
-        shown = [agents.get(p) for p in keep if agents.get(p) and agents.get(p) not in hidden]
-        ex["agent"] = shown[0] if shown else ex.get("agent")
-    ex["agents"] = {p: agents.get(p, ex["agent"]) for p in keep}
-    return {
-        **meta,
-        "extraction": ex,
-        "transcribers": [t for t in meta.get("transcribers") or [] if t not in hidden],
-        "plan_items": [i for i in meta.get("plan_items") or [] if i.get("backend") not in hidden],
-    }
-
-
-def visible(meta: dict, scores: dict, focus: bool = True) -> dict:
-    """Scores as shown on a run page.
-
-    Always hides `X->X` pipelines (same model reading and extracting). With focus=True, also hides
-    everything involving a backend in `report.hide_backends` (as transcriber or extractor).
-    """
-    hidden_be = focus_backends(meta) if focus else set()
-
-    def pipe_hidden(p: str) -> bool:
-        src = p.split("->")[0]
-        return view.same_model(meta, p) or src in hidden_be or view.extractor(meta, p) in hidden_be
-
-    ex = scores.get("extraction") or {}
-    tr = scores.get("transcription") or {}
-    return {
-        **scores,
-        "speed": [r for r in scores.get("speed") or [] if r["backend"] not in hidden_be],
-        "transcription": {
-            "aggregate": [a for a in tr.get("aggregate") or [] if a["backend"] not in hidden_be],
-            "pages": [p for p in tr.get("pages") or [] if p["backend"] not in hidden_be],
-        },
-        "extraction": {
-            "aggregate": [a for a in ex.get("aggregate") or [] if not pipe_hidden(a["pipeline"])],
-            "docs": [d for d in ex.get("docs") or [] if not pipe_hidden(d["pipeline"])],
-        },
-    }
-
-
 def guide_md(latest: dict | None) -> str:
     out = [explain.INTRO, "", "## How the benchmark works", ""]
     out += [f"- **{a}**: {b}" for a, b in explain.STAGES]

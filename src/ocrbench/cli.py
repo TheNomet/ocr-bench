@@ -114,9 +114,7 @@ def cmd_docs(cfg: Config, a) -> None:
     from .docgen import generate
 
     d = cfg["bench"]["docs"]
-    m = generate(
-        Path(a.docs), per_type=a.per_type or d.get("per_type", 6), seed=d.get("seed", 7), scale=d.get("scale", 2.0)
-    )
+    m = generate(Path(a.docs), per_type=a.per_type or d["per_type"], seed=d["seed"], scale=d["scale"])
     print(f"{len(m)} documents, {sum(len(x['pages']) for x in m)} pages -> {a.docs}")
 
 
@@ -288,6 +286,10 @@ def cmd_run(cfg: Config, a) -> None:
     else:
         if not a.plan:
             raise SystemExit("--plan is required for a new run")
+        try:
+            cfg.plan(a.plan)
+        except KeyError as e:
+            raise SystemExit(e.args[0]) from None
         docs = Path(a.docs)
         if not (docs / "manifest.json").exists():
             raise SystemExit(f"{docs}/manifest.json missing: run `ocrbench docs` first")
@@ -414,7 +416,9 @@ def cmd_probe_task(cfg: Config, a) -> None:
         args += ["--backend", b]
     if a.filter:
         args += ["--filter", a.filter]
-    aws.run_task(cfg, outputs(cfg), args)
+    _, code = aws.run_task(cfg, outputs(cfg), args)
+    if code != 0:
+        raise SystemExit(f"probe task exited with {code}")
 
 
 # ------------------------------------------------------------------ main

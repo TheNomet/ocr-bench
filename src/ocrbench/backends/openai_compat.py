@@ -112,7 +112,6 @@ class OpenAICompatBackend(Backend):
     def __init__(self, name: str, spec: dict):
         self.name = name
         self.model = spec["model"]
-        self.price_per_mtok = spec.get("price_per_mtok")
         self._init_temperature(spec)
         self.url = spec["base_url"].rstrip("/") + "/v1/chat/completions"
         self.headers = dict(spec.get("headers") or {})

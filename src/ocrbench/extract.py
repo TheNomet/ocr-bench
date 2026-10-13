@@ -15,11 +15,13 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import postprocess, prompts
-from .backends import Request, get_backend
+from . import postprocess, prompts, view
+from .backends import Backend, Request, get_backend
 from .config import Config
+from .fileio import read_jsonl
 from .redact import error_text
 from .transcribe import call_with_retries, load_manifest
 
@@ -52,21 +54,13 @@ def parse_json(text: str) -> dict:
     return obj
 
 
-def _records(path: Path) -> list[dict]:
-    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()] if path.exists() else []
-
-
 def latest_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str], Path]:
     """(doc_id, page, variant) -> output file of the transcript scoring uses (score.pick_transcript)."""
     from .score import pick_transcript
 
     chosen: dict = {}
     out: dict[tuple[str, int, str], Path] = {}
-    f = run_dir / "transcripts.jsonl"
-    if not f.exists():
-        return out
-    for line in f.read_text(encoding="utf-8").splitlines():
-        r = json.loads(line)
+    for r in read_jsonl(run_dir / "transcripts.jsonl"):
         k = (r["doc_id"], r["page"], r["variant"])
         if r["backend"] == backend:
             chosen[k] = pick_transcript(chosen.get(k), r)
@@ -76,16 +70,10 @@ def latest_transcripts(run_dir: Path, backend: str) -> dict[tuple[str, int, str]
     return out
 
 
-def extractor_key(ex: dict, pipe: str) -> str:
-    """`<input>->agent` uses bench.extraction.agent; `<input>-><backend>` uses that backend."""
-    key = pipe.split("->", 1)[1]
-    return ex["agent"] if key == "agent" else key
-
-
 def targets(manifest: list[dict], run_dir: Path, variants: list[str], limit: int = 0) -> set[tuple[str, str]]:
     """(doc_id, variant) pairs to extract: the same set for every pipeline. The pairs stage 1 attempted,
     if it ran; otherwise the first `limit` documents (all if 0)."""
-    attempted = {(r["doc_id"], r["variant"]) for r in _records(run_dir / "transcripts.jsonl")}
+    attempted = {(r["doc_id"], r["variant"]) for r in read_jsonl(run_dir / "transcripts.jsonl")}
     if attempted:
         return {(d["id"], v) for d in manifest for v in variants if (d["id"], v) in attempted}
     chosen = sorted(manifest, key=lambda d: (int(d["id"].rsplit("-", 1)[1]), d["id"]))[: limit or None]
@@ -146,6 +134,9 @@ async def run(
     variant: str = "both",
     limit: int = 0,
 ) -> None:
+    """Extract every pipeline. The extractor of each pipeline is the one run.json recorded (`meta`), so a
+    resumed run uses the same models even if the config changed since; the config's agent is only the
+    fallback for a pipeline run.json doesn't know."""
     ex = cfg["bench"]["extraction"]
     pr = prompts.of(meta, "extract")
     steps = {k: b.get("postprocess") or [] for k, b in meta["backends"].items()}
@@ -153,15 +144,20 @@ async def run(
     manifest = load_manifest(docs)
     variants = ["clean", "degraded"] if variant == "both" else [variant]
     todo = targets(manifest, run_dir, variants, limit)
-    sem = asyncio.Semaphore(int(ex.get("concurrency", 8)))
-    max_retries = int(cfg["bench"].get("max_retries", 4))
+    concurrency = int(ex["concurrency"])
+    sem = asyncio.Semaphore(concurrency)
+    # boto3 backends run in threads: make sure the pool never caps the requested concurrency
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=max(32, concurrency + 8)))
+    max_retries = int(cfg["bench"]["max_retries"])
     out = run_dir / "extractions.jsonl"
     if out.exists():  # a re-run replaces the previous extraction pass instead of mixing with it
         out.replace(run_dir / "extractions.prev.jsonl")
-    extractors: dict = {}
+    extractors: dict[str, Backend] = {}
 
     for pipe in pipelines or ex["pipelines"]:
-        source, key, slug = pipe.split("->")[0], extractor_key(ex, pipe), pipe.replace("->", "__")
+        source: str = view.source(pipe)
+        slug = pipe.replace("->", "__")
+        key: str = view.extractor(meta, pipe) or view.extractor_key(ex["agent"], pipe)
         if key not in extractors:
             extractors[key] = get_backend(cfg, key)
             await extractors[key].warmup()
@@ -184,7 +180,7 @@ async def run(
         print(f"[extract {pipe}] {len(jobs)} documents via {extractor.name}", flush=True)
         base = {"pipeline": pipe, "source": source, "agent": extractor.name, "agent_model": extractor.model}
 
-        async def one(d, v, req, base=base, slug=slug, extractor=extractor):
+        async def one(d, v, req, base=base, slug=slug, extractor=extractor) -> dict:
             async with sem:
                 rec = {**base, "doc_id": d["id"], "variant": v}
                 return await extract_one(extractor, req, rec, run_dir, slug, max_retries)

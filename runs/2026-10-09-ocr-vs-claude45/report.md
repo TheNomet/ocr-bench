@@ -6,16 +6,16 @@
 
 | question | clean pages | degraded pages |
 |---|---|---|
-| most accurate pipeline | `image->agent` 97.0% | `image->agent` 83.0% |
-| cheapest pipeline | `unlimited-ocr->agent` $5.87/1k docs | `unlimited-ocr->agent` $5.88/1k docs |
-| fastest pipeline | `image->agent` 3.4 s/doc | `image->agent` 3.6 s/doc |
+| most accurate pipeline | page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`): 97.0% | page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`): 83.0% |
+| cheapest pipeline | Unlimited-OCR text → Claude Sonnet 4.5 (2025-09-29) (`unlimited-ocr->agent`): $5.87/1k docs | Unlimited-OCR text → Claude Sonnet 4.5 (2025-09-29) (`unlimited-ocr->agent`): $5.88/1k docs |
+| fastest pipeline | page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`): 3.4 s/doc | page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`): 3.6 s/doc |
 
 Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 | pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
 |---|---|---|---|---|
-| `image->agent` | 97.0% | 83.0% | 3.4 | $7.44 |
-| `unlimited-ocr->agent` | 95.7% | 81.5% | 9.0 | $5.87 |
+| page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`) | 97.0% | 83.0% | 3.4 | $7.44 |
+| Unlimited-OCR text → Claude Sonnet 4.5 (2025-09-29) (`unlimited-ocr->agent`) | 95.7% | 81.5% | 9.0 | $5.87 |
 
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
 |---|---|---|---|---|---|
@@ -41,8 +41,8 @@ Pipeline costs that include `unlimited-ocr` use $0.89/1k pages: the cost at its 
 
 Fields missed most often (count over clean + degraded documents):
 
-- `image->agent`: `newsletter.new_fee` (10), `rental_contract.property_address` (6), `holiday_survey.activities` (5), `holiday_survey.signed_date` (5)
-- `unlimited-ocr->agent`: `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5)
+- page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`): `newsletter.new_fee` (10), `rental_contract.property_address` (6), `holiday_survey.activities` (5), `holiday_survey.signed_date` (5)
+- Unlimited-OCR text → Claude Sonnet 4.5 (2025-09-29) (`unlimited-ocr->agent`): `holiday_survey.activities` (9), `receipt.merchant` (7), `holiday_survey.accommodation` (5), `holiday_survey.pets` (5)
 
 ## Recommendation
 

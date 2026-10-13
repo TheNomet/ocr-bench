@@ -1,0 +1,21 @@
+# Weekly update PRs (releases at least a week old) for the pinned GitHub Actions (SHA pins, tag comments kept in sync) and uv.lock.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7 # let a release age a week before proposing it
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7 # let a release age a week before proposing it
+    groups:
+      python:
+        patterns: ["*"]

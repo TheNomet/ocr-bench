@@ -1,7 +1,7 @@
 """A tiny, safe Markdown subset renderer for the report summary.
 
 Supports: ``#``/``##``/``###`` headings, paragraphs, ``- `` / ``* `` bullet lists,
-``**bold**``, ```code```, and pipe tables (``| a | b |`` with an optional
+``**bold**``, ``*italic*``, ```code```, and pipe tables (``| a | b |`` with an optional
 ``|---|---|`` separator row). All text is HTML-escaped before markup is applied.
 """
 
@@ -11,13 +11,14 @@ import html
 import re
 
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
+_ITALIC = re.compile(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
 _TABLE_SEP = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _BULLET = re.compile(r"^\s*[-*]\s+(.*)$")
 
 
 def inline(text: str) -> str:
-    """Render inline markup (code spans, bold) with everything else escaped.
+    """Render inline markup (code spans, bold, italic) with everything else escaped.
 
     Code spans are swapped for placeholders first, so bold may wrap them (**`x`**).
     """
@@ -29,6 +30,7 @@ def inline(text: str) -> str:
 
     seg = html.escape(re.sub(r"`([^`]+)`", stash, text), quote=False)
     seg = _BOLD.sub(r"<strong>\1</strong>", seg)
+    seg = _ITALIC.sub(r"<em>\1</em>", seg)
     return re.sub(r"\x00(\d+)\x00", lambda m: codes[int(m.group(1))], seg)
 
 
@@ -45,8 +47,12 @@ def _is_table_line(line: str) -> bool:
     return line.strip().startswith("|")
 
 
-def render(md: str) -> str:
-    """Render the supported Markdown subset to an HTML fragment."""
+def render(md: str, shift: int = 1) -> str:
+    """Render the supported Markdown subset to an HTML fragment.
+
+    Headings move down `shift` levels (default 1: the page already has an <h1>, so `#` becomes <h2>).
+    Use shift=0 for Markdown whose `##` sections are top-level sections of the page.
+    """
     if not md or not md.strip():
         return ""
     lines = md.replace("\r\n", "\n").split("\n")
@@ -69,7 +75,7 @@ def render(md: str) -> str:
         m = _HEADING.match(stripped)
         if m:
             flush_para()
-            level = min(len(m.group(1)) + 1, 6)  # page already has an <h1>; shift down one level
+            level = max(1, min(len(m.group(1)) + shift, 6))
             out.append(f"<h{level}>{inline(m.group(2))}</h{level}>")
             i += 1
             continue

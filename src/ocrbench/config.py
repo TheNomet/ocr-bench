@@ -124,11 +124,27 @@ class Config:
             )
         return sh[0]
 
+    # ---- plans ----
     def plan(self, name: str) -> list[dict]:
-        try:
-            return self.raw["bench"]["plans"][name]
-        except KeyError:
-            raise KeyError(f"plan {name!r} not defined under bench.plans in {self.path}") from None
+        """The plan's transcription items. Raises KeyError naming the defined plans if there is no such plan."""
+        plans = self.raw["bench"].get("plans") or {}
+        if name not in plans:
+            raise KeyError(
+                f"plan {name!r} not defined under bench.plans in {self.path} (defined: {', '.join(plans) or 'none'})"
+            )
+        return plans[name]
+
+    def plan_description(self, name: str) -> str:
+        return (self.raw["bench"].get("plan_descriptions") or {}).get(name) or ""
+
+    def plan_report(self, name: str) -> dict:
+        """How run pages of this plan are shown (bench.plan_report.<plan>), e.g. {"hide_backends": [...]}."""
+        return (self.raw["bench"].get("plan_report") or {}).get(name) or {}
+
+    @property
+    def summary_agent(self) -> str:
+        """Backend that writes the recommendation: bench.summary.agent, else the extraction agent."""
+        return (self.raw["bench"].get("summary") or {}).get("agent") or self.raw["bench"]["extraction"]["agent"]
 
 
 DEFAULTS: dict = {
@@ -143,6 +159,11 @@ DEFAULTS: dict = {
         "memory": 4096,
         "base_image": "docker.io/library/python:3.12-slim",
         "extra_ca_pem": None,
+    },
+    "bench": {
+        "max_retries": 4,
+        "extraction": {"concurrency": 8},
+        "docs": {"per_type": 6, "seed": 7, "scale": 2.0},
     },
 }
 
@@ -210,10 +231,11 @@ def validate(raw: dict, p: Path) -> None:
 
 def load(path: str | Path | None = None) -> Config:
     p = Path(path or os.environ.get("OCRBENCH_CONFIG") or os.environ.get("CONFIG") or ROOT / "config" / "example.yaml")
-    raw = _merge(DEFAULTS, upgrade(_expand(yaml.safe_load(p.read_text()) or {})))
-    for key in ("name_prefix", "aws", "bench"):
-        if key not in raw:
+    user = upgrade(_expand(yaml.safe_load(p.read_text()) or {}))
+    for key in ("name_prefix", "aws", "bench"):  # checked before defaults fill in parts of them
+        if key not in user:
             raise ValueError(f"{p}: missing top-level key {key!r}")
+    raw = _merge(DEFAULTS, user)
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,30}", raw["name_prefix"]):
         raise ValueError(f"{p}: name_prefix must be 3-31 chars of [a-z0-9-] (it names S3 buckets and ECR repos)")
     validate(raw, p)

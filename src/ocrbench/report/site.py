@@ -8,17 +8,18 @@
       assets/style.css
       assets/app.js
       assets/<doc_id>/...     # copied page images (same relative layout as docs_dir)
+      assets/<doc_id>/p1.thumb.webp  # small WebP of each document's first clean page, for the grid
 
 All links are relative so the folder can be zipped and opened via ``file://``.
-Only the standard library is used.
+Pillow (already used to render the documents) makes the thumbnails; everything else is the standard library.
 """
 
 from __future__ import annotations
 
 import contextlib
 import difflib
-import html
 import json
+import re
 import shutil
 import statistics
 import unicodedata
@@ -28,20 +29,20 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
+from PIL import Image
+
 from .. import metrics
+from ..fileio import read_jsonl, read_text
 from ..metrics import DASH, Metric, _num, fmt
 from . import markdown_lite
-from .assets import CSS, JS
+from .shell import e, page_shell, write_static
 
 VARIANTS = ("clean", "degraded")
+THUMB_WIDTH = 600  # px; the grid shows thumbnails at ~280 px wide, so this stays sharp on 2x screens
+THUMB_QUALITY = 75
 
 
 # --------------------------------------------------------------------------- formatting
-
-
-def e(value: Any) -> str:
-    """HTML-escape any value (``None`` → empty string)."""
-    return html.escape("" if value is None else str(value), quote=True)
 
 
 def _doc_href(doc_id: str) -> str:
@@ -123,32 +124,6 @@ def _read_json(path: Path, default: Any) -> Any:
         return default
 
 
-def _read_jsonl(path: Path) -> list[dict]:
-    out: list[dict] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return out
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(obj, dict):
-            out.append(obj)
-    return out
-
-
-def _read_text(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-
-
 def _safe_rel(rel: str | None) -> PurePosixPath | None:
     """A relative path without '..' or absolute components, or None."""
     if not rel:
@@ -161,7 +136,41 @@ def _safe_rel(rel: str | None) -> PurePosixPath | None:
 
 def _read_under(base: Path, rel: str | None) -> str | None:
     p = _safe_rel(rel)
-    return None if p is None else _read_text(base / p)
+    return None if p is None else read_text(base / p)
+
+
+def thumb_rel(rel: PurePosixPath) -> PurePosixPath:
+    """`<doc>/p1.png` -> `<doc>/p1.thumb.webp`."""
+    return rel.with_name(f"{rel.stem}.thumb.webp")
+
+
+def write_thumb(src: Path, dst: Path, width: int = THUMB_WIDTH) -> None:
+    """A WebP of *src* at most *width* px wide; skipped if *dst* is already newer than *src*."""
+    if dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime:
+        return
+    with Image.open(src) as im:
+        im.load()
+        if im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGBA")
+            bg = Image.new("RGB", im.size, "white")
+            bg.paste(im, mask=im.getchannel("A"))
+            im = bg
+        elif im.mode != "RGB":
+            im = im.convert("RGB")
+        if im.width > width:
+            im = im.resize((width, max(1, round(im.height * width / im.width))), Image.Resampling.LANCZOS)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_name(dst.name + ".tmp")
+        im.save(tmp, "WEBP", quality=THUMB_QUALITY, method=6)
+        tmp.replace(dst)
+
+
+def _image_size(path: Path) -> tuple[int, int] | None:
+    try:
+        with Image.open(path) as im:
+            return im.size
+    except OSError:
+        return None
 
 
 # --------------------------------------------------------------------------- diff
@@ -192,75 +201,6 @@ def word_diff(truth: str, hypothesis: str) -> str:
     return " ".join(out)
 
 
-# --------------------------------------------------------------------------- page shell
-
-
-FAVICON = (
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E"
-    "%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 9h10l4 4v10H9z' fill='white'/%3E"
-    "%3Cpath d='M12 16h8M12 20h6' stroke='%234f46e5' stroke-width='2'/%3E%3C/svg%3E"
-)
-
-
-def _repo_url() -> str | None:
-    """https URL of the repo's `origin` remote, for the top-bar link (None if unavailable)."""
-    import subprocess
-
-    try:
-        url = subprocess.run(
-            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=Path(__file__).resolve().parent
-        ).stdout.strip()
-    except OSError:
-        return None
-    if url.startswith("git@"):
-        url = "https://" + url[4:].replace(":", "/", 1)
-    url = url.removesuffix(".git")
-    return url if url.startswith("https://github.com/") else None
-
-
-GITHUB_ICON = (
-    '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 '
-    "0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-"
-    ".23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07"
-    "-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-"
-    ".27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-"
-    "3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
-    '"/></svg>'
-)
-REPO_URL = _repo_url()
-
-
-def _page(title: str, body: str, prefix: str, home: str, crumbs: list[tuple[str, str | None]]) -> str:
-    """`home`: the experiments index, relative to this page (the brand links there). `crumbs`: the trail
-    after the brand, [(label, href or None)], hrefs relative to this page."""
-    trail = "".join(
-        '<span class="sep">/</span>' + (f'<a href="{h}">{e(lbl)}</a>' if h else f"<span>{e(lbl)}</span>")
-        for lbl, h in crumbs
-    )
-    return (
-        "<!doctype html>\n"
-        '<html lang="en"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{e(title)}</title>"
-        f'<link rel="icon" href="{FAVICON}">'
-        f'<link rel="stylesheet" href="{prefix}assets/style.css">'
-        "</head><body>"
-        f'<header class="topbar"><div class="topbar-in"><a class="brand" href="{home}">'
-        '<span class="logo"></span>ocr-bench</a><nav class="crumbs">'
-        f"{trail}</nav>"
-        + (
-            f'<a class="gh" href="{e(REPO_URL)}" title="Source on GitHub">{GITHUB_ICON}<span>GitHub</span></a>'
-            if REPO_URL
-            else ""
-        )
-        + "</div></header>"
-        f"<main>\n{body}\n</main>"
-        '<footer class="foot">Generated by ocr-bench · synthetic documents only · numbers in tables are computed; '
-        "recommendation text is LLM-written</footer>"
-        f'<script src="{prefix}assets/app.js"></script></body></html>\n'
-    )
-
-
 # --------------------------------------------------------------------------- site builder
 
 
@@ -277,6 +217,15 @@ class RunPage:
     plan_description: str = ""
     hide_backends: list[str] = field(default_factory=list)
     pipeline_labels: dict[str, str] = field(default_factory=dict)
+
+
+_REC_HEADING = re.compile(r"^(#{1,6})[ \t]+Recommendation[ \t]*$", re.M)
+
+
+def _recommendation_md(md: str) -> str:
+    """summary.md as shown under the page's "Recommendation" heading: its own "## Recommendation"
+    section (the goal -> choice table) is renamed so the page doesn't nest Recommendation in Recommendation."""
+    return _REC_HEADING.sub(r"\1 Choice by goal", md)
 
 
 class _Site:
@@ -298,15 +247,15 @@ class _Site:
         manifest = _read_json(self.docs_dir / "manifest.json", [])
         self.manifest: list[dict] = [d for d in manifest if isinstance(d, dict) and d.get("id")]
         self.schemas: dict = _read_json(self.docs_dir / "schemas.json", {}) or {}
-        self.tag = str(self.scores.get("run_id") or self.scores.get("tag") or "")
+        self.tag = str(self.scores.get("run_id") or "")
 
         tr = self.scores.get("transcription") or {}
         ex = self.scores.get("extraction") or {}
         self.speed: list[dict] = list(self.scores.get("speed") or [])
-        self.tr_agg: list[dict] = list(tr.get("aggregate") or []) if isinstance(tr, dict) else []
-        self.tr_pages: list[dict] = list(tr.get("pages") or []) if isinstance(tr, dict) else []
-        self.ex_agg: list[dict] = list(ex.get("aggregate") or []) if isinstance(ex, dict) else []
-        self.ex_docs: list[dict] = list(ex.get("docs") or []) if isinstance(ex, dict) else []
+        self.tr_agg: list[dict] = list(tr.get("aggregate") or [])
+        self.tr_pages: list[dict] = list(tr.get("pages") or [])
+        self.ex_agg: list[dict] = list(ex.get("aggregate") or [])
+        self.ex_docs: list[dict] = list(ex.get("docs") or [])
 
         # (doc_id, page, variant) -> {backend: scored page entry}
         self.page_scores: dict[tuple[str, int, str], dict[str, dict]] = defaultdict(dict)
@@ -317,7 +266,7 @@ class _Site:
         # Unscored transcripts (fallback so raw output is still viewable).
         self.page_raw: dict[tuple[str, int, str], dict[str, dict]] = defaultdict(dict)
         hidden_be = set(self.page.hide_backends)
-        for t in _read_jsonl(self.run_dir / "transcripts.jsonl"):
+        for t in read_jsonl(self.run_dir / "transcripts.jsonl"):
             if not t.get("ok") or not t.get("output_file") or t.get("backend") in hidden_be:
                 continue
             key = (str(t.get("doc_id")), int(t.get("page") or 0), str(t.get("variant")))
@@ -345,12 +294,10 @@ class _Site:
     # ------------------------------------------------------------------ assets
 
     def copy_assets(self) -> None:
-        assets = self.out_dir / "assets"
-        assets.mkdir(parents=True, exist_ok=True)
-        (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
-        (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
+        """Copy the page images, and write a thumbnail of each document's first clean page for the grid."""
+        assets = write_static(self.out_dir)
         for doc in self.manifest:
-            for page in doc.get("pages") or []:
+            for i, page in enumerate(doc.get("pages") or []):
                 for v in VARIANTS:
                     rel = _safe_rel(page.get(v))
                     if rel is None:
@@ -361,12 +308,27 @@ class _Site:
                     dst = assets / rel
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
+                    if i == 0 and v == "clean":
+                        write_thumb(src, assets / thumb_rel(rel))
 
     def asset_href(self, rel: str | None, prefix: str) -> str | None:
         p = _safe_rel(rel)
         if p is None or not (self.out_dir / "assets" / p).is_file():
             return None
         return prefix + "assets/" + "/".join(quote(part) for part in p.parts)
+
+    def thumb_img(self, rel: str | None, alt: str) -> str:
+        """<img> for the document grid: the small thumbnail if there is one, else the full image."""
+        p = _safe_rel(rel)
+        if p is None:
+            return '<span class="muted small" style="padding:1rem">no image</span>'
+        for candidate in (thumb_rel(p), p):
+            href = self.asset_href(str(candidate), "")
+            if href:
+                size = _image_size(self.out_dir / "assets" / candidate)
+                wh = f' width="{size[0]}" height="{size[1]}"' if size else ""
+                return f'<img src="{e(href)}" alt="{e(alt)}"{wh} loading="lazy" decoding="async">'
+        return '<span class="muted small" style="padding:1rem">no image</span>'
 
     # ------------------------------------------------------------------ index
 
@@ -395,9 +357,6 @@ class _Site:
         parts = [f'<div class="eyebrow">Experiment</div><h1>{e(self.tag)}</h1>']
         if pg.plan_description:
             parts.append(f'<p class="plan-desc">{markdown_lite.inline(pg.plan_description)}</p>')
-        gen = self.scores.get("generated")
-        if gen:
-            parts.append(f'<p class="muted small">Scored {e(str(gen).replace("T", " ")[:16])}</p>')
         parts.append(
             '<p class="muted">One experiment. New here? The <a href="../index.html#guide">main page</a> explains '
             "what the benchmark does, what the pipelines and metrics mean, and the document types.</p>"
@@ -405,8 +364,8 @@ class _Site:
             '<a href="#recommendation">Recommendation</a> &middot; <a href="#setup">Setup</a> &middot; '
             '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
         )
-        if pg.facts_md:
-            parts.append(f'<section id="facts" class="facts">{markdown_lite.render(pg.facts_md)}</section>')
+        if pg.facts_md:  # its "## Key facts" is a top-level section of the page: <h2>
+            parts.append(f'<section id="facts" class="facts">{markdown_lite.render(pg.facts_md, shift=0)}</section>')
         parts.append('<h2 id="recommendation">Recommendation</h2>')
         if pg.recommendation:
             if pg.unverified_numbers:
@@ -416,10 +375,10 @@ class _Site:
             parts.append(
                 f'<p class="muted small">{e(pg.recommendation_author)}. Check the numbers against the tables below.</p>'
             )
-            parts.append(f'<div class="summary">{markdown_lite.render(pg.recommendation)}</div>')
+            parts.append(f'<div class="summary">{markdown_lite.render(_recommendation_md(pg.recommendation))}</div>')
         else:
             parts.append('<p class="empty">No recommendation yet: run the summarize stage.</p>')
-        parts.append(f'<section id="setup">{markdown_lite.render(pg.setup_md)}</section>')
+        parts.append(f'<section id="setup">{markdown_lite.render(pg.setup_md, shift=0)}</section>')
         return parts
 
     def render_index(self) -> str:
@@ -434,17 +393,19 @@ class _Site:
 
         parts.append(f'<h2 id="documents">Documents ({len(self.manifest)})</h2>')
         parts.append(self.render_doc_grid())
-        return _page(f"ocr-bench — {self.tag}", "\n".join(parts), "", "../index.html", self._crumbs())
+        return page_shell(f"ocr-bench — {self.tag}", "\n".join(parts), "", "../index.html", self._crumbs())
 
     def render_doc_grid(self) -> str:
         if not self.manifest:
             return '<p class="empty">No documents in manifest.</p>'
         parts = []
         types = self._order([str(d.get("type") or "") for d in self.manifest])
-        buttons = ['<button class="type-filter active" data-type="">All</button>']
+        buttons = ['<button class="type-filter active" data-type="" aria-pressed="true">All</button>']
         for t in types:
             count = sum(1 for d in self.manifest if str(d.get("type") or "") == t)
-            buttons.append(f'<button class="type-filter" data-type="{e(t)}">{e(t)} ({count})</button>')
+            buttons.append(
+                f'<button class="type-filter" data-type="{e(t)}" aria-pressed="false">{e(t)} ({count})</button>'
+            )
         parts.append(
             '<div class="toolbar">'
             + "".join(buttons)
@@ -457,12 +418,7 @@ class _Site:
             doc_id = str(doc["id"])
             pages = doc.get("pages") or []
             first = pages[0] if pages else {}
-            thumb = self.asset_href(first.get("clean"), "")
-            thumb_html = (
-                f'<img src="{e(thumb)}" alt="{e(doc_id)} page 1" loading="lazy">'
-                if thumb
-                else '<span class="muted small" style="padding:1rem">no image</span>'
-            )
+            thumb_html = self.thumb_img(first.get("clean"), f"{doc_id} page 1")
             badges = [f'<span class="badge type">{e(doc.get("type"))}</span>']
             for b, cer in self.doc_cer_by_backend(doc_id).items():
                 badges.append(
@@ -518,14 +474,14 @@ class _Site:
             out.append(self.render_metrics(scored))
             clean_text = scored.get("clean_text")
             if clean_text is not None and gt_text is not None:
-                out.append("<h3>Word diff vs ground truth</h3>")
+                out.append(f"<h3>Word diff vs ground truth: {e(backend)}</h3>")
                 out.append(
                     '<p class="muted small"><del>missing</del> = in ground truth only, '
                     "<ins>extra</ins> = in output only (normalized text as scored).</p>"
                 )
                 out.append(f'<div class="diff mono">{word_diff(gt_text, str(clean_text))}</div>')
             elif clean_text is not None:
-                out.append(f"<h3>Scored text</h3><pre>{e(clean_text)}</pre>")
+                out.append(f"<h3>Scored text: {e(backend)}</h3><pre>{e(clean_text)}</pre>")
         else:
             out.append('<p class="muted small">Not scored — raw output only.</p>')
         raw = _read_under(self.run_dir, output_file)
@@ -544,7 +500,8 @@ class _Site:
         sec_id = f"p{n}"
 
         toggles = "".join(
-            f'<button class="vbtn{" active" if i == 0 else ""}" data-variant="{v}">{v}</button>'
+            f'<button class="vbtn{" active" if i == 0 else ""}" data-variant="{v}" '
+            f'aria-pressed="{"true" if i == 0 else "false"}">{v}</button>'
             for i, v in enumerate(available)
         )
         imgs = []
@@ -566,33 +523,39 @@ class _Site:
             raw = self.page_raw.get(key, {})
             backends = [b for b in self.backend_order if b in scored or b in raw]
             labels = ["Ground truth"] + backends
-            tab_buttons = "".join(
-                f'<button class="{"active" if j == 0 else ""}">{e(lbl)}'
-                + (
+            ids = [f"{sec_id}-{v}-{j}" for j in range(len(labels))]
+            tab_buttons = []
+            for j, lbl in enumerate(labels):
+                cer = (
                     f' <span class="small">({e(fmt(scored[lbl].get("cer"), "rate"))})</span>'
                     if j and lbl in scored
                     else ""
                 )
-                + "</button>"
-                for j, lbl in enumerate(labels)
+                tab_buttons.append(
+                    f'<button role="tab" id="tab-{ids[j]}" aria-controls="panel-{ids[j]}"'
+                    + (
+                        ' class="active" aria-selected="true" tabindex="0"'
+                        if j == 0
+                        else ' aria-selected="false" tabindex="-1"'
+                    )
+                    + f">{e(lbl)}{cer}</button>"
+                )
+            gt_html = (
+                f'<pre class="mono">{e(gt_text)}</pre>'
+                if gt_text is not None
+                else '<p class="empty">Ground truth not found.</p>'
             )
+            bodies = [gt_html] + [self.render_backend_panel(b, scored.get(b), raw.get(b), gt_text) for b in backends]
             panels = [
-                '<div class="tabpanel">'
-                + (
-                    f'<pre class="mono">{e(gt_text)}</pre>'
-                    if gt_text is not None
-                    else '<p class="empty">Ground truth not found.</p>'
-                )
-                + "</div>"
+                f'<div class="tabpanel" role="tabpanel" id="panel-{ids[j]}" aria-labelledby="tab-{ids[j]}" '
+                f'tabindex="0"{" hidden" if j else ""}>{html}</div>'
+                for j, html in enumerate(bodies)
             ]
-            for b in backends:
-                panels.append(
-                    f'<div class="tabpanel" hidden>{self.render_backend_panel(b, scored.get(b), raw.get(b), gt_text)}</div>'
-                )
             hidden = "" if i == 0 else " hidden"
             panes.append(
                 f'<div class="vpane" data-variant="{v}"{hidden}><div class="tabset">'
-                f'<div class="tabs">{tab_buttons}</div>{"".join(panels)}</div>'
+                f'<div class="tabs" role="tablist" aria-label="Transcripts, page {n} {v}">{"".join(tab_buttons)}</div>'
+                f"{''.join(panels)}</div>"
                 + ("" if backends else f'<p class="muted small">No transcripts for this page ({e(v)}).</p>')
                 + "</div>"
             )
@@ -714,7 +677,7 @@ class _Site:
         body.extend(self.render_page_section(doc, p, prefix) for p in pages)
         body.append(f'<section id="fields">{self.render_fields(doc)}</section>')
         body.append('<p class="small"><a href="../index.html">← back to index</a></p>')
-        return _page(
+        return page_shell(
             f"{doc_id} — ocr-bench {self.tag}",
             "\n".join(body),
             prefix,
@@ -744,154 +707,3 @@ def build_site(docs_dir: Path, run_dir: Path, scores: dict, out_dir: Path, page:
     ``scores.json`` (see docs/data-formats.md). Images are copied to ``out_dir/assets``.
     """
     return _Site(Path(docs_dir), Path(run_dir), scores, Path(out_dir), page).build()
-
-
-@dataclass
-class RunCard:
-    """One run on the experiments index. `card_meta` is run.json as the run page describes it (hidden
-    backends removed); `headline` comes from reporting.headline; `bottom_line` from summary.md."""
-
-    meta: dict
-    card_meta: dict
-    scores: dict
-    headline: dict
-    bottom_line: str = ""
-
-
-def _card_models(m: dict) -> str:
-    from .. import view
-    from ..explain import AGENT_INPUT
-
-    notes = {
-        view.ROLE_AGENT: f"Reads {AGENT_INPUT}; returns the fields as JSON.",
-        view.ROLE_WRITER: "Writes the bottom line and recommendation from the computed key facts",
-    }
-    rows = []
-    for mr in view.model_rows(m):
-        note = " ".join(notes[x] for x in mr.roles if x in notes)
-        if view.ROLE_WRITER in mr.roles:
-            note += f"; reasoning effort {mr.reasoning_effort}." if mr.reasoning_effort else "."
-        chip = f'<span class="chip warmchip">temperature {mr.temperature:g}</span>' if mr.temperature else ""
-        rows.append(
-            f'<tr><td class="role">{e(", ".join(mr.roles))}</td><td><code>{e(mr.key)}</code></td><td>{chip}'
-            f'<div class="mname">{e(mr.label)}</div><div class="mid">{e(mr.detail)}</div>'
-            + (f'<div class="mnote">{markdown_lite.inline(note)}</div>' if note else "")
-            + "</td></tr>"
-        )
-    return f'<table class="models">{"".join(rows)}</table>'
-
-
-def _card_gpu(m: dict) -> str:
-    from .. import view
-
-    sh = view.selfhosted_in_run(m)
-    if not sh:
-        return '<p class="muted">No self-hosted model in this run.</p>'
-    parts = []
-    for name in sh:
-        b = view.spec(m, name)
-        price = b.get("price_per_hour_usd")
-        price_s = f"${price:.2f}/h" if isinstance(price, (int, float)) else "?"
-        parts.append(
-            (f'<div class="kv"><span>Model</span><code>{e(name)}</code></div>' if len(sh) > 1 else "")
-            + f'<div class="kv"><span>Instance</span><code>{e(b.get("instance_type") or "?")}</code></div>'
-            f'<div class="kv"><span>GPU</span><span>{e(b.get("gpu") or "?")}</span></div>'
-            f'<div class="kv"><span>Host</span><span>{e(b.get("host") or "?")}</span></div>'
-            f'<div class="kv"><span>Price</span><span><b>{e(price_s)}</b> '
-            '<span class="muted">on-demand, billed while idle too</span></span></div>'
-        )
-    return "".join(parts) + f'<div class="kv"><span>Region</span><span>{e(m.get("region"))}</span></div>'
-
-
-def _card_results(m: dict, h: dict) -> str:
-    from .. import view
-
-    best = {v: (h.get("best") or {}).get(v, {}).get("pipeline") for v in VARIANTS}
-    rows = []
-    for p, vs in (h.get("pipelines") or {}).items():
-        cells = []
-        for v in VARIANTS:
-            x = vs.get(v)
-            cls = ' class="win"' if x and best.get(v) == p else ""
-            cells.append(f"<td{cls}>{e(fmt(x['acc'], 'pct')) if x else '&ndash;'}</td>")
-        c = vs.get("clean") or vs.get("degraded") or {}
-        rows.append(
-            f'<tr><td title="{e(p)}">{e(view.pipeline_label(m, p))}</td>{"".join(cells)}'
-            f"<td>{e(fmt(c.get('s'), 'sec'))} s</td><td>{e(fmt(c.get('cost'), 'usd'))}</td></tr>"
-        )
-    if not rows:
-        return '<p class="muted">not scored yet</p>'
-    return (
-        '<table class="mini"><thead><tr><th>input → extractor</th><th>clean</th><th>degraded</th>'
-        "<th>time / doc</th><th>$ / 1k docs</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
-        '<p class="muted small">Field accuracy; best per variant in green. Time and cost: clean pages.</p>'
-    )
-
-
-def _run_card(r: RunCard) -> str:
-    m, docs = r.card_meta, r.card_meta.get("documents") or {}
-    created = (m.get("created") or "")[:16].replace("T", " ")
-    desc = m.get("plan_description") or ""
-    return (
-        '<details class="run-card">'
-        '<summary><span class="chev" aria-hidden="true"></span>'
-        f'<div class="run-sum"><div class="run-id">{e(m["id"])}</div>'
-        + (f'<div class="plan-desc">{markdown_lite.inline(desc)}</div>' if desc else "")
-        + f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
-        f'<span class="chip">{e(docs.get("count"))} docs &middot; {e(docs.get("page_images"))} page images</span>'
-        f'<span class="chip">{e(created)}</span></div></div>'
-        f'<a class="open" href="{quote(m["id"])}/index.html">Open run &rarr;</a></summary>'
-        + (
-            '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'
-            f"{markdown_lite.render(r.bottom_line)}</div>"
-            if r.bottom_line
-            else ""
-        )
-        + '<div class="run-grid">'
-        f'<div class="block wide"><h4>Models</h4>{_card_models(m)}</div>'
-        f'<div class="block"><h4>GPU (self-hosted models)</h4>{_card_gpu(m)}</div>'
-        f'<div class="block"><h4>Results</h4>{_card_results(m, r.headline)}</div>'
-        "</div></details>"
-    )
-
-
-def _guide_sections(guide_md: str) -> tuple[str, str]:
-    """(intro, "How the benchmark works" body) of the shared guide."""
-    head, sep, rest = guide_md.partition("## How the benchmark works")
-    return head, rest if sep else ""
-
-
-def build_experiments_index(runs: list[RunCard], out_dir: Path, comparison_md: str = "", guide_md: str = "") -> Path:
-    """site/index.html: the guide, the cross-run comparison, and one expandable card per run (models,
-    GPU, headline results), each linking to its run page."""
-    out_dir = Path(out_dir)
-    assets = out_dir / "assets"
-    assets.mkdir(parents=True, exist_ok=True)
-    (assets / "style.css").write_text(CSS.lstrip(), encoding="utf-8")
-    (assets / "app.js").write_text(JS.lstrip(), encoding="utf-8")
-    intro, guide = _guide_sections(guide_md)
-    body = (
-        '<section class="hero"><div class="eyebrow">Document reading benchmark</div>'
-        "<h1>Which setup reads documents best?</h1>"
-        + (f'<div class="intro">{markdown_lite.render(intro)}</div>' if intro else "")
-        + "</section>"
-        + '<nav class="toc small">Jump to: <a href="#guide">How the benchmark works</a> &middot; '
-        '<a href="#compare">Compare runs</a> &middot; <a href="#runs">Experiments</a></nav>'
-        + (
-            f'<section id="guide" class="guide"><h2>How the benchmark works</h2>{markdown_lite.render(guide)}</section>'
-            if guide
-            else ""
-        )
-        + (
-            '<section id="compare" class="compare"><h2>Compare runs</h2>'
-            f"{markdown_lite.render(comparison_md.replace('## Compare runs', '', 1))}</section>"
-            if comparison_md
-            else ""
-        )
-        + f'<h2 id="runs">Experiments</h2><p class="muted">{len(runs)} run{"s" if len(runs) != 1 else ""}, '
-        "newest first. Click a row to expand it, or open the run for its documents.</p>"
-        + ("".join(_run_card(r) for r in runs) or '<p class="empty">No runs yet.</p>')
-    )
-    idx = out_dir / "index.html"
-    idx.write_text(_page("ocr-bench experiments", body, "", "index.html", []), encoding="utf-8")
-    return idx

@@ -22,7 +22,7 @@ aws:
     Project: ocr-bench
     Temporary: "true"
 
-# Terraform remote state. null bucket = local state file in infra/terraform/.
+# Terraform remote state. null bucket = local state file in .state/<name_prefix>/terraform.tfstate.
 terraform_state:
   bucket: null                # e.g. my-tf-state-bucket
   key: ocr-bench/terraform.tfstate
@@ -32,6 +32,7 @@ network:
   # existing: use an existing VPC + private subnets (they need a route to S3,
   #           ECR, CloudWatch Logs, SageMaker runtime and your LLM endpoints).
   # create:   create a small VPC with 2 private subnets, a NAT gateway and an S3 endpoint.
+  #           The NAT gateway bills while the stack exists (~$32/month idle); `just destroy` removes it.
   mode: create
   existing:
     vpc_id: null              # or set vpc_name_tag
@@ -65,7 +66,7 @@ backends:
     hf_skip_prefixes: ["assets/", "wheel/", "Unlimited-OCR.pdf", ".gitattributes"]
     # Pin by digest for reproducible builds (a tag works, but the build prints the digest to pin):
     source_image: docker.io/vllm/vllm-openai:unlimited-ocr
-    image_platform: linux/amd64
+    image_platform: linux/amd64   # platform crane mirrors from source_image (SageMaker GPU hosts are amd64)
     served_model_name: baidu/Unlimited-OCR
     # Extra `vllm serve` arguments (model path, host and port are added automatically).
     serve_args:
@@ -96,8 +97,8 @@ backends:
       # Tried in priority order (GPU capacity is often scarce; one type alone may fail).
       instance_pools: [ml.g6.xlarge, ml.g6e.xlarge, ml.g5.xlarge, ml.g5.2xlarge]
       inference_ami_version: al2023-ami-sagemaker-inference-gpu-4-1   # NVIDIA driver for CUDA 13 images
-      container_startup_timeout_s: 1800
-      model_download_timeout_s: 1800
+      container_startup_timeout_s: 1800   # health-check timeout while vLLM loads the model
+      model_download_timeout_s: 1800      # time allowed to copy the weights from S3 to the host
       network_isolation: true
       # The endpoint deletes itself after this many hours (EventBridge Scheduler), in case nobody runs
       # `endpoint down`. 0 = never.
@@ -143,7 +144,7 @@ backends:
 # ---------------------------------------------------------------------------
 bench:
   docs:
-    per_type: 6            # documents per type (8 types) -> ~96 pages incl. degraded variants
+    per_type: 6            # documents per type (8 types) -> 48 docs, 54 pages, 108 page images (clean + degraded)
     seed: 7
     scale: 2.0             # pdfium render scale (2.0 ~ 144 dpi, A4 ~ 1190x1684 px)
   # Stage 2 — an LLM agent extracts the per-type fields.
@@ -178,6 +179,9 @@ bench:
     suite: "Self-hosted OCR vs hosted LLMs, single requests and batch load."
   # Named run plans: each item is one transcription run.
   # Pipelines whose transcriber a plan doesn't run are skipped for that plan.
+  # Item fields: backend, concurrency, and optionally variant (clean | degraded | both, default both),
+  # limit (N page images, spread over the types; 0 = all), repeat (send every page N times, default 1),
+  # warmup (one untimed request first, default true). See docs/configuration.md.
   plans:
     # No GPU, no deploy: with runner.mode local this needs only Bedrock access (see README).
     bedrock-only:

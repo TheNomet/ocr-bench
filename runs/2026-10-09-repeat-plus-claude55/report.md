@@ -6,9 +6,9 @@
 
 | question | clean pages | degraded pages |
 |---|---|---|
-| most accurate pipeline | `image->haiku-5.5` 100.0% | `image->sonnet-5.5` 99.1% |
+| most accurate pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 100.0% | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 99.1% |
 | cheapest pipeline (among priced, see note) | – | – |
-| fastest pipeline | `image->haiku-5.5` 1.5 s/doc | `image->sonnet-5.5` 1.7 s/doc |
+| fastest pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 1.5 s/doc | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 1.7 s/doc |
 
 **Cost note:** no price is configured for `image->haiku-5.5`, `image->sonnet-5.5`, `unlimited-ocr->sonnet-5.5`, so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
 
@@ -16,9 +16,9 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 | pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
 |---|---|---|---|---|
-| `image->haiku-5.5` | 100.0% | 98.2% | 1.5 | – |
-| `image->sonnet-5.5` | 99.7% | 99.1% | 2.1 | – |
-| `unlimited-ocr->sonnet-5.5` | 95.1% | 78.7% | 8.1 | – |
+| page images → Claude Haiku 5.5 (`image->haiku-5.5`) | 100.0% | 98.2% | 1.5 | – |
+| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 99.7% | 99.1% | 2.1 | – |
+| Unlimited-OCR text → Claude Sonnet 5.5 (`unlimited-ocr->sonnet-5.5`) | 95.1% | 78.7% | 8.1 | – |
 
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
 |---|---|---|---|---|---|
@@ -42,9 +42,9 @@ Pipeline costs that include `unlimited-ocr` use $0.86/1k pages: the cost at its 
 
 Fields missed most often (count over clean + degraded documents):
 
-- `image->haiku-5.5`: `newsletter.new_fee` (3), `receipt.merchant` (1), `rental_contract.monthly_rent` (1), `rental_contract.deposit` (1)
-- `image->sonnet-5.5`: `newsletter.new_fee` (3), `rental_contract.monthly_rent` (1)
-- `unlimited-ocr->sonnet-5.5`: `holiday_survey.activities` (9), `receipt.merchant` (8), `holiday_survey.accommodation` (6), `holiday_survey.pets` (6)
+- page images → Claude Haiku 5.5 (`image->haiku-5.5`): `newsletter.new_fee` (3), `receipt.merchant` (1), `rental_contract.monthly_rent` (1), `rental_contract.deposit` (1)
+- page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): `newsletter.new_fee` (3), `rental_contract.monthly_rent` (1)
+- Unlimited-OCR text → Claude Sonnet 5.5 (`unlimited-ocr->sonnet-5.5`): `holiday_survey.activities` (9), `receipt.merchant` (8), `holiday_survey.accommodation` (6), `holiday_survey.pets` (6)
 
 ## Recommendation
 
@@ -83,13 +83,13 @@ Choose `image->sonnet-5.5`. It is the most accurate pipeline on degraded pages (
 | role | name in tables | model | model id | served by | temperature | price |
 |---|---|---|---|---|---|---|
 | transcriber (self-hosted) | `unlimited-ocr` | baidu/Unlimited-OCR @ 07dea832 | `baidu/Unlimited-OCR` | vLLM on SageMaker real-time endpoint | 0 | $1.49/hour (on-demand) |
-| transcriber, extraction agent (default) | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic.claude-sonnet-5-5` | OpenAI-compatible gateway | 1 | – |
+| transcriber, extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic.claude-sonnet-5-5` | OpenAI-compatible gateway | 1 | – |
 | transcriber, extractor | `haiku-5.5` | Claude Haiku 5.5 | `anthropic.claude-haiku-5-5` | OpenAI-compatible gateway | 1 | – |
 | recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
 
-### The extraction agent
+### The extractors
 
-The **agent** (default extractor) is Claude Sonnet 5.5 (`anthropic.claude-sonnet-5-5`), temperature 1. It gets the document type's field list (name, type, one-line description), plus either the page images (`image->agent`) or the text transcript of every page, in order (`<transcriber>->agent`), and returns one JSON object with the field values copied verbatim; max 2,048 output tokens. It never sees the ground truth. Pipelines that name another extractor (`haiku-5.5`) use that model with the same input.
+Extractors: Claude Sonnet 5.5 (`sonnet-5.5`: `anthropic.claude-sonnet-5-5`, temperature 1), Claude Haiku 5.5 (`haiku-5.5`: `anthropic.claude-haiku-5-5`, temperature 1). Each pipeline names its extractor after the arrow. The extractor gets the document type's field list (name, type, one-line description), plus either the page images or the text transcript of every page, in order, and returns one JSON object with the field values copied verbatim; max 2,048 output tokens. It never sees the ground truth.
 
 Models with temperature above 0 sample their output, so their results vary slightly between runs; differences of a point or two are within noise.
 
@@ -145,8 +145,8 @@ Pipeline names read `<input> -> <extractor>`. The left side is what the extracti
 | pipeline | what the extractor reads |
 |---|---|
 | `unlimited-ocr->sonnet-5.5` | Two steps: the self-hosted model `unlimited-ocr` (baidu/Unlimited-OCR @ 07dea832) transcribes every page to text, then the extractor reads that text (not the images) and returns the fields. Extractor: `sonnet-5.5` (Claude Sonnet 5.5). |
-| `image->sonnet-5.5` | One step: the extraction agent reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `sonnet-5.5` (Claude Sonnet 5.5). |
-| `image->haiku-5.5` | One step: the extraction agent reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `haiku-5.5` (Claude Haiku 5.5). |
+| `image->sonnet-5.5` | One step: the extractor reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `sonnet-5.5` (Claude Sonnet 5.5). |
+| `image->haiku-5.5` | One step: the extractor reads the page images directly and returns the fields. This is the baseline: what you get without any separate OCR step. Extractor: `haiku-5.5` (Claude Haiku 5.5). |
 
 ### Page variants
 

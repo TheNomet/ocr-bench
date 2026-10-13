@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 PIPELINES = {
     "image": (
         "One step: the extraction agent reads the page images directly and returns the fields. "
@@ -54,7 +56,7 @@ CHALLENGES = {
 }
 
 # --------------------------------------------------------------------------- model names
-_CLAUDE = __import__("re").compile(r"claude-(?P<fam>[a-z]+)-(?P<maj>\d+)(?:-(?P<min>\d))?(?:-(?P<date>\d{8}))?")
+_CLAUDE = re.compile(r"claude-(?P<fam>[a-z]+)-(?P<maj>\d+)(?:-(?P<min>\d))?(?:-(?P<date>\d{8}))?")
 
 
 def model_label(model_id: str | None) -> str:
@@ -73,6 +75,13 @@ def model_label(model_id: str | None) -> str:
 AGENT_INPUT = (
     "the document type's field list (name, type, one-line description), plus either the page images "
     "(`image->agent`) or the text transcript of every page, in order (`<transcriber>->agent`)"
+)
+
+
+# The same input without the `->agent` pipeline names, for runs whose shown pipelines all name their extractor.
+EXTRACTOR_INPUT = (
+    "the document type's field list (name, type, one-line description), plus either the page images "
+    "or the text transcript of every page, in order"
 )
 
 
@@ -96,6 +105,21 @@ def agent_note(
     return (
         f"The **agent** (default extractor) is {label or model_label(model_id)} (`{model_id}`), temperature {t}. "
         f"It gets {AGENT_INPUT}, and returns {agent_output(max_tokens)}. It never sees the ground truth.{extra}"
+    )
+
+
+def extractors_note(extractors: list[tuple[str, str, str | None, float | None]], max_tokens: int = 2048) -> str:
+    """agent_note for a run page whose default agent is hidden: the extractors the shown pipelines use,
+    as (label, backend key, model id, temperature)."""
+
+    def one(lbl: str, key: str, model_id: str | None, temperature: float | None) -> str:
+        t = "provider default" if temperature is None else f"{temperature:g}"
+        return f"{lbl} (`{key}`: `{model_id}`, temperature {t})"
+
+    return (
+        f"Extractors: {', '.join(one(*x) for x in extractors)}. Each pipeline names its extractor after the "
+        f"arrow. The extractor gets {EXTRACTOR_INPUT}, and returns {agent_output(max_tokens)}. It never sees "
+        "the ground truth."
     )
 
 

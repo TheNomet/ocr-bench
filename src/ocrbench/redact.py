@@ -14,7 +14,11 @@ _PATTERNS = [
     (re.compile(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:amazonaws\.com|internal|local|net|com|io)\b", re.I), "<host>"),
     (re.compile(r"\b\d{12}\b"), "<account>"),
     (re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I), "<id>"),
-    (re.compile(r"(?i)(bearer|token|key|secret|password)[=: ]+\S+"), r"\1=<redacted>"),
+    # `Bearer x`, `token=x`, `?token=x&...`, `key: x`, and JSON / quoted forms like `"access_token": "x"`
+    (
+        re.compile(r"(?i)(bearer|token|key|secret|password)[\"']?(?:\s*[=:]\s*|\s+)[\"']?[^\s\"',}&]+"),
+        r"\1=<redacted>",
+    ),
 ]
 
 

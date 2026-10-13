@@ -157,7 +157,7 @@ async def run(
         conc=concurrency,
         run_id=run_id,
         out_dir=out_dir,
-        max_retries=cfg["bench"].get("max_retries", 4),
+        max_retries=int(cfg["bench"]["max_retries"]),
         prompt=prompt,
         sink=sink,
     )

@@ -7,9 +7,11 @@ aren't obvious from the code.
 
 ocr-bench is a benchmark harness. It generates synthetic documents with ground truth, sends
 the page images to several **transcribers** (self-hosted vLLM models on SageMaker, and
-hosted LLMs), then has an **agent** LLM extract structured fields from each transcript. It
-scores everything and writes a report plus a static HTML site. The infrastructure is
-temporary: deploy it, run, destroy it.
+hosted LLMs), then has an **extractor** LLM (by default **the agent**, `bench.extraction.agent`)
+extract structured fields from each transcript or straight from the images. It scores
+everything, has an LLM write a recommendation (`summarize`), and writes a report plus a static
+HTML site. The infrastructure is temporary: deploy it, run, destroy it. Terms (stage,
+extractor, agent, pipeline) are defined at the top of the [README](README.md).
 
 ## Map
 
@@ -24,7 +26,7 @@ src/ocrbench/
   prompts.py               prompt + token-limit defaults; a run records what it used in run.json
   runs.py                  run folders runs/<id>/ + run.json (schema_version, backends, prompts, stage timings); upgrade() for old runs
   transcribe.py            stage 1 runner (concurrency, retries, JSONL records)
-  extract.py               stage 2 runner (pipelines "<transcriber>->agent" and "image->agent")
+  extract.py               stage 2 runner (pipelines "<source>-><extractor>": "<transcriber>->agent", "image->agent")
   score.py                 stage 3: metrics + aggregation -> scores dict
   summarize.py             stage 4: LLM writes the recommendation (summary.md) from the key facts + setup
   view.py                  how a run names its backends, roles, prices and pipelines (report.md, site, summary prompt)
@@ -80,15 +82,16 @@ site/                      LOCAL build of the site (gitignored); published to th
 - **Resource names** come from `name_prefix` (and the backend name for self-hosted resources).
   If you change a name, change it in both `config.py` and `infra/terraform/main.tf`.
 - **No backend name is special.** Code decides by `kind` (`view.is_selfhosted`), never by name.
+  Keys are neutral model names ([README: Naming backends](README.md#naming-backends)).
   A run's `run.json` is the only input to scoring and reporting; if you add a setting that
   changes results, record it there and bump `runs.SCHEMA_VERSION` with an `upgrade()` step.
 - **Runs are committed, their `config.yaml` is not.** Everything else in `runs/<id>/` is meant
-  to be public: backend keys are neutral model names (`sonnet-5.5`), and SageMaker endpoint
-  names are kept out of records (`model@sagemaker`). If you add a field to `run.json` or the
+  to be public: SageMaker endpoint names are kept out of records (`model@sagemaker`). If you add a field to `run.json` or the
   records, make sure it can't carry hosts, account ids or client ids. The guard (`scripts/public_guard.sh`)
   runs on every commit/push and on the site in `just publish`.
-- **The site is published from a `gh-pages` branch**, never from `main`. `just publish` builds,
-  scans and pushes it; `.github/workflows/pages.yml` only deploys that branch.
+- **The site is published from a `gh-pages` branch**, never from `main`
+  ([README: Publishing](README.md#publishing)); `.github/workflows/pages.yml` only deploys that
+  branch. Keep `just publish` refusing when regenerated reports leave `runs/` uncommitted.
 - **Numbers are computed, the LLM only comments.** `facts.py` computes the key facts (best,
   cheapest, fastest pipeline, break-even rates...). `summarize.py` gives only those facts and a
   setup description to the recommendation model (`bench.summary.agent`, Opus 5.5 at medium reasoning
@@ -99,21 +102,25 @@ site/                      LOCAL build of the site (gitignored); published to th
 - **Re-summarising an old run** (`just rerun <id> summarize`) uses the *current* recommendation model (`bench.summary.agent`);
   `runs.refresh_summary_setup` patches the run's snapshot. Nothing from stages 1-3 changes.
 - **Cost.** The SageMaker endpoint bills per hour while it exists. Always finish with
-  `just endpoint-down` (or `just destroy`).
-- **Scoring is by design not formatting-sensitive.** CER/WER are computed on normalised text
-  (markdown/HTML stripped). Word recall/precision ignore order. Numbers are checked by
-  presence. Field values are compared after case, whitespace and currency-prefix
-  normalisation. Change `score.py` deliberately and update the tests.
+  `just endpoint-down` (or `just destroy`). With `network.mode: create` the NAT gateway also
+  bills (~$32/month idle) until `just destroy`.
 
 ## How results are scored (don't change silently)
 
+Change `score.py` deliberately and update the tests.
+
 `score.py` reads only the run folder (`run.json` for prices, GPU price and post-processing), so a run
-scores the same anywhere. Its choices are written into `scores.json` under `method`:
+scores the same anywhere. Its choices are written into `scores.json` under `method`. It is by design not
+formatting-sensitive:
+- CER/WER are computed on normalised text (markdown/HTML stripped); word recall/precision ignore order;
 - failed pages score CER=1/recall 0 and failed extractions 0 (see `coverage`); nothing is dropped;
 - the scored transcript of a page is the one from the lowest-concurrency run (latest if several);
 - a self-hosted model's per-page cost uses its best sustained throughput (<=1% errors), with the
   concurrency-1 cost reported next to it;
-- numbers match as whole tokens; currency prefixes/suffixes are ignored when comparing fields.
+- numbers are checked by presence and match as whole tokens;
+- field values are compared after case and whitespace normalisation, ignoring currency prefixes/suffixes;
+- end-to-end latency of `X->agent` is the sum of X's per-page latencies for the document
+  (concurrency-1 runs preferred) plus the extraction call; its cost adds X's per-page costs.
 
 ## Safety rails
 

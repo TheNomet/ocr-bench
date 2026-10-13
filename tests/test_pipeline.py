@@ -263,9 +263,12 @@ def test_end_to_end_run_folder(fake_docs, tmp_path, monkeypatch):
         assert needle in report, needle
     index = (tmp_path / "site" / "index.html").read_text()
     assert meta["id"] in index and "Use image-&gt;agent" in index and "input → extractor</th>" in index
-    assert '<details class="run-card">' in index and index.index('id="guide"') < index.index('id="runs"')
+    # "Latest result" right under the h1; the guide comes after the experiments list.
+    assert '<details class="run-card">' in index and index.index('id="runs"') < index.index('id="guide"')
+    assert index.index("<h1>") < index.index('class="latest"') < index.index('id="runs"')
     if 'id="compare"' in index:
-        assert index.index('id="guide"') < index.index('id="compare"')
+        assert index.index('id="compare"') < index.index('id="runs"')
+    assert "<h4" not in index and "<caption>Models</caption>" in index and "<h3>GPU" in index
     assert "What is this?" in index and 'id="guide"' in index and "Document types" in index
     assert "extraction agent" in index and "Reads the document type" in index
     run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()
@@ -289,6 +292,48 @@ def test_unverified_numbers():
     assert unverified_numbers("98,8 %", src) == []  # Norwegian decimal comma
     assert unverified_numbers("16\n32", "16 and 32") == []  # a newline never joins numbers
     assert unverified_numbers("99.5%", src) == ["99.5"]  # not a rounding of 98.8
+
+
+def test_key_facts_use_readable_pipeline_labels():
+    from ocrbench import view
+    from ocrbench.facts import compute, to_md
+    from ocrbench.summarize import build_prompt, unverified_numbers
+
+    meta = {
+        "id": "r",
+        "transcribers": ["ocr"],
+        "backends": {
+            "ocr": {"kind": "selfhosted", "hf_repo": "x/Some-OCR", "hf_revision": "0123456789abcdef"},
+            "agent5": {"kind": "bedrock", "model": "anthropic.claude-sonnet-5-5", "temperature": 0.0},
+        },
+        "extraction": {"agent": "agent5", "pipelines": ["image->agent", "ocr->agent"]},
+        "documents": {"count": 1, "page_images": 2, "types": {"invoice": {}}},
+    }
+    agg = [
+        {
+            "pipeline": p,
+            "variant": "clean",
+            "field_accuracy": acc,
+            "end_to_end_latency_s": 2.5,
+            "cost_per_1k_docs_usd": 7.4,
+        }
+        for p, acc in (("image->agent", 0.97), ("ocr->agent", 0.955))
+    ]
+    scores = {
+        "speed": [],
+        "transcription": {"aggregate": [], "pages": []},
+        "extraction": {"aggregate": agg, "docs": []},
+    }
+    md = to_md(compute(meta, scores), view.pipeline_labels(meta))
+    assert "page images → Claude Sonnet 5.5 (`image->agent`): 97.0%" in md
+    assert "| Some-OCR text → Claude Sonnet 5.5 (`ocr->agent`) | 95.5%" in md
+    assert "| `image->agent` |" in to_md(compute(meta, scores))  # without labels: the raw key, as before
+    prompt, source = build_prompt(meta, scores)
+    assert "page images → Claude Sonnet 5.5" in prompt
+    # the recommendation may quote raw keys (with their digits) and the facts' numbers
+    rec = "Choose `image->agent` (97.0%), not `ocr->agent` (95.5%); Claude Sonnet 5.5 is 2.5 s/doc."
+    assert unverified_numbers(rec, source) == []
+    assert unverified_numbers("`image->agent` reaches 98.1%", source) == ["98.1"]
 
 
 def test_temperature_override():
@@ -357,7 +402,7 @@ def test_comparison_matches_on_model_not_key():
 
 
 def test_same_model_pipelines_hidden():
-    from ocrbench import reporting, view
+    from ocrbench import view
 
     meta = {
         "backends": {
@@ -376,12 +421,12 @@ def test_same_model_pipelines_hidden():
     meta["backends"]["h"]["label"] = "Haiku (pinned)"
     assert view.pipeline_label(meta, "ocr->h") == "Unlimited-OCR text → Haiku (pinned)"
     agg = [{"pipeline": p, "variant": "clean"} for p in meta["extraction"]["pipelines"]]
-    vis = reporting.visible(meta, {"extraction": {"aggregate": agg, "docs": []}})
+    vis = view.visible(meta, {"extraction": {"aggregate": agg, "docs": []}})
     assert [a["pipeline"] for a in vis["extraction"]["aggregate"]] == ["h->agent", "image->agent", "ocr->h"]
 
 
 def test_focus_hides_repeat_backends_but_not_in_comparison():
-    from ocrbench import reporting
+    from ocrbench import view
 
     meta = {
         "id": "r",
@@ -405,12 +450,19 @@ def test_focus_hides_repeat_backends_but_not_in_comparison():
         "transcription": {"aggregate": tr, "pages": []},
         "extraction": {"aggregate": agg, "docs": []},
     }
-    v = reporting.visible(meta, scores)
+    fm, v = view.focus(meta, scores)
     assert [a["pipeline"] for a in v["extraction"]["aggregate"]] == ["image->new", "ocr->new"]
     assert [a["backend"] for a in v["transcription"]["aggregate"]] == ["ocr", "new"]
-    fm = reporting.focused_meta(meta)
     assert fm["extraction"]["agent"] == "new" and fm["transcribers"] == ["ocr", "new"]
-    full = reporting.visible(meta, scores, focus=False)
+    # the stand-in for the hidden default agent is not called "the agent"
+    assert not view.default_agent_shown(fm) and view.default_agent_shown(meta)
+    note = view.agent_note({**fm, "prompts": {}})
+    assert note.startswith("Extractors: Claude Sonnet 5.5 (`new`") and "(default extractor)" not in note
+    roles = {r.key: r.roles for r in view.model_rows(fm)}
+    assert view.ROLE_AGENT not in roles["new"] and view.ROLE_EXTRACTOR in roles["new"]
+    assert "the extractor reads the page images" in view.pipeline_text(fm, "image->new")
+    assert "the extraction agent reads the page images" in view.pipeline_text(meta, "image->agent")
+    full = view.visible(meta, scores, focus=False)
     assert len(full["extraction"]["aggregate"]) == 3
 
 
@@ -453,3 +505,107 @@ def test_throughput_facts_keep_plan_order():
         for b in ("zeta", "alpha", "mid", "beta", "omega")
     ]
     assert list(throughput_facts(sp)) == ["zeta", "alpha", "mid", "beta", "omega"]
+
+
+def test_unknown_plan_raises_before_creating_a_run(fake_docs, tmp_path, monkeypatch):
+    from ocrbench import cli, runs
+
+    cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    monkeypatch.setattr(runs, "RUNS", tmp_path / "runs")
+    with pytest.raises(KeyError, match="'nope' not defined under bench.plans"):
+        cfg.plan("nope")
+    with pytest.raises(KeyError):
+        runs.create(cfg, "nope", fake_docs)
+    assert not (tmp_path / "runs").exists()
+
+    class A:
+        plan, id, stages, docs = "nope", None, "all", str(fake_docs)
+
+    with pytest.raises(SystemExit, match="nope"):
+        cli.cmd_run(cfg, A())
+
+
+def test_config_plan_helpers_and_defaults(tmp_path):
+    p = tmp_path / "c.yaml"
+    p.write_text(
+        "name_prefix: abc\naws: {account_id: '1', region: eu-north-1}\n"
+        "backends: {a: {kind: bedrock, model_id: x}, w: {kind: bedrock, model_id: y}}\n"
+        "bench:\n  extraction: {agent: a, pipelines: []}\n  summary: {agent: null}\n"
+        "  docs: {seed: 3}\n  plans: {p: [{backend: a}]}\n"
+        "  plan_descriptions: {p: desc}\n  plan_report: {p: {hide_backends: [a]}}\n"
+    )
+    cfg = config_mod.load(p)
+    assert cfg.summary_agent == "a"  # explicit null = not set
+    assert cfg.plan_description("p") == "desc" and cfg.plan_description("q") == ""
+    assert cfg.plan_report("p") == {"hide_backends": ["a"]} and cfg.plan_report("q") == {}
+    assert cfg["bench"]["max_retries"] == 4 and cfg["bench"]["extraction"]["concurrency"] == 8
+    assert cfg["bench"]["docs"] == {"seed": 3, "per_type": 6, "scale": 2.0}  # deep-merged, the file wins
+    cfg.raw["bench"]["summary"] = {"agent": "w"}
+    assert cfg.summary_agent == "w"
+    p.write_text("name_prefix: abc\naws: {account_id: '1', region: eu-north-1}\nbackends: {}\n")
+    with pytest.raises(ValueError, match="missing top-level key 'bench'"):
+        config_mod.load(p)
+
+
+def test_resumed_extract_uses_the_recorded_extractor(fake_docs, tmp_path, monkeypatch):
+    import asyncio
+
+    from ocrbench import extract
+
+    cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    assert cfg["bench"]["extraction"]["agent"] != "haiku-4.5"
+    used = []
+
+    def get(c, n):
+        used.append(n)
+        return GroundTruthBackend(n, fake_docs)
+
+    monkeypatch.setattr(extract, "get_backend", get)
+    meta = {"backends": {}, "extraction": {"agent": "haiku-4.5", "pipelines": ["image->agent"]}}
+    asyncio.run(extract.run(cfg, fake_docs, tmp_path, meta=meta, pipelines=["image->agent"]))
+    assert used == ["haiku-4.5"]
+
+
+def test_pipeline_names():
+    from ocrbench import view
+
+    assert view.source("image->agent") == "image" and view.source("a-b->c") == "a-b"
+    assert view.extractor_key("s", "x->agent") == "s" and view.extractor_key("s", "x->h") == "h"
+    meta = {"extraction": {"agent": "s", "agents": {"x->agent": "t"}}}
+    assert view.extractor(meta, "x->agent") == "t" and view.extractor(meta, "y->agent") == "s"
+    assert view.extractor(meta, "y->h") == "h"
+
+
+def test_read_jsonl_skips_blank_and_broken_lines(tmp_path, capsys):
+    from ocrbench.fileio import read_jsonl
+
+    f = tmp_path / "x.jsonl"
+    f.write_text('{"a": 1}\n\n   \n{"a": 2\n[1]\n{"a": 3}\n', encoding="utf-8")
+    assert read_jsonl(f) == [{"a": 1}, {"a": 3}]
+    err = capsys.readouterr().err
+    assert "x.jsonl:4" in err and "x.jsonl:5" in err
+    assert read_jsonl(tmp_path / "missing.jsonl") == []
+
+
+def test_boto_clients_make_a_single_attempt():
+    from ocrbench.backends.bedrock import BedrockBackend
+
+    b = BedrockBackend("b", {"model_id": "m", "region": "eu-north-1"})
+    assert b.client.meta.config.retries["total_max_attempts"] == 1
+
+
+def test_record_endpoint_warns_when_price_is_unknown(tmp_path, monkeypatch, capsys):
+    from ocrbench import aws, runs
+
+    cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    d = tmp_path / "r"
+    d.mkdir()
+    runs.save(d, {"schema_version": runs.SCHEMA_VERSION, "backends": {"unlimited-ocr": {}}})
+    monkeypatch.setattr(aws, "endpoint_info", lambda c, n: {"instance_type": "ml.zz.xlarge", "image_digest": None})
+    monkeypatch.setattr(aws, "sagemaker_hourly_usd", lambda r, t: None)
+    monkeypatch.setattr(aws, "instance_specs", lambda r, t: {})
+    b = runs.record_endpoint(cfg, d, "unlimited-ocr")
+    assert b["price_per_hour_usd"] is None and "no hourly price" in capsys.readouterr().err
+    monkeypatch.setattr(aws, "endpoint_info", lambda c, n: {})
+    runs.record_endpoint(cfg, d, "unlimited-ocr")
+    assert "could not read the instance type" in capsys.readouterr().err

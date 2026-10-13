@@ -3,12 +3,14 @@
 <name> : per self-hosted backend: mirror backends.<name>.source_image into <prefix>-vllm:mirror-<digest>,
          then add one layer with /opt/serve.sh (from backends.<name>.serve_args) as entrypoint
          -> <prefix>-vllm:<name>-sagemaker
-bench : runner.base_image + one layer with ocrbench and its dependencies installed
-        for linux/amd64 (built locally with uv), optional extra CA -> <prefix>-bench:latest
+bench : runner.base_image + a dependencies layer (uv.lock, hash-checked) + an ocrbench layer (plus the
+        optional extra CA), both installed for linux/amd64 locally with uv -> <prefix>-bench:latest.
+        Layers are reproducible tarballs, so unchanged inputs give unchanged layer digests.
 """
 
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import shlex
@@ -45,15 +47,38 @@ def login(cfg: Config) -> None:
     _sh(_crane(), "auth", "login", cfg.registry, "-u", "AWS", "--password-stdin", stdin=pw)
 
 
-def _layer(files: dict[str, tuple[bytes, int]]) -> Path:
-    """files: archive path -> (content, mode). Returns a tar.gz path."""
-    out = Path(tempfile.mkdtemp()) / "layer.tgz"
-    with tarfile.open(out, "w:gz", format=tarfile.USTAR_FORMAT) as tar:
-        for name, (data, mode) in files.items():
+def layer_bytes(files: dict[str, tuple[bytes, int]]) -> bytes:
+    """files: archive path -> (content, mode). A reproducible tar.gz: sorted entries, zero mtimes,
+    root ownership, no gzip name/mtime — the same files always give the same layer digest."""
+    buf = io.BytesIO()
+    with (
+        gzip.GzipFile(filename="", mode="wb", fileobj=buf, mtime=0) as gz,
+        tarfile.open(fileobj=gz, mode="w", format=tarfile.USTAR_FORMAT) as tar,
+    ):
+        for name in sorted(files):
+            data, mode = files[name]
             ti = tarfile.TarInfo(name)
-            ti.size, ti.mode, ti.uid, ti.gid = len(data), mode, 0, 0
+            ti.size, ti.mode, ti.mtime = len(data), mode, 0
+            ti.uid = ti.gid = 0
+            ti.uname = ti.gname = ""
             tar.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def _layer(files: dict[str, tuple[bytes, int]]) -> Path:
+    """Writes layer_bytes(files) to a temporary .tgz and returns its path."""
+    out = Path(tempfile.mkdtemp()) / "layer.tgz"
+    out.write_bytes(layer_bytes(files))
     return out
+
+
+def _tree(root: Path, dest: str) -> dict[str, tuple[bytes, int]]:
+    """Every file under `root` (minus __pycache__) as `dest/<relative path>`, mode 0644."""
+    return {
+        f"{dest}/{f.relative_to(root).as_posix()}": (f.read_bytes(), 0o644)
+        for f in sorted(root.rglob("*"))
+        if f.is_file() and "__pycache__" not in f.parts
+    }
 
 
 def serve_script(o: dict) -> str:
@@ -142,37 +167,32 @@ def build_bench(cfg: Config) -> None:
     repo = f"{cfg.registry}/{cfg.bench_repo}"
     login(cfg)
     work = Path(tempfile.mkdtemp())
-    site = work / "site"
+    deps_dir, app_dir = work / "deps", work / "app"
     print("installing ocrbench + locked deps for linux/amd64 (uv.lock, hash-checked)")
     req = work / "requirements.txt"
     req.write_text(_sh("uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--project", str(ROOT)))
-    target = [
-        "--target",
-        str(site),
-        "--python-version",
-        "3.12",
-        "--python-platform",
-        "x86_64-manylinux_2_28",
-        "--no-cache",
-        "--quiet",
-    ]
-    _sh("uv", "pip", "install", *target, "--require-hashes", "-r", str(req))
-    _sh("uv", "pip", "install", *target, "--no-deps", str(ROOT))
-    files: dict[str, tuple[bytes, int]] = {}
-    for f in site.rglob("*"):
-        if f.is_file() and "__pycache__" not in f.parts:
-            files[f"opt/ocrbench/{f.relative_to(site).as_posix()}"] = (f.read_bytes(), 0o644)
+    target = ["--python-version", "3.12", "--python-platform", "x86_64-manylinux_2_28", "--quiet"]
+    # Two layers: the dependencies (change only with uv.lock) and ocrbench itself, so a code change
+    # pushes a small layer and the reproducible deps layer keeps its digest.
+    _sh("uv", "pip", "install", "--target", str(deps_dir), *target, "--require-hashes", "-r", str(req))
+    _sh("uv", "pip", "install", "--target", str(app_dir), *target, "--no-deps", str(ROOT))
+    deps = _tree(deps_dir, "opt/ocrbench")
+    app = _tree(app_dir, "opt/ocrbench")
     env = ["PYTHONPATH=/opt/ocrbench"]
     if r.get("extra_ca_pem"):
         pem = Path(r["extra_ca_pem"]).expanduser().read_bytes()
-        files["opt/ocrbench-ca/extra.pem"] = (pem, 0o644)
+        app["opt/ocrbench-ca/extra.pem"] = (pem, 0o644)
         env.append("OCRBENCH_EXTRA_CA=/opt/ocrbench-ca/extra.pem")
-    layer = _layer(files)
-    print(f"layer: {layer.stat().st_size / 1e6:.1f} MB, {len(files)} files")
+    deps_layer, app_layer = _layer(deps), _layer(app)
+    print(
+        f"layers: deps {deps_layer.stat().st_size / 1e6:.1f} MB ({len(deps)} files), "
+        f"app {app_layer.stat().st_size / 1e6:.1f} MB ({len(app)} files)"
+    )
     base = r["base_image"]
     base_digest = base.split("@", 1)[1] if "@" in base else _sh(c, "digest", "--platform", "linux/amd64", base)
     base_ref = pinned(base, base_digest)
-    _sh(c, "append", "--platform", "linux/amd64", "-b", base_ref, "-f", str(layer), "-t", f"{repo}:base")
+    layers = ["-f", str(deps_layer), "-f", str(app_layer)]
+    _sh(c, "append", "--platform", "linux/amd64", "-b", base_ref, *layers, "-t", f"{repo}:base")
     mut = [c, "mutate", f"{repo}:base", "-t", f"{repo}:latest", "--entrypoint", "python,-m,ocrbench.cli"]
     for e in env:
         mut += ["--env", e]
