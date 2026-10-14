@@ -10,7 +10,7 @@
 | cheapest pipeline (among priced, see note) | – | – |
 | fastest pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 1.5 s/doc | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 1.7 s/doc |
 
-**Cost note:** no price is configured for `image->haiku-5.5`, `image->sonnet-5.5`, `unlimited-ocr->sonnet-5.5`, so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
+**Cost note:** no cost could be computed for `image->haiku-5.5`, `image->sonnet-5.5`, `unlimited-ocr->sonnet-5.5` (no price configured, or no successful request reported its token usage), so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
 
 Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
@@ -27,7 +27,7 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 | `sonnet-5.5` | clean | 0.000 | 100.0% | 0 | 0 |
 | `sonnet-5.5` | degraded | 0.001 | 99.3% | 3 | 0 |
 | `unlimited-ocr` | clean | 0.006 | 99.5% | 1 | 0 |
-| `unlimited-ocr` | degraded | 0.044 | 90.8% | 85 | 0 |
+| `unlimited-ocr` | degraded | 0.043 | 90.8% | 85 | 0 |
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
@@ -61,7 +61,7 @@ Choose `image->sonnet-5.5` for production. It is the most accurate on degraded p
 - **No runaway pages occurred for any reader**, so the failures are degradation and hallucination, not runaway output.
 - **Self-hosting does not help here.** `unlimited-ocr` is slower per page (6.1 s p50) and much lower in throughput (29 vs. 175 pages/min for `sonnet-5.5`). Its GPU costs $1.49/hour even when idle.
 
-## Recommendation
+## Choice by goal
 | Goal | Choice | Why |
 |---|---|---|
 | Highest accuracy | `image->sonnet-5.5` | Most accurate on degraded pages, near-perfect on clean |
@@ -136,7 +136,7 @@ Transcription runs in this plan:
 - **1. Transcribe**: Every page image (clean and degraded) is sent to each transcriber, at several concurrency levels. This measures how well and how fast each backend reads.
 - **2. Extract**: An extractor pulls each document type's fields (totals, dates, names, checked boxes…) out of each pipeline's input: the run's extraction agent, or the model named after the arrow. Scored field by field against the ground truth.
 - **3. Score**: Transcripts and fields are compared with the ground truth; latency and cost are aggregated.
-- **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers; every number it writes is checked against the facts, and any it cannot find there is flagged as unverified.
+- **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers. The numbers it writes in digits are checked against the facts, and any not found there are flagged as unverified; the check is automatic and can miss a claim, so the tables remain the reference.
 
 ### Pipelines (the arrows)
 
@@ -170,16 +170,16 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 
 ### Metrics
 
-- **CER**: character error rate after removing Markdown/HTML formatting; 0 = perfect. Sensitive to reading order.
-- **CER median**: the typical page; the mean can be dominated by a single runaway page
+- **CER**: character error rate after removing Markdown/HTML formatting; 0 = perfect, capped at 1 per page (a failed or runaway page). Sensitive to reading order.
+- **CER median**: the typical page; the mean also counts each failed or runaway page as 1
 - **runaway**: pages where the output was more than 3x the page length (a repetition loop)
 - **word recall / precision**: share of the page's words found / share of output words that are on the page; ignores order
 - **number recall**: share of the amounts, dates, account numbers etc. on the page that appear in the output
 - **invented numbers**: numbers of 3+ characters in the output that are not on the page
-- **coverage**: share of pages or documents that got an answer. Failures count against the backend: CER 1 and no numbers found for a page, every field wrong for a document
+- **coverage**: share of pages or documents that got an answer. Failures count against the backend: CER 1 and no numbers found for a page, every field wrong for a document. Cheapest and fastest pipeline only compare pipelines with at least 99% coverage
 - **field accuracy**: share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored)
-- **end-to-end**: per document: transcription time of all its pages (concurrency-1 runs) plus the extraction call
-- **$/1k**: LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput (GPU kept busy); the cost one request at a time is shown next to it
+- **end-to-end**: per document: transcription time of all its pages (each page's lowest-concurrency transcript) plus the extraction call
+- **$/1k**: LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput (fastest run with at most 1% errors, GPU kept busy; if none, the run with the fewest errors, flagged); the cost one request at a time is shown next to it. Unknown token usage = no cost, never $0
 
 ## Results
 
@@ -203,8 +203,8 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 | haiku-5.5 | degraded | 54 | 100.0% | 0.018 | 0.001 | 0 | 99.4% | 98.5% | 10 | 7 |
 | sonnet-5.5 | clean | 54 | 100.0% | 0.019 | 0.000 | 0 | 100.0% | 100.0% | 0 | 0 |
 | sonnet-5.5 | degraded | 54 | 100.0% | 0.019 | 0.001 | 0 | 99.4% | 99.3% | 4 | 3 |
-| unlimited-ocr | clean | 54 | 100.0% | 0.013 | 0.006 | 0 | 97.2% | 99.5% | 2 | 1 |
-| unlimited-ocr | degraded | 54 | 100.0% | 0.077 | 0.044 | 0 | 85.5% | 90.8% | 135 | 85 |
+| unlimited-ocr | clean | 54 | 100.0% | 0.012 | 0.006 | 0 | 97.3% | 99.5% | 2 | 1 |
+| unlimited-ocr | degraded | 54 | 100.0% | 0.075 | 0.043 | 0 | 85.6% | 90.8% | 135 | 85 |
 
 ### Field extraction (stage 2)
 

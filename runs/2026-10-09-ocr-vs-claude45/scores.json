@@ -2,8 +2,16 @@
  "run_id": "2026-10-09-ocr-vs-claude45",
  "method": {
   "failures": "counted: failed pages score CER=1/recall 0, failed extractions score 0 (see coverage)",
+  "expected_pages": "every page a plan item selected; one never attempted counts as failed",
   "transcript_per_page": "successful one from the lowest-concurrency run (latest if several)",
+  "text_normalisation": "Markdown/HTML tags removed, HTML entities decoded, whitespace unified",
+  "error_rate_cap": "per-page CER and WER capped at 1; empty ground truth: 0 if output empty, else 1",
+  "empty_ground_truth_recall": "a page with no words / numbers has word / number recall 1",
+  "end_to_end_latency": "extraction call + transcription of every page of the document (the transcript scored); documents with an unknown transcription time are left out of the mean",
+  "unknown_cost": "runs/extractions without token usage are left out of cost means; none known = no cost",
   "runaway_ratio": 3.0,
+  "sustained_max_error_rate": 0.01,
+  "ranking_min_coverage": 0.99,
   "cost_basis": {
    "haiku-4.5": {
     "cost_per_1k_pages_usd": 5.292867283950618,
@@ -17,6 +25,8 @@
     "cost_per_1k_pages_usd": 0.8857749027264282,
     "basis": "best sustained throughput: 28.1 pages/min at concurrency 32 (GPU kept busy)",
     "concurrency": 32,
+    "pages_per_min": 28.107216167487202,
+    "meets_error_threshold": true,
     "cost_at_concurrency_1": 2.638936393121201
    }
   }
@@ -200,8 +210,8 @@
     "variant": "degraded",
     "pages": 54,
     "coverage": 1.0,
-    "cer": 0.2898638778459885,
-    "wer": 0.37168395099508045,
+    "cer": 0.10978101041578352,
+    "wer": 0.18507426438539387,
     "word_recall": 0.8799427622447624,
     "word_precision": 0.8756253478483681,
     "num_recall": 0.8708784603110739,
@@ -234,8 +244,8 @@
     "variant": "degraded",
     "pages": 54,
     "coverage": 1.0,
-    "cer": 0.4961123218902831,
-    "wer": 0.39991560678047167,
+    "cer": 0.15987649962643816,
+    "wer": 0.20715795291170666,
     "word_recall": 0.9190174518969719,
     "word_precision": 0.8778663860375797,
     "num_recall": 0.8784133351343091,
@@ -251,12 +261,12 @@
     "variant": "clean",
     "pages": 54,
     "coverage": 1.0,
-    "cer": 0.012770367054588692,
-    "wer": 0.03808154327618593,
-    "word_recall": 0.9723099588212245,
-    "word_precision": 0.9704528840758289,
+    "cer": 0.012368741391021357,
+    "wer": 0.037477122628405815,
+    "word_recall": 0.9729143794690046,
+    "word_precision": 0.971057304723609,
     "num_recall": 0.9953703703703703,
-    "cer_median": 0.0062386738857327095,
+    "cer_median": 0.005775867598947976,
     "runaway": 0,
     "truncated": 0,
     "num_hallucinated_excl_runaway": 1,
@@ -268,12 +278,12 @@
     "variant": "degraded",
     "pages": 54,
     "coverage": 1.0,
-    "cer": 0.07675483980081572,
-    "wer": 0.1789944224476798,
-    "word_recall": 0.8551415346026943,
-    "word_precision": 0.8698414692876374,
+    "cer": 0.07548448396134877,
+    "wer": 0.17849064592228295,
+    "word_recall": 0.8555452110279911,
+    "word_precision": 0.8702716730191611,
     "num_recall": 0.9082310216145849,
-    "cer_median": 0.04363668400553571,
+    "cer_median": 0.04314487124154798,
     "runaway": 0,
     "truncated": 0,
     "num_hallucinated_excl_runaway": 85,
@@ -2277,8 +2287,8 @@
     "ok": true,
     "truncated": true,
     "output_file": "outputs/haiku-4.5/rental_contract-00.p2.degraded.r20261009-072034.md",
-    "cer": 10.72447484123107,
-    "wer": 11.076923076923077,
+    "cer": 1.0,
+    "wer": 1.0,
     "word_recall": 0.1858974358974359,
     "word_precision": 0.016519510111079466,
     "num_recall": 0.0,
@@ -4187,8 +4197,8 @@
     "ok": true,
     "truncated": true,
     "output_file": "outputs/sonnet-4.5/payslip-02.p1.degraded.r20261009-065047.md",
-    "cer": 18.615869017632242,
-    "wer": 10.88034188034188,
+    "cer": 1.0,
+    "wer": 1.0,
     "word_recall": 0.9914529914529915,
     "word_precision": 0.08387563268257411,
     "num_recall": 1.0,
@@ -4565,8 +4575,8 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/sonnet-4.5/receipt-04.p1.degraded.r20261009-065047.md",
-    "cer": 1.5408653846153846,
-    "wer": 1.5285714285714285,
+    "cer": 1.0,
+    "wer": 1.0,
     "word_recall": 0.8,
     "word_precision": 0.3522012578616352,
     "num_recall": 0.75,
@@ -5176,7 +5186,7 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/bank_statement-00.p1.degraded.r20261009-063913.md",
-    "cer": 0.14360902255639096,
+    "cer": 0.13233082706766916,
     "wer": 0.41798941798941797,
     "word_recall": 0.6507936507936508,
     "word_precision": 0.6542553191489362,
@@ -5197,8 +5207,8 @@
      "836.59",
      "482.81"
     ],
-    "len_ratio": 1.0112781954887218,
-    "clean_text": "Kontoutskrift Karl Sørensen Fjordveien 133 1606 Fredrikstad Elvedalen Sparebank Kundeservice Tlf. 413 60 262 Kontonummer Kontotype 4145.60.13005 Periode Brukskonto Inngående saldo 01.06.2026 - 30.06.2026 55.055.53 Date Forklaring Inn Ut Saldo 03.06.2026 Husleje 11 640.00 43 415,53 03.06.2026 Forskring Trygghem 453.39 42 962,14 04.06.2026 Vanskjop Bokhandelen 836.59 42 125,55 05.06.2026 Minibank uttak 1 482.81 40 642,94 06.06.2026 Vipps &quot;Ola 215.01 40 427,93 08.06.2026 Vipps fra Tor Even 210.00 40 637,93 08.06.2026 Vanskjaop Jernvase Serianzet 1 430.52 39 207,41 08.06.2026 Vanskjaop Sportsquest 1 417.96 37 789,45 09.06.2026 Thaningssenter Pus 626.10 37 161,35 13.06.2026 Lann Haibris Kale AS 33 510.87 70 672.22 13.06.2026 Buss mendedkort 816.53 69 855,69 20.06.2026 Strammtejeneste Kino+ 147.27 69 708.42 21.06.2026 Vipps &quot;Åse 408.35 69 300.07 21.06.2026 Vipps &quot;Ola 869.13 68 430.94 22.06.2026 Stram Lynglimt Energ 986.76 67 444.18 23.06.2026 Vanskjaq Matrikagen 576.85 66 867.33 23.06.2026 Vanskjaq Jernvane Serlandet 448.76 66 418.57 26.06.2026 Vippa Enk 869.20 65 549.37 29.06.2026 Vanskjaq Jernvane Serlandet 679.78 64 869.61 Antall transaksjoner Sum inn 19 Sum ut 33 720,87 Utgående saldo 23 906,79 64 869,61 Kontoutskriften er laget 01.07.2026. Ta kontakt med oss innen melig tid dersonn du finner feil i oversikten."
+    "len_ratio": 1.0,
+    "clean_text": "Kontoutskrift Karl Sørensen Fjordveien 133 1606 Fredrikstad Elvedalen Sparebank Kundeservice Tlf. 413 60 262 Kontonummer Kontotype 4145.60.13005 Periode Brukskonto Inngående saldo 01.06.2026 - 30.06.2026 55.055.53 Date Forklaring Inn Ut Saldo 03.06.2026 Husleje 11 640.00 43 415,53 03.06.2026 Forskring Trygghem 453.39 42 962,14 04.06.2026 Vanskjop Bokhandelen 836.59 42 125,55 05.06.2026 Minibank uttak 1 482.81 40 642,94 06.06.2026 Vipps \"Ola 215.01 40 427,93 08.06.2026 Vipps fra Tor Even 210.00 40 637,93 08.06.2026 Vanskjaop Jernvase Serianzet 1 430.52 39 207,41 08.06.2026 Vanskjaop Sportsquest 1 417.96 37 789,45 09.06.2026 Thaningssenter Pus 626.10 37 161,35 13.06.2026 Lann Haibris Kale AS 33 510.87 70 672.22 13.06.2026 Buss mendedkort 816.53 69 855,69 20.06.2026 Strammtejeneste Kino+ 147.27 69 708.42 21.06.2026 Vipps \"Åse 408.35 69 300.07 21.06.2026 Vipps \"Ola 869.13 68 430.94 22.06.2026 Stram Lynglimt Energ 986.76 67 444.18 23.06.2026 Vanskjaq Matrikagen 576.85 66 867.33 23.06.2026 Vanskjaq Jernvane Serlandet 448.76 66 418.57 26.06.2026 Vippa Enk 869.20 65 549.37 29.06.2026 Vanskjaq Jernvane Serlandet 679.78 64 869.61 Antall transaksjoner Sum inn 19 Sum ut 33 720,87 Utgående saldo 23 906,79 64 869,61 Kontoutskriften er laget 01.07.2026. Ta kontakt med oss innen melig tid dersonn du finner feil i oversikten."
    },
    {
     "backend": "unlimited-ocr",
@@ -5371,7 +5381,7 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/bank_statement-04.p1.degraded.r20261009-063913.md",
-    "cer": 0.1,
+    "cer": 0.0834710743801653,
     "wer": 0.1875,
     "word_recall": 0.8920454545454546,
     "word_precision": 0.8920454545454546,
@@ -5386,8 +5396,8 @@
     "hallucinated_examples": [
      "26.07.2026"
     ],
-    "len_ratio": 1.0198347107438017,
-    "clean_text": "Kontoutskrift Elvedalen Sparebank Kundeservice Tlf. 903 41 848 Håkon Mæland Tollbugata 110 B 5003 Bergen Kontonummer 8622.69.76622 Kontotype Brukskonto Periode 01.07.2026 - 31.07.2026 Inngående saldo 39 737,21 Date Forklaring Inn UI Saldo 01.07.2026 Varekjop Jernvare Sorlandet 526,81 39 210,40 02.07.2026 Minibank uttak 1 792,44 37 417,96 03.07.2026 Huslese 8 960,00 26 457,96 06.07.2026 Vipps fra Kari 1 256,00 29 713,96 10.07.2026 Vipps fra Jonas 550,00 30 263,96 11.07.2026 Overfering til sparekonto 3 845,53 26 418,43 13.07.2026 Varekjop Sportshuset 1 439,73 24 978,70 13.07.2026 Varekjop Jernvare Sørlandet 67,10 24 911,60 14.07.2026 Treningssenter Puls 533,67 24 377,93 15.07.2026 Lønn Solberg Barnehage 32 182,57 56 560,50 15.07.2026 Vipps &quot;Bjørn&quot; 354,13 56 206,37 16.07.2026 Varekjop Bokhandelen 1 595,39 54 610,98 16.07.2026 Varekjop Nærbutikken 1 060,80 53 550,18 26.07.2026 Vipps &quot;Thi Lan&quot; 633,61 52 916,57 29.07.2026 Varekjop Sportshuset 1 084,35 51 832,22 30.07.2026 Varekjop Bokhandelen 1 175,15 50 657,07 Antall transaksjoner 16 Sum inn 33 988,57 Sum ut 23 068,71 Utgående saldo 50 657,07 Kontoutskriften er laget 01.08.2026. Ta kontakt med oss innen innelig tid dersom du finner feil i oversikten."
+    "len_ratio": 1.0033057851239668,
+    "clean_text": "Kontoutskrift Elvedalen Sparebank Kundeservice Tlf. 903 41 848 Håkon Mæland Tollbugata 110 B 5003 Bergen Kontonummer 8622.69.76622 Kontotype Brukskonto Periode 01.07.2026 - 31.07.2026 Inngående saldo 39 737,21 Date Forklaring Inn UI Saldo 01.07.2026 Varekjop Jernvare Sorlandet 526,81 39 210,40 02.07.2026 Minibank uttak 1 792,44 37 417,96 03.07.2026 Huslese 8 960,00 26 457,96 06.07.2026 Vipps fra Kari 1 256,00 29 713,96 10.07.2026 Vipps fra Jonas 550,00 30 263,96 11.07.2026 Overfering til sparekonto 3 845,53 26 418,43 13.07.2026 Varekjop Sportshuset 1 439,73 24 978,70 13.07.2026 Varekjop Jernvare Sørlandet 67,10 24 911,60 14.07.2026 Treningssenter Puls 533,67 24 377,93 15.07.2026 Lønn Solberg Barnehage 32 182,57 56 560,50 15.07.2026 Vipps \"Bjørn\" 354,13 56 206,37 16.07.2026 Varekjop Bokhandelen 1 595,39 54 610,98 16.07.2026 Varekjop Nærbutikken 1 060,80 53 550,18 26.07.2026 Vipps \"Thi Lan\" 633,61 52 916,57 29.07.2026 Varekjop Sportshuset 1 084,35 51 832,22 30.07.2026 Varekjop Bokhandelen 1 175,15 50 657,07 Antall transaksjoner 16 Sum inn 33 988,57 Sum ut 23 068,71 Utgående saldo 50 657,07 Kontoutskriften er laget 01.08.2026. Ta kontakt med oss innen innelig tid dersom du finner feil i oversikten."
    },
    {
     "backend": "unlimited-ocr",
@@ -5417,7 +5427,7 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/bank_statement-05.p1.degraded.r20261009-063913.md",
-    "cer": 0.17687074829931973,
+    "cer": 0.15419501133786848,
     "wer": 0.26153846153846155,
     "word_recall": 0.8205128205128205,
     "word_precision": 0.8602150537634409,
@@ -5433,8 +5443,8 @@
     "hallucinated_examples": [
      "01.04.2026-30.04.2026"
     ],
-    "len_ratio": 0.9977324263038548,
-    "clean_text": "Kontoutskrift Fjellbygd Sparebank Kundeservice Tlf. 464 42 116 Håkon Haugen Bekkestien 118 B 9008 Tromsø Kontonummer Kontotyp Periode Innående saldo 7109.93.68521 Brukskonto 01.04.2026-30.04.2026 59 705,79 Dato Forklaring Inn Ut Saldo 02.04.2026 Husleie 12 199,00 47 506,79 04.04.2026 Varekjop Matkoken 659,88 46 846,91 06.04.2026 Varekjop Matkoken 67,72 46 779,19 07.04.2026 Stranmetjeneste Kino+ 159,24 46 619,95 11.04.2026 Lann Fjordlys Montasje AS 26 494,40 73 114,35 11.04.2026 Vipps &quot;Marte&quot; 465,15 72 649,20 13.04.2026 Varekjop Nærbutikken 1 070,06 71 579,14 14.04.2026 Buss månedskort 507,99 71 071,15 16.04.2026 Varekjop Matrikoken 1 175,87 69 895,28 16.04.2026 Minibank uttak 1 847,61 68 047,67 21.04.2026 Vipps &quot;Tor Even 449,77 67 597,90 23.04.2026 Varekjop Apotek Sentrum 1 070,33 66 527,57 25.04.2026 Vipps &quot;Bjorn 478,22 66 049,35 26.04.2026 Varekjop Jermvare Sariandet 1 439,66 64 609,69 27.04.2026 Vipps &quot;Thi Lan 303,22 64 306,47 28.04.2026 Vipps &quot;Pål 867,16 63 439,31 28.04.2026 Vipps fra Maja 1 093,00 64 532,31 28.04.2026 Strom Lysglimt Energi 1 795,82 62 736,49 30.04.2026 Varekjop Bokhandelen 1 150,10 61 586,39 Antall transaksjoner Sum inn Sum ut Utgående saldo Kontoutskriften er laget 01.05.2026. Ta kontakt med oss innen innelig tid denne du finner fell i oversikten."
+    "len_ratio": 0.9750566893424036,
+    "clean_text": "Kontoutskrift Fjellbygd Sparebank Kundeservice Tlf. 464 42 116 Håkon Haugen Bekkestien 118 B 9008 Tromsø Kontonummer Kontotyp Periode Innående saldo 7109.93.68521 Brukskonto 01.04.2026-30.04.2026 59 705,79 Dato Forklaring Inn Ut Saldo 02.04.2026 Husleie 12 199,00 47 506,79 04.04.2026 Varekjop Matkoken 659,88 46 846,91 06.04.2026 Varekjop Matkoken 67,72 46 779,19 07.04.2026 Stranmetjeneste Kino+ 159,24 46 619,95 11.04.2026 Lann Fjordlys Montasje AS 26 494,40 73 114,35 11.04.2026 Vipps \"Marte\" 465,15 72 649,20 13.04.2026 Varekjop Nærbutikken 1 070,06 71 579,14 14.04.2026 Buss månedskort 507,99 71 071,15 16.04.2026 Varekjop Matrikoken 1 175,87 69 895,28 16.04.2026 Minibank uttak 1 847,61 68 047,67 21.04.2026 Vipps \"Tor Even 449,77 67 597,90 23.04.2026 Varekjop Apotek Sentrum 1 070,33 66 527,57 25.04.2026 Vipps \"Bjorn 478,22 66 049,35 26.04.2026 Varekjop Jermvare Sariandet 1 439,66 64 609,69 27.04.2026 Vipps \"Thi Lan 303,22 64 306,47 28.04.2026 Vipps \"Pål 867,16 63 439,31 28.04.2026 Vipps fra Maja 1 093,00 64 532,31 28.04.2026 Strom Lysglimt Energi 1 795,82 62 736,49 30.04.2026 Varekjop Bokhandelen 1 150,10 61 586,39 Antall transaksjoner Sum inn Sum ut Utgående saldo Kontoutskriften er laget 01.05.2026. Ta kontakt med oss innen innelig tid denne du finner fell i oversikten."
    },
    {
     "backend": "unlimited-ocr",
@@ -5444,10 +5454,10 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-00.p1.clean.r20261009-063913.md",
-    "cer": 0.009883198562443846,
-    "wer": 0.03825136612021858,
-    "word_recall": 0.9617486338797814,
-    "word_precision": 0.9617486338797814,
+    "cer": 0.006289308176100629,
+    "wer": 0.03278688524590164,
+    "word_recall": 0.9672131147540983,
+    "word_precision": 0.9672131147540983,
     "num_recall": 0.875,
     "num_missing": 1,
     "missing_examples": [
@@ -5455,8 +5465,8 @@
     ],
     "num_hallucinated": 0,
     "hallucinated_examples": [],
-    "len_ratio": 1.0035938903863433,
-    "clean_text": "Feireundersøkelse 2026 Reiseklubben Solgløtt Skjema nr. 7522 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Agnieszka Fløtten Adresse Fjordveien 98, 1606 Fredrikstad Onsket reisemål Trowsø Reise fra (dato) 03.07.2026 Reise til (dato) 12.07.2026 Antall reisende 2 Budsjett per person (NOK) ₤ 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☑ Skiferie ☑ Cruise ☐ Storbyferie ☐ Sykkeltur ☑ Fisketur ☐ Konsert ☐ Spa ☑ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☑ Bed &amp; Breakfast ☑ Bobil Reiser du med kjæledyr? ☐ Ja ☑ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Fredrikstad, 09.03.2026 Sted og dato Agnieszka Flotten Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 499 71 185."
+    "len_ratio": 1.0,
+    "clean_text": "Feireundersøkelse 2026 Reiseklubben Solgløtt Skjema nr. 7522 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Agnieszka Fløtten Adresse Fjordveien 98, 1606 Fredrikstad Onsket reisemål Trowsø Reise fra (dato) 03.07.2026 Reise til (dato) 12.07.2026 Antall reisende 2 Budsjett per person (NOK) ₤ 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☑ Skiferie ☑ Cruise ☐ Storbyferie ☐ Sykkeltur ☑ Fisketur ☐ Konsert ☐ Spa ☑ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☑ Bed & Breakfast ☑ Bobil Reiser du med kjæledyr? ☐ Ja ☑ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Fredrikstad, 09.03.2026 Sted og dato Agnieszka Flotten Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 499 71 185."
    },
    {
     "backend": "unlimited-ocr",
@@ -5466,10 +5476,10 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-00.p1.degraded.r20261009-063913.md",
-    "cer": 0.05121293800539083,
-    "wer": 0.21311475409836064,
-    "word_recall": 0.7868852459016393,
-    "word_precision": 0.7868852459016393,
+    "cer": 0.047619047619047616,
+    "wer": 0.20765027322404372,
+    "word_recall": 0.7923497267759563,
+    "word_precision": 0.7923497267759563,
     "num_recall": 0.625,
     "num_missing": 3,
     "missing_examples": [
@@ -5483,8 +5493,8 @@
      "09.08.2026",
      "400"
     ],
-    "len_ratio": 1.0026954177897573,
-    "clean_text": "Ferieundersøkelse 2026 Reisekultuben Solglett Skjema nr. 7522 Vi ønsker å bli bedre kjent med medlemmenes ferieansker for vi planlegger neste års feilestruer. Fyll ut skjemaet og lever det i reseptionen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Agnieszka Flatten Adresse Fjordvien 98, 1606 Fredrikstad Onslet reisemål Trønsø Reise fra (dato) 08.07.2026 Reise til (dato) 12.07.2026 Antall reisende 2 Budsjett per person (NOK) 7 000,00 2. Hvilke aktiviteter er du interessert i? Krysis av for att som passer ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☐ Bed &amp; Breakfast ☐ Bobil Reiser du med kjæledyr? ☐ Ja ☐ Nel 4. Samtykke Jeg bekræfter at opplysningene over er riktige, og at klubben kan kontaktæ mæg om tuer som passer ønskene innen. Opplysningene slettes etter at planleggingen er ferdig. Fredrikstad, 09.08.2026 Steel og dato Agnicszha Plotten Underskrift Taku for svaret: Spøsmál kün røftes til styret på telefon 400 71 185."
+    "len_ratio": 0.9991015274034142,
+    "clean_text": "Ferieundersøkelse 2026 Reisekultuben Solglett Skjema nr. 7522 Vi ønsker å bli bedre kjent med medlemmenes ferieansker for vi planlegger neste års feilestruer. Fyll ut skjemaet og lever det i reseptionen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Agnieszka Flatten Adresse Fjordvien 98, 1606 Fredrikstad Onslet reisemål Trønsø Reise fra (dato) 08.07.2026 Reise til (dato) 12.07.2026 Antall reisende 2 Budsjett per person (NOK) 7 000,00 2. Hvilke aktiviteter er du interessert i? Krysis av for att som passer ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☐ Bed & Breakfast ☐ Bobil Reiser du med kjæledyr? ☐ Ja ☐ Nel 4. Samtykke Jeg bekræfter at opplysningene over er riktige, og at klubben kan kontaktæ mæg om tuer som passer ønskene innen. Opplysningene slettes etter at planleggingen er ferdig. Fredrikstad, 09.08.2026 Steel og dato Agnicszha Plotten Underskrift Taku for svaret: Spøsmál kün røftes til styret på telefon 400 71 185."
    },
    {
     "backend": "unlimited-ocr",
@@ -5494,10 +5504,10 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-01.p1.clean.r20261009-063913.md",
-    "cer": 0.009115770282588878,
-    "wer": 0.03260869565217391,
-    "word_recall": 0.967391304347826,
-    "word_precision": 0.967391304347826,
+    "cer": 0.0054694621695533276,
+    "wer": 0.02717391304347826,
+    "word_recall": 0.9728260869565217,
+    "word_precision": 0.9728260869565217,
     "num_recall": 0.875,
     "num_missing": 1,
     "missing_examples": [
@@ -5507,8 +5517,8 @@
     "hallucinated_examples": [
      "16.06.2026"
     ],
-    "len_ratio": 1.0036463081130356,
-    "clean_text": "Feireundersøkelse 2026 Reiselyst Medlemsforening Skjema nr. 424 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Erik Nordmann Adresse Trollhaugen 18 A, 8006 Bodø Onsket reisemål Kreta Reise fra (dato) 29.08.2026 Reise til (dato) 05.09.2026 Antall reisende 4 Budsjett per person (NOK) 17 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☑ Bading ☑ Fjelltur ☐ Museum ☑ Skiferie ☐ Cruise ☐ Storbyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☑ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☑ Bed &amp; Breakfast ☑ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Bodo, 16.06.2026 Sted og dato Erik Nordmann Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 990 44 703."
+    "len_ratio": 1.0,
+    "clean_text": "Feireundersøkelse 2026 Reiselyst Medlemsforening Skjema nr. 424 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Erik Nordmann Adresse Trollhaugen 18 A, 8006 Bodø Onsket reisemål Kreta Reise fra (dato) 29.08.2026 Reise til (dato) 05.09.2026 Antall reisende 4 Budsjett per person (NOK) 17 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☑ Bading ☑ Fjelltur ☐ Museum ☑ Skiferie ☐ Cruise ☐ Storbyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☑ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☑ Bed & Breakfast ☑ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Bodo, 16.06.2026 Sted og dato Erik Nordmann Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 990 44 703."
    },
    {
     "backend": "unlimited-ocr",
@@ -5518,10 +5528,10 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-01.p1.degraded.r20261009-063913.md",
-    "cer": 0.0902461257976299,
-    "wer": 0.2826086956521739,
-    "word_recall": 0.7228260869565217,
-    "word_precision": 0.806060606060606,
+    "cer": 0.08659981768459435,
+    "wer": 0.27717391304347827,
+    "word_recall": 0.7282608695652174,
+    "word_precision": 0.8121212121212121,
     "num_recall": 0.625,
     "num_missing": 3,
     "missing_examples": [
@@ -5535,8 +5545,8 @@
      "16.06.2026",
      "090"
     ],
-    "len_ratio": 0.9690063810391978,
-    "clean_text": "Ferieundersøkelse 2026 Pesselyst Medemstørenings Skjerna nr. 424 Vi ønsker å bli bedre kjent med medlemmenes teriosøker for vi planlegger neste lars felletetuer. Fyll ut skjemaet og lever det i responsjonen eller send det i posten. Alle søver er frivillige. 1. Om deg og reisen Navn Erik Nordmann Adresse Trollhugen 18 A, 8006 Bodø Onsket reisemål Kreta Reise fra (dato) 29.08.2026 Reise til (dato) 05.09.2026 Antall reisende 4 Budsjett per person (NOK) 17.000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for all som passer Bading Fjellfur Museum Skilerie Cruise Storbylerie Sykkeltur Fisketur Konsert Spa Matopplevelser Dykking 3. Foretrukket overnatting Hotel Leilighet Hytte Camping Bed &amp; Breakfast Bobil Reiser du med kjaaledyr? ☐ Ja ☐ Nei 4. Samtykke Jeg beikner at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer øskene mine. Opplysningene steften etter at planleggningen er ferdig. Bonde, 16.06.2026 Sled og dato Cink Nordmann Underskrift Taku for sværd! Spørsmål kan rettes til styret på telefon 090 44 703"
+    "len_ratio": 0.9653600729261622,
+    "clean_text": "Ferieundersøkelse 2026 Pesselyst Medemstørenings Skjerna nr. 424 Vi ønsker å bli bedre kjent med medlemmenes teriosøker for vi planlegger neste lars felletetuer. Fyll ut skjemaet og lever det i responsjonen eller send det i posten. Alle søver er frivillige. 1. Om deg og reisen Navn Erik Nordmann Adresse Trollhugen 18 A, 8006 Bodø Onsket reisemål Kreta Reise fra (dato) 29.08.2026 Reise til (dato) 05.09.2026 Antall reisende 4 Budsjett per person (NOK) 17.000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for all som passer Bading Fjellfur Museum Skilerie Cruise Storbylerie Sykkeltur Fisketur Konsert Spa Matopplevelser Dykking 3. Foretrukket overnatting Hotel Leilighet Hytte Camping Bed & Breakfast Bobil Reiser du med kjaaledyr? ☐ Ja ☐ Nei 4. Samtykke Jeg beikner at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer øskene mine. Opplysningene steften etter at planleggningen er ferdig. Bonde, 16.06.2026 Sled og dato Cink Nordmann Underskrift Taku for sværd! Spørsmål kan rettes til styret på telefon 090 44 703"
    },
    {
     "backend": "unlimited-ocr",
@@ -5546,17 +5556,17 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-02.p1.clean.r20261009-063913.md",
-    "cer": 0.006334841628959276,
-    "wer": 0.02185792349726776,
-    "word_recall": 0.9781420765027322,
-    "word_precision": 0.9781420765027322,
+    "cer": 0.0027149321266968325,
+    "wer": 0.01639344262295082,
+    "word_recall": 0.9836065573770492,
+    "word_precision": 0.9836065573770492,
     "num_recall": 1.0,
     "num_missing": 0,
     "missing_examples": [],
     "num_hallucinated": 0,
     "hallucinated_examples": [],
-    "len_ratio": 1.0036199095022624,
-    "clean_text": "Ferieundersøkelse 2026 Turlaget Måkeskrik Skjema nr. 9563 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Linnea Sørensen Adresse Kirkeveien 6, 4006 Stavanger Onsket reisemål København Reise fra (dato) 02.10.2026 Reise til (dato) 07.10.2026 Antall reisende 5 Budsjett per person (NOK) 23 500,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☑ Fjelltur ☐ Museum ☐ Skiferie ☑ Cruise ☐ Storbyferie ☐ Sykkeltur ☑ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☑ Camping ☐ Bed &amp; Breakfast ☑ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Stavanger, 14.06.2026 Sted og dato Linnea Sorensen Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 455 46 959."
+    "len_ratio": 1.0,
+    "clean_text": "Ferieundersøkelse 2026 Turlaget Måkeskrik Skjema nr. 9563 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Linnea Sørensen Adresse Kirkeveien 6, 4006 Stavanger Onsket reisemål København Reise fra (dato) 02.10.2026 Reise til (dato) 07.10.2026 Antall reisende 5 Budsjett per person (NOK) 23 500,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☑ Fjelltur ☐ Museum ☐ Skiferie ☑ Cruise ☐ Storbyferie ☐ Sykkeltur ☑ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☐ Hytte ☑ Camping ☐ Bed & Breakfast ☑ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Stavanger, 14.06.2026 Sted og dato Linnea Sorensen Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 455 46 959."
    },
    {
     "backend": "unlimited-ocr",
@@ -5566,10 +5576,10 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-02.p1.degraded.r20261009-063913.md",
-    "cer": 0.058823529411764705,
-    "wer": 0.25136612021857924,
-    "word_recall": 0.7704918032786885,
-    "word_precision": 0.8011363636363636,
+    "cer": 0.05520361990950226,
+    "wer": 0.2459016393442623,
+    "word_recall": 0.7759562841530054,
+    "word_precision": 0.8068181818181818,
     "num_recall": 0.75,
     "num_missing": 2,
     "missing_examples": [
@@ -5581,8 +5591,8 @@
      "09.10.2026",
      "456"
     ],
-    "len_ratio": 0.9963800904977376,
-    "clean_text": "Ferieundersokelse 2026 Turlagert Mikkeskirk Skjema nr. 9563 Vi ønsker å bli bedre kjent med medlemmenes ferierensiker for vi planiegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er trivillige. 1. Om deg og reisen Navn Linnea Sørnsen Adresse Kirkrevien 6, 4006 Stavanger Onsket reisemål København Reise fra (dato) 02.10.2026 Reise til (dato) 09.10.2026 Antall reisende 5 Budsjett per person (NOK) 23 500,00 2. Hvilke aktiviteter er du interessert i? Kryss av for att som passer ☐ Bading ☐ Fjellitur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐Hotell ☐Leilighet ☐Hytte ☐Camping ☐Bed &amp; Breakfast ☐Bobil Reiser du med kjaaledyr? ☐ Ja ☐ Nel 4. Samtykke Jeg bekeifter at opplysningene over er riktige, og at klubben kan kontakte meg om tuer som passer ansikene mine. Opplysningene steften etter at planregningen er ferdig. Jiawangor 14.06.2026 Shed og dato Linnea Sorenson Underskrift Tack for svænt! Spørsmål kan rettes til styret på telefon 456 959."
+    "len_ratio": 0.9927601809954751,
+    "clean_text": "Ferieundersokelse 2026 Turlagert Mikkeskirk Skjema nr. 9563 Vi ønsker å bli bedre kjent med medlemmenes ferierensiker for vi planiegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er trivillige. 1. Om deg og reisen Navn Linnea Sørnsen Adresse Kirkrevien 6, 4006 Stavanger Onsket reisemål København Reise fra (dato) 02.10.2026 Reise til (dato) 09.10.2026 Antall reisende 5 Budsjett per person (NOK) 23 500,00 2. Hvilke aktiviteter er du interessert i? Kryss av for att som passer ☐ Bading ☐ Fjellitur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐Hotell ☐Leilighet ☐Hytte ☐Camping ☐Bed & Breakfast ☐Bobil Reiser du med kjaaledyr? ☐ Ja ☐ Nel 4. Samtykke Jeg bekeifter at opplysningene over er riktige, og at klubben kan kontakte meg om tuer som passer ansikene mine. Opplysningene steften etter at planregningen er ferdig. Jiawangor 14.06.2026 Shed og dato Linnea Sorenson Underskrift Tack for svænt! Spørsmål kan rettes til styret på telefon 456 959."
    },
    {
     "backend": "unlimited-ocr",
@@ -5592,17 +5602,17 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-03.p1.clean.r20261009-063913.md",
-    "cer": 0.008174386920980926,
-    "wer": 0.03260869565217391,
-    "word_recall": 0.967391304347826,
-    "word_precision": 0.967391304347826,
+    "cer": 0.004541326067211626,
+    "wer": 0.02717391304347826,
+    "word_recall": 0.9728260869565217,
+    "word_precision": 0.9728260869565217,
     "num_recall": 1.0,
     "num_missing": 0,
     "missing_examples": [],
     "num_hallucinated": 0,
     "hallucinated_examples": [],
-    "len_ratio": 1.0036330608537694,
-    "clean_text": "Ferieundersøkelse 2026 Feriefellesskapet Bolgen Skjema nr. 4726 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Marte Sørensen Adresse Fjordveien 30 A, 5003 Bergen Onsket reisemål Roma Reise fra (dato) 08.01.2026 Reise til (dato) 23.01.2026 Antall reisende 5 Budsjett per person (NOK) 16 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☑ Cruise ☐ Storbyferie ☑ Sykkeltur ☐ Fisketur ☐ Konsert ☑ Spa ☐ Matopplevelser ☑ Dykking 3. Foretrukket overnatting ☐ Hotell ☑ Leilighet ☐ Hytte ☐ Camping ☑ Bed &amp; Breakfast ☐ Bobil Reiser du med kjæledyr? ☐ Ja ☑ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Bergen, 20.09.2025 Sted og dato Marte Sorensen Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 426 44 317."
+    "len_ratio": 1.0,
+    "clean_text": "Ferieundersøkelse 2026 Feriefellesskapet Bolgen Skjema nr. 4726 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Marte Sørensen Adresse Fjordveien 30 A, 5003 Bergen Onsket reisemål Roma Reise fra (dato) 08.01.2026 Reise til (dato) 23.01.2026 Antall reisende 5 Budsjett per person (NOK) 16 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☑ Cruise ☐ Storbyferie ☑ Sykkeltur ☐ Fisketur ☐ Konsert ☑ Spa ☐ Matopplevelser ☑ Dykking 3. Foretrukket overnatting ☐ Hotell ☑ Leilighet ☐ Hytte ☐ Camping ☑ Bed & Breakfast ☐ Bobil Reiser du med kjæledyr? ☐ Ja ☑ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Bergen, 20.09.2025 Sted og dato Marte Sorensen Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 426 44 317."
    },
    {
     "backend": "unlimited-ocr",
@@ -5612,10 +5622,10 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-03.p1.degraded.r20261009-063913.md",
-    "cer": 0.051771117166212535,
-    "wer": 0.22282608695652173,
-    "word_recall": 0.782608695652174,
-    "word_precision": 0.8674698795180723,
+    "cer": 0.048138056312443236,
+    "wer": 0.21739130434782608,
+    "word_recall": 0.7880434782608695,
+    "word_precision": 0.8734939759036144,
     "num_recall": 0.875,
     "num_missing": 1,
     "missing_examples": [
@@ -5625,8 +5635,8 @@
     "hallucinated_examples": [
      "20.09.2026"
     ],
-    "len_ratio": 0.9772933696639419,
-    "clean_text": "Ferieundersøkelse 2026 Ferletelleskapet Balgen Skjema nr. 4726 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års feltesturer. Fyll ut skjemaet og levier det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Marte Sprensen Adresse Fjordveien 30 A, 5003 Bergen. Onslet reisemål Roma Reise fra (dato) 08.01.2026 Reise til (dato) 23.01.2026 Antall reisende 5 Budsjett per person (NOK) 16 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer Bading Fjelltur Museum Skiferie Cruise Storbvjerie Sykkeltur Fisketur Konsert Spa Matopplevelser Dykking 3. Foretrukket overnatting ☐Hotell ☐Leilighet ☐Hytte ☐Camping ☐Bed &amp; Breakfast ☐Bobil Reiser du med kjøledyr? ☐ Ja ☐ Nei 4. Samtykke Jeg bekræfter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer onsikene mine. Opplysningene slettes etter at planleggingen er ferdig. Bergen, 20.09.2026 Sted og dato Marte Sorensen Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 426 44 317."
+    "len_ratio": 0.9736603088101726,
+    "clean_text": "Ferieundersøkelse 2026 Ferletelleskapet Balgen Skjema nr. 4726 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års feltesturer. Fyll ut skjemaet og levier det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Marte Sprensen Adresse Fjordveien 30 A, 5003 Bergen. Onslet reisemål Roma Reise fra (dato) 08.01.2026 Reise til (dato) 23.01.2026 Antall reisende 5 Budsjett per person (NOK) 16 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer Bading Fjelltur Museum Skiferie Cruise Storbvjerie Sykkeltur Fisketur Konsert Spa Matopplevelser Dykking 3. Foretrukket overnatting ☐Hotell ☐Leilighet ☐Hytte ☐Camping ☐Bed & Breakfast ☐Bobil Reiser du med kjøledyr? ☐ Ja ☐ Nei 4. Samtykke Jeg bekræfter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer onsikene mine. Opplysningene slettes etter at planleggingen er ferdig. Bergen, 20.09.2026 Sted og dato Marte Sorensen Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 426 44 317."
    },
    {
     "backend": "unlimited-ocr",
@@ -5636,17 +5646,17 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-04.p1.clean.r20261009-063913.md",
-    "cer": 0.014492753623188406,
-    "wer": 0.04864864864864865,
-    "word_recall": 0.9513513513513514,
-    "word_precision": 0.9513513513513514,
+    "cer": 0.010869565217391304,
+    "wer": 0.043243243243243246,
+    "word_recall": 0.9567567567567568,
+    "word_precision": 0.9567567567567568,
     "num_recall": 1.0,
     "num_missing": 0,
     "missing_examples": [],
     "num_hallucinated": 0,
     "hallucinated_examples": [],
-    "len_ratio": 1.002717391304348,
-    "clean_text": "Feireundersøkelse 2026 Reiselyst Medlemsforening Skjema nr. 1964 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Åse Popescu Adresse Bekkestein 130 B, 9008 Tromsø Onsket reisemål Gran Canaria Reise fra (dato) 15.09.2026 Reise til (dato) 22.09.2026 Antall reisende 5 Budsjett per person (NOK) 8 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storyferie ☑ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☑ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☐ Bed &amp; Breakfast ☑ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Fromso, 05.06.2026 Sted og dato Åse Røpescu Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 479 52 323."
+    "len_ratio": 0.9990942028985508,
+    "clean_text": "Feireundersøkelse 2026 Reiselyst Medlemsforening Skjema nr. 1964 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Åse Popescu Adresse Bekkestein 130 B, 9008 Tromsø Onsket reisemål Gran Canaria Reise fra (dato) 15.09.2026 Reise til (dato) 22.09.2026 Antall reisende 5 Budsjett per person (NOK) 8 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storyferie ☑ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☑ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☐ Bed & Breakfast ☑ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Fromso, 05.06.2026 Sted og dato Åse Røpescu Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 479 52 323."
    },
    {
     "backend": "unlimited-ocr",
@@ -5656,8 +5666,8 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-04.p1.degraded.r20261009-063913.md",
-    "cer": 0.029891304347826088,
-    "wer": 0.12432432432432433,
+    "cer": 0.026268115942028984,
+    "wer": 0.11891891891891893,
     "word_recall": 0.8810810810810811,
     "word_precision": 0.8810810810810811,
     "num_recall": 1.0,
@@ -5665,8 +5675,8 @@
     "missing_examples": [],
     "num_hallucinated": 0,
     "hallucinated_examples": [],
-    "len_ratio": 1.0036231884057971,
-    "clean_text": "Ferieundersøkelse 2026 Raiselyst Medlemstorening Skjema nr. 1964 Vi ønsker & bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellestuerer. Fyd ut skjemaet og lever det i resepsjøren eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Åse Popescu Adresse Bekkestien 130 B, 9008 Tromsø Onslet reismål Gran Canaria Reise fra (dato) 15.09.2026 Reise til (dato) 22.09.2026 Antall reisende 5 Budsjett per person (NOK) 8 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjellfur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storbyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☑ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☐ Bed &amp; Breakfast ☐ Bobil Reiser du med kjæledyr? ☐ Ja ☐ Nel 4. Samtykke Jeg bekefter at opplysningene over er riktige, og at klubben kan kontaktle meg om turer som passer onsikere mine. Opplysningene stettes etter at planleggingen er ferdig. Fromse, 05.06.2026 Sled og dato Are Popescu Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 479 52 323."
+    "len_ratio": 1.0,
+    "clean_text": "Ferieundersøkelse 2026 Raiselyst Medlemstorening Skjema nr. 1964 Vi ønsker & bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellestuerer. Fyd ut skjemaet og lever det i resepsjøren eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Åse Popescu Adresse Bekkestien 130 B, 9008 Tromsø Onslet reismål Gran Canaria Reise fra (dato) 15.09.2026 Reise til (dato) 22.09.2026 Antall reisende 5 Budsjett per person (NOK) 8 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjellfur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storbyferie ☐ Sykkeltur ☐ Fisketur ☐ Konsert ☐ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☑ Hotell ☐ Leilighet ☐ Hytte ☐ Camping ☐ Bed & Breakfast ☐ Bobil Reiser du med kjæledyr? ☐ Ja ☐ Nel 4. Samtykke Jeg bekefter at opplysningene over er riktige, og at klubben kan kontaktle meg om turer som passer onsikere mine. Opplysningene stettes etter at planleggingen er ferdig. Fromse, 05.06.2026 Sled og dato Are Popescu Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 479 52 323."
    },
    {
     "backend": "unlimited-ocr",
@@ -5676,17 +5686,17 @@
     "ok": true,
     "truncated": false,
     "output_file": "outputs/unlimited-ocr/holiday_survey-05.p1.clean.r20261009-063913.md",
-    "cer": 0.008928571428571428,
-    "wer": 0.02717391304347826,
-    "word_recall": 0.9728260869565217,
-    "word_precision": 0.9728260869565217,
+    "cer": 0.005357142857142857,
+    "wer": 0.021739130434782608,
+    "word_recall": 0.9782608695652174,
+    "word_precision": 0.9782608695652174,
     "num_recall": 1.0,
     "num_missing": 0,
     "missing_examples": [],
     "num_hallucinated": 0,
     "hallucinated_examples": [],
-    "len_ratio": 1.0035714285714286,
-    "clean_text": "Ferieundersøkelse 2026 Turlaget Måkeskrik Skjema nr. 3200 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Mohammed Andersson Adresse Skolegata 127 A, 4610 Kristiansand Onsket reisemål Gjërangør Reise fra (dato) 15.03.2026 Reise til (dato) 02.04.2026 Antall reisende 5 Budsjett per person (NOK) 11 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storbyferie ☑ Sykkeltur ☐ Fisketur ☐ Konsert ☑ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☑ Hytte ☐ Camping ☐ Bed &amp; Breakfast ☐ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Kristiansand, 10.01.2026 Sted og dato Mohammed Andersson Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 900 52 266."
+    "len_ratio": 1.0,
+    "clean_text": "Ferieundersøkelse 2026 Turlaget Måkeskrik Skjema nr. 3200 Vi ønsker å bli bedre kjent med medlemmenes ferieønsker for vi planlegger neste års fellesturer. Fyll ut skjemaet og lever det i resepsjonen eller send det i posten. Alle svar er frivillige. 1. Om deg og reisen Navn Mohammed Andersson Adresse Skolegata 127 A, 4610 Kristiansand Onsket reisemål Gjërangør Reise fra (dato) 15.03.2026 Reise til (dato) 02.04.2026 Antall reisende 5 Budsjett per person (NOK) 11 000,00 2. Hvilke aktiviteter er du interessert i? Kryss av for alt som passer. ☐ Bading ☐ Fjelltur ☐ Museum ☐ Skiferie ☐ Cruise ☐ Storbyferie ☑ Sykkeltur ☐ Fisketur ☐ Konsert ☑ Spa ☐ Matopplevelser ☐ Dykking 3. Foretrukket overnatting ☐ Hotell ☐ Leilighet ☑ Hytte ☐ Camping ☐ Bed & Breakfast ☐ Bobil Reiser du med kjæledyr? ☑ Ja ☐ Nei 4. Samtykke Jeg bekrefter at opplysningene over er riktige, og at klubben kan kontakte meg om turer som passer ønskene mine. Opplysningene slettes etter at planleggingen er ferdig. Kristiansand, 10.01.2026 Sted og dato Mohammed Andersson Underskrift Takk for svaret! Spørsmål kan rettes til styret på telefon 900 52 266."
    },
    {
     "backend": "unlimited-ocr",

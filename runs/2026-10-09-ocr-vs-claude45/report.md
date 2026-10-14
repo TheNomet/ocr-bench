@@ -24,7 +24,7 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 | `sonnet-4.5` | clean | 0.002 | 99.8% | 2 | 0 |
 | `sonnet-4.5` | degraded | 0.079 | 87.8% | 132 | 1 |
 | `unlimited-ocr` | clean | 0.006 | 99.5% | 1 | 0 |
-| `unlimited-ocr` | degraded | 0.044 | 90.8% | 85 | 0 |
+| `unlimited-ocr` | degraded | 0.043 | 90.8% | 85 | 0 |
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
@@ -36,8 +36,8 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 Pipeline costs that include `unlimited-ocr` use $0.89/1k pages: the cost at its best sustained throughput: 28.1 pages/min at concurrency 32 (GPU kept busy). One request at a time it would be $2.64/1k pages.
 
-- `unlimited-ocr` is cheaper than `sonnet-4.5` transcription ($15.68/1k pages) above **~95 pages/hour** sustained
-- `unlimited-ocr` is cheaper than `haiku-4.5` transcription ($4.86/1k pages) above **~307 pages/hour** sustained
+- `unlimited-ocr` is cheaper than `sonnet-4.5` transcription ($15.16/1k pages) above **~99 pages/hour** sustained
+- `unlimited-ocr` is cheaper than `haiku-4.5` transcription ($5.29/1k pages) above **~282 pages/hour** sustained
 
 Fields missed most often (count over clean + degraded documents):
 
@@ -47,6 +47,8 @@ Fields missed most often (count over clean + degraded documents):
 ## Recommendation
 
 *LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
+
+> **Unverified numbers** (not found in the key facts): 307, 95
 
 ## Bottom line
 Choose `image->agent` as the default: it is the most accurate pipeline on both clean (97.0%) and degraded (83.0%) pages, and also the fastest. `unlimited-ocr->agent` is the cheapest only if the GPU is kept busy. Its savings do not buy accuracy.
@@ -58,7 +60,7 @@ Choose `image->agent` as the default: it is the most accurate pipeline on both c
 - **Runaway pages hit only the Claude transcribers.** `sonnet-4.5` and `haiku-4.5` each had one runaway page on degraded input; `unlimited-ocr` had none. This is a reliability point in the self-hosted model's favour.
 - **Self-hosting is cheap only at volume.** The quoted cost assumes the GPU is kept busy ($0.89/1k pages). One request at a time it rises to $2.64/1k pages, because the GPU is billed at $1.49/hour whether busy or idle.
 
-## Recommendation
+## Choice by goal
 | Goal | Choice | Why |
 |---|---|---|
 | Highest accuracy | `image->agent` | Most accurate on clean and degraded pages |
@@ -87,8 +89,6 @@ Choose `image->agent` as the default: it is the most accurate pipeline on both c
 ### The extraction agent
 
 The **agent** (default extractor) is Claude Sonnet 4.5 (2025-09-29) (`anthropic.claude-sonnet-4-5-20250929-v1:0`), temperature 0. It gets the document type's field list (name, type, one-line description), plus either the page images (`image->agent`) or the text transcript of every page, in order (`<transcriber>->agent`), and returns one JSON object with the field values copied verbatim; max 2,048 output tokens. It never sees the ground truth. It is the same model in every pipeline.
-
-Models with temperature above 0 sample their output, so their results vary slightly between runs; differences of a point or two are within noise.
 
 ### GPU
 
@@ -133,7 +133,7 @@ Transcription runs in this plan:
 - **1. Transcribe**: Every page image (clean and degraded) is sent to each transcriber, at several concurrency levels. This measures how well and how fast each backend reads.
 - **2. Extract**: An extractor pulls each document type's fields (totals, dates, names, checked boxes…) out of each pipeline's input: the run's extraction agent, or the model named after the arrow. Scored field by field against the ground truth.
 - **3. Score**: Transcripts and fields are compared with the ground truth; latency and cost are aggregated.
-- **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers; every number it writes is checked against the facts, and any it cannot find there is flagged as unverified.
+- **4. Recommend**: An LLM reads the computed key facts and a short description of the setup, and writes a recommendation. It may not compute numbers. The numbers it writes in digits are checked against the facts, and any not found there are flagged as unverified; the check is automatic and can miss a claim, so the tables remain the reference.
 
 ### Pipelines (the arrows)
 
@@ -166,16 +166,16 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 
 ### Metrics
 
-- **CER**: character error rate after removing Markdown/HTML formatting; 0 = perfect. Sensitive to reading order.
-- **CER median**: the typical page; the mean can be dominated by a single runaway page
+- **CER**: character error rate after removing Markdown/HTML formatting; 0 = perfect, capped at 1 per page (a failed or runaway page). Sensitive to reading order.
+- **CER median**: the typical page; the mean also counts each failed or runaway page as 1
 - **runaway**: pages where the output was more than 3x the page length (a repetition loop)
 - **word recall / precision**: share of the page's words found / share of output words that are on the page; ignores order
 - **number recall**: share of the amounts, dates, account numbers etc. on the page that appear in the output
 - **invented numbers**: numbers of 3+ characters in the output that are not on the page
-- **coverage**: share of pages or documents that got an answer. Failures count against the backend: CER 1 and no numbers found for a page, every field wrong for a document
+- **coverage**: share of pages or documents that got an answer. Failures count against the backend: CER 1 and no numbers found for a page, every field wrong for a document. Cheapest and fastest pipeline only compare pipelines with at least 99% coverage
 - **field accuracy**: share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored)
-- **end-to-end**: per document: transcription time of all its pages (concurrency-1 runs) plus the extraction call
-- **$/1k**: LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput (GPU kept busy); the cost one request at a time is shown next to it
+- **end-to-end**: per document: transcription time of all its pages (each page's lowest-concurrency transcript) plus the extraction call
+- **$/1k**: LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput (fastest run with at most 1% errors, GPU kept busy; if none, the run with the fewest errors, flagged); the cost one request at a time is shown next to it. Unknown token usage = no cost, never $0
 
 ## Results
 
@@ -198,11 +198,11 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 | Backend | Variant | Pages | Coverage | CER mean | CER median | Runaway | Word recall | Number recall | Numbers missing | Invented numbers |
 |---|---|---|---|---|---|---|---|---|---|---|
 | haiku-4.5 | clean | 54 | 100.0% | 0.038 | 0.033 | 0 | 97.5% | 99.3% | 3 | 3 |
-| haiku-4.5 | degraded | 54 | 100.0% | 0.290 | 0.081 | 1 | 88.0% | 87.1% | 130 | 124 |
+| haiku-4.5 | degraded | 54 | 100.0% | 0.110 | 0.081 | 1 | 88.0% | 87.1% | 130 | 124 |
 | sonnet-4.5 | clean | 54 | 100.0% | 0.028 | 0.002 | 0 | 99.6% | 99.8% | 1 | 2 |
-| sonnet-4.5 | degraded | 54 | 100.0% | 0.496 | 0.079 | 1 | 91.9% | 87.8% | 132 | 410 |
-| unlimited-ocr | clean | 54 | 100.0% | 0.013 | 0.006 | 0 | 97.2% | 99.5% | 2 | 1 |
-| unlimited-ocr | degraded | 54 | 100.0% | 0.077 | 0.044 | 0 | 85.5% | 90.8% | 135 | 85 |
+| sonnet-4.5 | degraded | 54 | 100.0% | 0.160 | 0.079 | 1 | 91.9% | 87.8% | 132 | 410 |
+| unlimited-ocr | clean | 54 | 100.0% | 0.012 | 0.006 | 0 | 97.3% | 99.5% | 2 | 1 |
+| unlimited-ocr | degraded | 54 | 100.0% | 0.075 | 0.043 | 0 | 85.6% | 90.8% | 135 | 85 |
 
 ### Field extraction (stage 2)
 
