@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -105,12 +104,18 @@ def build_request(
     )
 
 
-async def extract_one(extractor, req: Request | None, rec: dict, run_dir: Path, slug: str, max_retries: int) -> dict:
-    """Run one request and complete its record (the record keeps the historical `agent` field names)."""
+async def extract_one(extractor, build, rec: dict, run_dir: Path, slug: str, max_retries: int) -> dict:
+    """Build (`build()` -> Request, or None if the source lacks a page) and run one request, and complete its
+    record (the record keeps the historical `agent` field names). latency_s is the last attempt's request
+    time (backoff sleeps excluded), for a failure too."""
     rec = {**rec, "ok": False, "error": None, "output_file": None, "prompt_tokens": None, "completion_tokens": None}
+    try:  # e.g. a transcript recorded as ok whose output file is gone: a failed extraction, not a failed stage
+        req = build()
+    except Exception as e:  # noqa: BLE001
+        return {**rec, "error": f"building the request: {error_text(e)}", "latency_s": 0.0}
     if req is None:
         return {**rec, "error": "missing transcript: the source failed on at least one page", "latency_s": 0.0}
-    t0 = time.perf_counter()
+    attempt_s = 0.0
     try:
         resp, _, attempt_s = await call_with_retries(lambda: extractor.complete(req), max_retries)
         rec.update(prompt_tokens=resp.prompt_tokens, completion_tokens=resp.completion_tokens)
@@ -120,7 +125,7 @@ async def extract_one(extractor, req: Request | None, rec: dict, run_dir: Path, 
         (run_dir / rel).write_text(json.dumps(fields, ensure_ascii=False, indent=1), encoding="utf-8")
         rec.update(ok=True, output_file=str(rel), latency_s=attempt_s)
     except Exception as e:  # noqa: BLE001 — record and keep going
-        rec.update(error=error_text(e), latency_s=time.perf_counter() - t0)
+        rec.update(error=error_text(e), latency_s=getattr(e, "attempt_s", attempt_s))
     return rec
 
 
@@ -149,46 +154,59 @@ async def run(
     # boto3 backends run in threads: make sure the pool never caps the requested concurrency
     asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=max(32, concurrency + 8)))
     max_retries = int(cfg["bench"]["max_retries"])
-    out = run_dir / "extractions.jsonl"
-    if out.exists():  # a re-run replaces the previous extraction pass instead of mixing with it
-        out.replace(run_dir / "extractions.prev.jsonl")
+    # A re-run replaces the previous extraction pass instead of mixing with it. Records are appended to a
+    # partial file as each one finishes; it becomes extractions.jsonl (the old one -> .prev) only when the
+    # pass ends, so a crash keeps the previous complete pass and the finished part of the new one.
+    out, partial = run_dir / "extractions.jsonl", run_dir / "extractions.partial.jsonl"
     extractors: dict[str, Backend] = {}
+    written = 0
+    fh = partial.open("w", encoding="utf-8")
 
-    for pipe in pipelines or ex["pipelines"]:
-        source: str = view.source(pipe)
-        slug = pipe.replace("->", "__")
-        key: str = view.extractor(meta, pipe) or view.extractor_key(ex["agent"], pipe)
-        if key not in extractors:
-            extractors[key] = get_backend(cfg, key)
-            await extractors[key].warmup()
-        extractor = extractors[key]
-        texts = latest_transcripts(run_dir, source) if source != "image" else {}
-        src_steps = steps.get(source) or []
-        jobs = [
-            (
-                d,
-                v,
-                build_request(d, v, source, docs=docs, schema=schemas[d["type"]], pr=pr, texts=texts, steps=src_steps),
-            )
-            for d in manifest
-            for v in variants
-            if (d["id"], v) in todo
-        ]
-        if not jobs:
-            print(f"[extract {pipe}] nothing to do (no documents in {run_dir})", flush=True)
-            continue
-        print(f"[extract {pipe}] {len(jobs)} documents via {extractor.name}", flush=True)
-        base = {"pipeline": pipe, "source": source, "agent": extractor.name, "agent_model": extractor.model}
+    def sink(rec: dict) -> None:
+        nonlocal written
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        fh.flush()
+        written += 1
 
-        async def one(d, v, req, base=base, slug=slug, extractor=extractor) -> dict:
-            async with sem:
-                rec = {**base, "doc_id": d["id"], "variant": v}
-                return await extract_one(extractor, req, rec, run_dir, slug, max_retries)
+    try:
+        for pipe in pipelines or ex["pipelines"]:
+            source: str = view.source(pipe)
+            slug = pipe.replace("->", "__")
+            key: str = view.extractor(meta, pipe) or view.extractor_key(ex["agent"], pipe)
+            if key not in extractors:
+                extractors[key] = get_backend(cfg, key)
+                await extractors[key].warmup()
+            extractor = extractors[key]
+            texts = latest_transcripts(run_dir, source) if source != "image" else {}
+            src_steps = steps.get(source) or []
+            jobs = [(d, v) for d in manifest for v in variants if (d["id"], v) in todo]
+            if not jobs:
+                print(f"[extract {pipe}] nothing to do (no documents in {run_dir})", flush=True)
+                continue
+            print(f"[extract {pipe}] {len(jobs)} documents via {extractor.name}", flush=True)
+            base = {"pipeline": pipe, "source": source, "agent": extractor.name, "agent_model": extractor.model}
 
-        recs = await asyncio.gather(*(one(d, v, r) for d, v, r in jobs))
-        with out.open("a", encoding="utf-8") as fh:
-            fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in recs)
-        bad = [r for r in recs if not r["ok"]]
-        print(f"  ok {len(recs) - len(bad)}/{len(recs)}", flush=True)
-        for r in bad[:5]:
-            print(f"  ERR {r['doc_id']} {r['variant']}: {r['error']}", flush=True)
+            def build(d, v, source=source, texts=texts, src_steps=src_steps) -> Request | None:
+                schema = schemas[d["type"]]
+                return build_request(d, v, source, docs=docs, schema=schema, pr=pr, texts=texts, steps=src_steps)
+
+            async def one(d, v, base=base, slug=slug, extractor=extractor, build=build) -> dict:
+                async with sem:
+                    rec = {**base, "doc_id": d["id"], "variant": v}
+                    rec = await extract_one(extractor, lambda: build(d, v), rec, run_dir, slug, max_retries)
+                    sink(rec)
+                    return rec
+
+            recs = await asyncio.gather(*(one(d, v) for d, v in jobs))
+            bad = [r for r in recs if not r["ok"]]
+            print(f"  ok {len(recs) - len(bad)}/{len(recs)}", flush=True)
+            for r in bad[:5]:
+                print(f"  ERR {r['doc_id']} {r['variant']}: {r['error']}", flush=True)
+    finally:
+        fh.close()
+    if not written:  # nothing to do: keep the last pass
+        partial.unlink()
+        return
+    if out.exists():
+        out.replace(run_dir / "extractions.prev.jsonl")
+    partial.replace(out)

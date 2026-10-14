@@ -24,6 +24,7 @@ def sleeps(monkeypatch) -> list[float]:
         calls.append(s)
 
     monkeypatch.setattr(transcribe.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(transcribe.random, "uniform", lambda lo, hi: hi)  # jitter pinned to the full delay
     return calls
 
 

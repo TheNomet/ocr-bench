@@ -5,7 +5,8 @@ auth.type:
   bearer_env      Authorization: Bearer $<auth.env>
   oauth2_kms_jwt  OAuth2 client-credentials, client authenticated with a private_key_jwt
                   (RFC 7523) assertion signed by an AWS KMS ECC_NIST_P256 key. The private
-                  key never leaves KMS. Token cached and refreshed; a 401 forces a refresh.
+                  key never leaves KMS. Token cached and refreshed; a 401 refreshes it (once,
+                  however many requests got the 401 for that token).
 """
 
 from __future__ import annotations
@@ -23,7 +24,9 @@ import httpx
 from .base import Backend, HTTPError, Request, Response, data_url
 
 
-def ssl_context(ca_bundle: str | None) -> ssl.SSLContext:
+def ssl_context(ca_bundle: str | None, name: str = "") -> ssl.SSLContext:
+    if ca_bundle and not os.path.exists(ca_bundle):
+        raise ValueError(f"backends.{name}.ca_bundle: {ca_bundle!r} does not exist on this machine")
     try:
         import certifi
 
@@ -99,13 +102,34 @@ class _KmsJwtAuth:
         if r.status_code >= 400:
             raise HTTPError(r.status_code, f"token endpoint: {r.text}")
         body = r.json()
-        return body["access_token"], time.time() + float(body.get("expires_in", 3000)) - 60
+        return body["access_token"], token_expiry(now, float(body.get("expires_in", 3000)))
 
-    async def header(self, force: bool = False) -> dict:
+    async def header(self, force: bool = False, stale: dict | None = None) -> dict:
+        """`stale`: the header a request got a 401 with. Only the first such request refreshes the
+        token; the others see it was already replaced and reuse the new one."""
         async with self.lock:
-            if force or not self.token or time.time() > self.expires_at:
+            rejected = stale is not None and stale.get("Authorization") == f"Bearer {self.token}"
+            if force or rejected or not self.token or time.time() > self.expires_at:
                 self.token, self.expires_at = await asyncio.to_thread(self._fetch)
-        return {"Authorization": f"Bearer {self.token}"}
+            return {"Authorization": f"Bearer {self.token}"}
+
+
+def token_expiry(issued: float, expires_in: float) -> float:
+    """When to stop using a token: a margin of 10% of its lifetime (1-60 s) before it expires, so a
+    short-lived token is still reused instead of refetched for every request."""
+    return issued + max(0.0, expires_in - min(60.0, max(1.0, expires_in * 0.1)))
+
+
+def message_text(content) -> str:
+    """A message's text. Some gateways return a list of content parts: join the text ones and drop the
+    rest (reasoning/thinking, images)."""
+    if isinstance(content, list):
+        texts = (p.get("text") for p in content if isinstance(p, dict) and p.get("type", "text") in _TEXT_PARTS)
+        return "".join(t for t in texts if isinstance(t, str))
+    return content or ""
+
+
+_TEXT_PARTS = ("text", "output_text")
 
 
 class OpenAICompatBackend(Backend):
@@ -119,7 +143,7 @@ class OpenAICompatBackend(Backend):
         self.extra_body = dict(spec.get("extra_body") or {})
         if spec.get("reasoning_effort"):  # low | medium | high (gateway/provider maps it to a thinking budget)
             self.extra_body["reasoning_effort"] = spec["reasoning_effort"]
-        verify = ssl_context(spec.get("ca_bundle"))
+        verify = ssl_context(spec.get("ca_bundle"), name)
         self.client = httpx.AsyncClient(
             verify=verify, timeout=httpx.Timeout(600.0), limits=httpx.Limits(max_connections=256)
         )
@@ -130,9 +154,9 @@ class OpenAICompatBackend(Backend):
         if self.auth_type not in ("none", "bearer_env", "oauth2_kms_jwt"):
             raise ValueError(f"backends.{name}.auth.type {self.auth_type!r} not supported")
 
-    async def _auth(self, force: bool) -> dict:
+    async def _auth(self, force: bool = False, stale: dict | None = None) -> dict:
         if self.kms_auth:
-            return await self.kms_auth.header(force)
+            return await self.kms_auth.header(force, stale)
         if self.bearer_env:
             return {"Authorization": f"Bearer {os.environ[self.bearer_env]}"}
         return {}
@@ -140,10 +164,9 @@ class OpenAICompatBackend(Backend):
     async def warmup(self) -> None:
         await self._auth(False)
 
-    async def _post(self, body: dict, force_token: bool) -> httpx.Response:
-        headers = {**self.headers, **await self._auth(force=force_token)}
+    async def _post(self, body: dict, auth: dict) -> httpx.Response:
         try:
-            return await self.client.post(self.url, json=body, headers=headers)
+            return await self.client.post(self.url, json=body, headers={**self.headers, **auth})
         except httpx.TransportError as e:  # connect/read timeouts, resets: retryable
             raise HTTPError(503, f"{type(e).__name__}: {e}") from e
 
@@ -160,14 +183,18 @@ class OpenAICompatBackend(Backend):
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
             **self.extra_body,
         }
-        r = await self._post(body, force_token=False)
+        auth = await self._auth()
+        r = await self._post(body, auth)
         if r.status_code == 401 and self.kms_auth:  # token revoked or expired early: fetch a new one once
-            r = await self._post(body, force_token=True)
+            r = await self._post(body, await self._auth(stale=auth))
         if r.status_code >= 400:
             raise HTTPError(r.status_code, r.text)
         data = r.json()
         ch = data["choices"][0]
         u = data.get("usage") or {}
         return Response(
-            ch["message"]["content"] or "", u.get("prompt_tokens"), u.get("completion_tokens"), ch.get("finish_reason")
+            message_text(ch["message"].get("content")),
+            u.get("prompt_tokens"),
+            u.get("completion_tokens"),
+            ch.get("finish_reason"),
         )

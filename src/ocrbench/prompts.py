@@ -50,6 +50,8 @@ def resolve(bench: dict) -> dict[str, dict]:
     for stage, over in (bench.get("prompts") or {}).items():
         if stage not in out:
             raise ValueError(f"bench.prompts.{stage}: unknown stage ({', '.join(out)})")
+        if over is None:  # `transcribe:` with nothing under it = no override
+            continue
         unknown = set(over) - set(out[stage])
         if unknown:
             raise ValueError(f"bench.prompts.{stage}: unknown field(s) {sorted(unknown)}")

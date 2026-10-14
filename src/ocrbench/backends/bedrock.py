@@ -59,4 +59,12 @@ class BedrockBackend(Backend):
         r = await asyncio.to_thread(call)
         text = "".join(b.get("text", "") for b in r["output"]["message"]["content"])
         u = r.get("usage", {})
-        return Response(text, u.get("inputTokens"), u.get("outputTokens"), r.get("stopReason"))
+        return Response(text, u.get("inputTokens"), u.get("outputTokens"), finish_reason(r.get("stopReason")))
+
+
+# Bedrock's stop reasons for a cut-off answer; scoring counts truncation as the OpenAI-style "length".
+_TRUNCATED = {"max_tokens", "model_context_window_exceeded"}
+
+
+def finish_reason(stop_reason: str | None) -> str | None:
+    return "length" if stop_reason in _TRUNCATED else stop_reason

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -68,18 +69,25 @@ class Transcript:
     output_file: str | None = None
 
 
+def backoff_s(retry: int) -> float:
+    """Exponential backoff (capped at 30 s) with jitter, so throttled requests don't retry in lockstep."""
+    return min(30.0, 2.0**retry) * random.uniform(0.5, 1.0)
+
+
 async def call_with_retries(fn, max_retries: int):
-    """Returns (result, retries, seconds of the successful attempt): backoff sleeps are not latency."""
+    """Returns (result, retries, seconds of the successful attempt): backoff sleeps are not latency.
+    On failure the exception carries the same: `.retries` and `.attempt_s` (seconds of the last attempt)."""
     retries = 0
     while True:
         t0 = time.perf_counter()
         try:
             return await fn(), retries, time.perf_counter() - t0
-        except HTTPError as e:
-            if e.status in RETRYABLE and retries < max_retries:
+        except Exception as e:
+            if isinstance(e, HTTPError) and e.status in RETRYABLE and retries < max_retries:
                 retries += 1
-                await asyncio.sleep(min(30.0, 2.0**retries))
+                await asyncio.sleep(backoff_s(retries))
                 continue
+            e.retries, e.attempt_s = retries, time.perf_counter() - t0  # pyright: ignore[reportAttributeAccessIssue]
             raise
 
 
@@ -90,18 +98,25 @@ def request(prompt: dict, image: Path) -> Request:
 
 async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries, prompt, rep=0, sink=None) -> Transcript:
     async with sem:
-        t0, started = time.perf_counter(), time.time()
+        started = time.time()
         base = Transcript(
             run_id, be.name, be.model, ref.doc_id, ref.page, ref.variant, conc, started, latency_s=0.0, ok=False
         )
+        retries, lat = 0, 0.0
         try:
             resp, retries, lat = await call_with_retries(lambda: be.complete(request(prompt, ref.path)), max_retries)
-        except Exception as e:  # noqa: BLE001 — record and keep the batch going
-            rec = replace(base, latency_s=time.perf_counter() - t0, error=error_text(e))
-        else:
             rel = Path("outputs") / be.name / f"{ref.key}.r{run_id}{f'.x{rep}' if rep else ''}.md"
             (out_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             (out_dir / rel).write_text(resp.text, encoding="utf-8")
+        except Exception as e:  # noqa: BLE001 — record and keep the batch going
+            # latency_s is the last attempt's request time, as for a success (backoff sleeps excluded)
+            rec = replace(
+                base,
+                latency_s=getattr(e, "attempt_s", lat),
+                retries=getattr(e, "retries", retries),
+                error=error_text(e),
+            )
+        else:
             rec = replace(
                 base,
                 latency_s=lat,
