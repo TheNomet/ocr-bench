@@ -183,14 +183,15 @@ def public_model_id(model: str | None) -> str | None:
 
 
 def public_image(image: str | None) -> str | None:
-    """A container image reference safe to publish: images on a public registry as they are; a private
-    registry's host (an ECR URI carries the account id) is replaced by `<private-registry>`."""
+    """A container image reference safe to publish: images on a public registry as they are; on a private
+    registry (an ECR URI carries the account id, its path may name an organisation) only
+    `<private-registry>/<last path segment>`, which keeps the image name and its tag or digest."""
     if not image:
         return image
     first, sep, rest = image.partition("/")
     if not sep or not ("." in first or ":" in first or first == "localhost"):
         return image  # Docker Hub short form
-    return image if first.lower() in _PUBLIC_REGISTRIES else f"<private-registry>/{rest}"
+    return image if first.lower() in _PUBLIC_REGISTRIES else f"<private-registry>/{rest.rsplit('/', 1)[-1]}"
 
 
 def backend_summary(spec: dict) -> dict:
@@ -232,6 +233,15 @@ def backends_summary(cfg: Config, names: list[str] | None = None) -> dict:
     return {k: backend_summary(cfg.backend(k)) for k in (names if names is not None else cfg.backends)}
 
 
+def summary_temperature(spec: dict, summarize_prompt: dict) -> float | None:
+    """The temperature the recommendation request is sent with (summarize.run): the backend's `temperature`
+    override when it has one (null: not sent), else the summarize prompt's. backend_summary records the
+    stage 1-2 value instead (0 without an override), which is not what the writer used."""
+    if spec["kind"] == "selfhosted":
+        return (spec.get("request") or {}).get("temperature", 0.0)  # vLLM sends its own request settings
+    return spec["temperature"] if "temperature" in spec else float(summarize_prompt["temperature"])
+
+
 def used_backends(items: list[dict], agent: str, agents: dict[str, str], summary_agent: str | None) -> list[str]:
     """Backends a run uses, in stage order: the plan's transcribers, the extractors, the summary writer."""
     keys = [it["backend"] for it in items] + [agent, *agents.values()]
@@ -270,6 +280,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     ex = dict(cfg["bench"]["extraction"])
     ex["pipelines"] = plan_pipelines(cfg, plan)
     agents = {p: view.extractor_key(ex["agent"], p) for p in ex["pipelines"]}
+    used_prompts = prompts.resolve(cfg["bench"])
     meta = {
         "schema_version": SCHEMA_VERSION,
         "id": rid,
@@ -286,14 +297,17 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
             **{k: cfg["bench"]["docs"][k] for k in ("seed", "per_type")},
         },
         "backends": backends_summary(cfg, used_backends(items, ex["agent"], agents, cfg.summary_agent)),
-        "prompts": prompts.resolve(cfg["bench"]),
+        "prompts": used_prompts,
         "transcribers": list(dict.fromkeys(it["backend"] for it in items)),
         "extraction": {
             "agent": ex["agent"],
             "pipelines": ex["pipelines"],
             "agents": agents,
         },
-        "summary": {"agent": cfg.summary_agent},
+        "summary": {
+            "agent": cfg.summary_agent,
+            "temperature": summary_temperature(cfg.backend(cfg.summary_agent), used_prompts["summarize"]),
+        },
         "stages": {},
     }
     save(d, meta)
@@ -361,7 +375,8 @@ def refresh_summary_setup(cfg: Config, d: Path) -> None:
     spec = cfg.backend(key)
     entry = backend_summary(spec)
     used = stage_backends(meta)
-    summary: dict = {"agent": key}
+    summarize_prompt = prompts.resolve(cfg["bench"])["summarize"]
+    summary: dict = {"agent": key, "temperature": summary_temperature(spec, summarize_prompt)}
     meta["summary"] = summary
     if key not in used:
         meta["backends"][key] = entry
@@ -370,7 +385,7 @@ def refresh_summary_setup(cfg: Config, d: Path) -> None:
     snap_key = _patch_snapshot(d, key, spec, key in used)
     if snap_key and snap_key != key:
         summary["config_key"] = snap_key
-    meta.setdefault("prompts", {})["summarize"] = prompts.resolve(cfg["bench"])["summarize"]
+    meta.setdefault("prompts", {})["summarize"] = summarize_prompt
     desc = cfg.plan_description(meta["plan"])
     if desc:
         meta["plan_description"] = desc

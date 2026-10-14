@@ -117,6 +117,20 @@ def test_writer_details_from_summary_backend():
     ]
 
 
+def test_writer_temperature_is_the_one_the_request_used():
+    meta = _meta()
+    # same backend as stages 1-3, but the summarize prompt's temperature was sent
+    meta["summary"] = {"agent": "s", "temperature": 0.2}
+    s_rows = [r for r in view.model_rows(meta) if r.key == "s"]
+    assert [(r.roles, r.temperature) for r in s_rows] == [
+        ([view.ROLE_TRANSCRIBER, view.ROLE_AGENT], 0.0),
+        ([view.ROLE_WRITER], 0.2),
+    ]
+    # older runs without summary.temperature: the backend's value, one row
+    meta["summary"] = {"agent": "s"}
+    assert [r.temperature for r in view.model_rows(meta) if r.key == "s"] == [0.0]
+
+
 def _run_dir(tmp_path: Path, rid: str, summary: str) -> Path:
     d = tmp_path / "runs" / rid
     d.mkdir(parents=True)

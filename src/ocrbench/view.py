@@ -254,7 +254,10 @@ def model_rows(meta: dict) -> list[ModelRow]:
         roles.setdefault(k, []).append(ROLE_EXTRACTOR)
     writer: str = (meta.get("summary") or {}).get("agent") or agent or ""
     wspec = summary_spec(meta)
-    own_row = writer in roles and wspec != spec(meta, writer)  # the writer ran with other settings than stages 1-3
+    sm = meta.get("summary") or {}
+    wtemp = sm["temperature"] if "temperature" in sm else wspec.get("temperature", 0.0)  # older runs lack it
+    # The writer ran with other settings than stages 1-3 (or at another temperature): its own row
+    own_row = writer in roles and (wspec != spec(meta, writer) or wtemp != spec(meta, writer).get("temperature", 0.0))
     if writer and not own_row:
         roles.setdefault(writer, []).append(ROLE_WRITER)
     rows_of = [(k, rs, wspec if rs == [ROLE_WRITER] else spec(meta, k)) for k, rs in roles.items()]
@@ -273,7 +276,7 @@ def model_rows(meta: dict) -> list[ModelRow]:
                 detail=f"HF revision {rev[:8]}" if sh else (b.get("model") or ""),
                 detail_title=f"HF revision {rev}" if sh else "",
                 via=b.get("via") or "?",
-                temperature=b.get("temperature", 0.0),
+                temperature=wtemp if rs == [ROLE_WRITER] else b.get("temperature", 0.0),
                 price=price_text(b),
                 reasoning_effort=b.get("reasoning_effort"),
             )

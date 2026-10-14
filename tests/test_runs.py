@@ -47,9 +47,19 @@ def test_published_ids_carry_no_account():
     assert acct not in json.dumps(s)
 
     ecr = f"{acct}.dkr.ecr.eu-west-1.amazonaws.com/mirror/vllm-openai:v1"
-    assert runs.public_image(ecr) == "<private-registry>/mirror/vllm-openai:v1"
+    assert runs.public_image(ecr) == "<private-registry>/vllm-openai:v1"
     assert runs.public_image("registry.corp.example:5000/vllm:v1") == "<private-registry>/vllm:v1"
-    for public in ("docker.io/vllm/vllm-openai:v0.11", "vllm/vllm-openai:v0.11", "ghcr.io/a/b:1", "public.ecr.aws/x/y"):
+    digest = "sha256:" + "a" * 64
+    org = f"registry.corp.example/some-org/team/vllm-openai@{digest}"
+    assert runs.public_image(org) == f"<private-registry>/vllm-openai@{digest}"  # no org/team path
+    assert runs.public_image("localhost:5000/org/x:1") == "<private-registry>/x:1"
+    for public in (
+        "docker.io/vllm/vllm-openai:v0.11",
+        "vllm/vllm-openai:v0.11",
+        "ghcr.io/a/b:1",
+        "public.ecr.aws/x/y",
+        f"nvcr.io/nvidia/sub/img@{digest}",
+    ):
         assert runs.public_image(public) == public
 
 
@@ -97,8 +107,31 @@ def test_refresh_summary_snapshot_keeps_stage_backend(fake_docs, tmp_path, monke
     cfg.raw["bench"]["summary"] = {"agent": "unused"}
     runs.refresh_summary_setup(cfg, d)
     meta = runs.load(d)
-    assert meta["summary"] == {"agent": "unused"} and meta["backends"]["unused"]["model"] == "m-unused"
+    assert meta["summary"] == {"agent": "unused", "temperature": 0.2}
+    assert meta["backends"]["unused"]["model"] == "m-unused"
     assert yaml.safe_load((d / "config.yaml").read_text())["bench"]["summary"]["agent"] == "unused"
+
+
+def test_summary_records_the_temperature_it_is_sent_with(fake_docs, tmp_path, monkeypatch):
+    """Without a backend override the request uses the summarize prompt's temperature, not the 0 that
+    backend_summary records for stages 1-2."""
+    cfg = _cfg(tmp_path, monkeypatch)
+    assert "temperature" not in cfg.backend("sonnet-4.5")
+    d = runs.create(cfg, "smoke", fake_docs)
+    meta = runs.load(d)
+    assert meta["summary"]["temperature"] == prompts.DEFAULTS["summarize"]["temperature"] == 0.2
+    assert meta["backends"]["sonnet-4.5"]["temperature"] == 0.0  # what stages 1-2 sent
+    cfg.raw["bench"]["prompts"] = {"summarize": {"temperature": 0.5}}
+    runs.refresh_summary_setup(cfg, d)
+    assert runs.load(d)["summary"]["temperature"] == 0.5
+    cfg.raw["backends"]["sonnet-4.5"]["temperature"] = 1  # override wins
+    runs.refresh_summary_setup(cfg, d)
+    assert runs.load(d)["summary"]["temperature"] == 1
+    cfg.raw["backends"]["sonnet-4.5"]["temperature"] = None  # not sent: the model's default
+    runs.refresh_summary_setup(cfg, d)
+    assert runs.load(d)["summary"]["temperature"] is None
+    sh = cfg.backend("unlimited-ocr")
+    assert runs.summary_temperature(sh, {"temperature": 0.2}) == sh["request"]["temperature"]
 
 
 def test_all_runs_newest_first_by_created(tmp_path, monkeypatch):
