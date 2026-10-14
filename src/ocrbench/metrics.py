@@ -93,7 +93,8 @@ _ALL = [
         "Share of requests that succeeded",
         glossary=(
             "coverage",
-            "share of pages or documents that got an answer. Failures count against the backend: "
+            "share of pages or documents that got an answer. Failures, and selected pages or documents never "
+            "attempted, count against the backend: "
             "CER 1 and no numbers found for a page, every field wrong for a document. Cheapest and fastest "
             "pipeline only compare pipelines with at least 99% coverage",
         ),
@@ -166,7 +167,8 @@ _ALL = [
         "high",
         glossary=(
             "field accuracy",
-            "share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored)",
+            "share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored). "
+            "A value given for an optional field the document doesn't have counts as one wrong field",
         ),
     ),
     Metric("fields_correct", "Correct", "int"),

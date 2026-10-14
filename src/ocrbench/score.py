@@ -7,7 +7,10 @@ the same on any machine, today or later.
 Choices that affect comparisons, all reported in scores["method"]:
 - Failed requests count. A page with no successful transcript scores CER=1 and recall 0; an extraction
   that failed (or had no transcript to read) scores 0 on every field. `coverage` shows how many succeeded.
-  Pages a plan item selected but never attempted (a killed task) count as failed too.
+  Pages a plan item selected but never attempted (a killed task) count as failed too, and so do documents
+  a pipeline's source was expected to cover but that have no extraction record.
+- Fields are the ground truth's. A schema field the ground truth leaves out (an optional field absent from
+  the document) counts as one wrong field if the extractor invented a value for it, so guessing never pays.
 - One transcript per (backend, page, variant) is scored: the successful one from the lowest-concurrency run,
   the latest if there are several (so a deliberate re-run replaces it). End-to-end latency uses that same one.
 - Per-page CER and WER are capped at 1 (a failed page): a runaway page can't score worse than no answer.
@@ -138,6 +141,13 @@ def norm_value(v) -> str:
     s = re.sub(r"\s+", " ", s).strip().casefold()
     s = _CURRENCY.sub("", s).strip()
     return s.strip(".;:").strip()
+
+
+def is_empty(v) -> bool:
+    """No value: missing, null, blank, or a list of blanks."""
+    if isinstance(v, list):
+        return all(is_empty(x) for x in v)
+    return v is None or norm_value(v) == ""
 
 
 def field_correct(truth, pred) -> bool:
@@ -373,13 +383,19 @@ def latest_extractions(records: list[dict], manifest: dict) -> dict[tuple[str, s
     return latest
 
 
-def score_extraction(e: dict, truth: dict, run_dir: Path) -> dict:
-    """Field-by-field score of one extraction record. A failed extraction gets every field wrong."""
-    raw = read_text(run_dir / e["output_file"]) if e["ok"] and e.get("output_file") else None
+def score_extraction(e: dict, truth: dict, run_dir: Path, schema_fields: list[str] | None = None) -> dict:
+    """Field-by-field score of one extraction record. A failed extraction gets every field wrong. A schema
+    field the ground truth leaves out (an optional field absent from this document) is only scored when the
+    extractor invented a value for it: one wrong field. Without a schema, only ground-truth fields count."""
+    raw = read_text(run_dir / e["output_file"]) if e.get("ok") and e.get("output_file") else None
     pred = json.loads(raw) if raw else {}
+    truth = {f: t for f, t in truth.items() if not is_empty(t)}
     fields = {
         f: {"truth": t, "predicted": pred.get(f), "correct": field_correct(t, pred.get(f))} for f, t in truth.items()
     }
+    for f in schema_fields or []:
+        if f not in truth and not is_empty(pred.get(f)):
+            fields[f] = {"truth": None, "predicted": pred[f], "correct": False, "invented": True}
     n_ok = sum(x["correct"] for x in fields.values())
     return {
         "pipeline": e["pipeline"],
@@ -442,6 +458,24 @@ def _pipeline_cost(s: list[dict], okd: list[dict], price: dict | None, src_cost:
     return cost + src_cost * st.mean(len(manifest[d["doc_id"]]["pages"]) for d in s)
 
 
+def expected_extractions(
+    meta: dict, expected: dict[str, set[tuple]] | None, records: list[dict]
+) -> dict[str, set[tuple[str, str]]] | None:
+    """Pipeline -> (doc, variant) it should have extracted: the documents its source was expected to cover
+    (expected_pages: every selected document for `image->X`, the transcriber's selection for `T->X`), so a
+    document never attempted still counts. None if run.json has no plan items or no extraction ran (then:
+    attempted documents only)."""
+    from .view import source
+
+    if expected is None or not records:
+        return None
+    planned: list[str] = (meta.get("extraction") or {}).get("pipelines") or []
+    pipes: list[str] = list(dict.fromkeys([*planned, *(str(r["pipeline"]) for r in records)]))
+    by_src: dict[str, set[tuple[str, str]]] = {be: {(d, v) for d, _, v in keys} for be, keys in expected.items()}
+    every: set[tuple[str, str]] = set().union(*by_src.values())
+    return {p: every if source(p) == "image" else by_src.get(source(p), set()) for p in pipes}
+
+
 def extraction(
     meta: dict,
     docs: Path,
@@ -450,12 +484,35 @@ def extraction(
     manifest: dict,
     transcripts: list[dict],
     basis: dict[str, dict],
+    expected: dict[str, set[tuple[str, str]]] | None = None,
 ) -> tuple[list, list]:
+    from .view import extractor, source
+
     prices = {k: v.get("price_per_mtok") for k, v in meta["backends"].items()}
+    schemas = json.loads(read_text(docs / "schemas.json") or "{}")
+    chosen: dict[tuple[str, str, str], dict] = dict(latest_extractions(records, manifest))
+    for pipe, keys in (expected or {}).items():
+        for doc_id, variant in keys:
+            if doc_id in manifest:  # selected, never attempted: a failed extraction
+                chosen.setdefault(
+                    (pipe, doc_id, variant),
+                    {
+                        "pipeline": pipe,
+                        "source": source(pipe),
+                        "agent": extractor(meta, pipe),
+                        "doc_id": doc_id,
+                        "variant": variant,
+                        "ok": False,
+                        "error": "not attempted",
+                        "output_file": None,
+                        "latency_s": 0.0,
+                    },
+                )
     docs_out = []
-    for (_, doc_id, _), e in sorted(latest_extractions(records, manifest).items()):
+    for (_, doc_id, _), e in sorted(chosen.items()):
         truth = json.loads(read_text(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
-        docs_out.append(score_extraction(e, truth, run_dir))
+        schema_fields = list((schemas.get(manifest[doc_id]["type"]) or {}).get("fields") or {})
+        docs_out.append(score_extraction(e, truth, run_dir, schema_fields))
     src_lat = source_latency(transcripts, manifest)
 
     agg = []
@@ -502,9 +559,9 @@ def score(meta: dict, run_dir: Path) -> dict:
     basis = cost_basis(speed, hourly, priced)
     expected = expected_pages(meta, docs)
     tagg, tpages = transcription(meta, docs, run_dir, transcripts, manifest, expected)
-    eagg, edocs = extraction(
-        meta, docs, run_dir, read_jsonl(run_dir / "extractions.jsonl"), manifest, transcripts, basis
-    )
+    records = read_jsonl(run_dir / "extractions.jsonl")
+    expected_ex = expected_extractions(meta, expected, records)
+    eagg, edocs = extraction(meta, docs, run_dir, records, manifest, transcripts, basis, expected_ex)
     return {
         "run_id": meta["id"],
         "method": {
@@ -512,6 +569,13 @@ def score(meta: dict, run_dir: Path) -> dict:
             "expected_pages": "every page a plan item selected; one never attempted counts as failed"
             if expected is not None
             else "pages with a record (run.json has no plan items)",
+            "expected_documents": "every document the pipeline's source was expected to cover (image: all "
+            "selected documents; a transcriber: the documents its plan items selected); one never attempted "
+            "counts as a failed extraction"
+            if expected_ex is not None
+            else "documents with an extraction record (run.json has no plan items, or no extraction ran)",
+            "invented_optional_fields": "count as wrong: a schema field absent from the ground truth is scored "
+            "only if the extractor returned a non-empty value for it (one wrong field)",
             "transcript_per_page": "successful one from the lowest-concurrency run (latest if several)",
             "text_normalisation": "Markdown/HTML tags removed, HTML entities decoded, whitespace unified",
             "error_rate_cap": "per-page CER and WER capped at 1; empty ground truth: 0 if output empty, else 1",

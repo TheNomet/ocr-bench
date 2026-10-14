@@ -116,7 +116,8 @@ formatting-sensitive:
 - CER/WER are computed on normalised text (markdown/HTML stripped, HTML entities decoded) and
   capped at 1 per page, so one runaway page can't dominate a mean; word recall/precision ignore order;
 - failed pages score CER=1/recall 0 and failed extractions 0 (see `coverage`); nothing is dropped.
-  Pages a plan item selected but that have no record (task killed) count as failed;
+  Pages a plan item selected, and documents a pipeline's source covered, that have no record
+  (task killed) count as failed;
 - a page with no numbers in the ground truth has number recall 1;
 - the scored transcript of a page is the one from the lowest-concurrency run (latest if several);
 - a self-hosted model's per-page cost uses its best sustained throughput (<=1% errors), with the
@@ -125,6 +126,7 @@ formatting-sensitive:
 - cheapest/fastest rank only pipelines with >=99% coverage (`method.ranking_min_coverage`);
 - numbers are checked by presence and match as whole tokens;
 - field values are compared after case and whitespace normalisation, ignoring currency prefixes/suffixes;
+  a value for a schema field that the ground truth leaves out (optional field) counts as one wrong field;
 - end-to-end latency of `X->agent` is the sum of X's per-page latencies for the document
   (per page, the record chosen as above) plus the extraction call; unknown if a page has none; its
   cost adds X's per-page costs.

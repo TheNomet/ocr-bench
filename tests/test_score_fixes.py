@@ -5,7 +5,7 @@ import shutil
 
 import pytest
 
-from ocrbench.score import cost_basis, normalise, page_metrics, score, source_latency
+from ocrbench.score import cost_basis, normalise, page_metrics, score, score_extraction, source_latency
 
 
 def _write(d, name, rows):
@@ -184,3 +184,89 @@ def test_cost_basis_flags_when_nothing_is_sustained():
     rows[0]["errors"] = 0
     b = cost_basis(rows, {"o"})["o"]
     assert b["concurrency"] == 4 and b["meets_error_threshold"] is True and "best sustained" in b["basis"]
+
+
+# ---- 8. a value invented for a field the document doesn't have counts as wrong
+def test_invented_optional_field_counts_as_wrong(tmp_path):
+    def scored(pred):
+        (tmp_path / "f.json").write_text(json.dumps(pred, ensure_ascii=False))
+        rec = _ext("image->agent", "image", "a", "letter-02", "clean", out="f.json")
+        return score_extraction(rec, {"sender_name": "Bjørn", "amounts": ["150,00"]}, tmp_path, SCHEMA)
+
+    SCHEMA = ["sender_name", "date", "recipient", "amounts", "tags"]
+    base = {"sender_name": "Bjørn", "amounts": ["150,00"]}
+    s = scored({**base, "recipient": "Kjære naboer"})
+    assert (s["fields_total"], s["fields_correct"]) == (3, 2)
+    assert s["fields"]["recipient"] == {"truth": None, "predicted": "Kjære naboer", "correct": False, "invented": True}
+    s = scored({**base, "tags": ["x"]})  # an invented list counts too
+    assert (s["fields_total"], s["fields_correct"]) == (3, 2)
+    # omitted, null, blank or empty list: nothing invented, the denominator is unchanged
+    for pred in (base, {**base, "recipient": None, "date": " ", "tags": []}, {**base, "tags": [""]}):
+        s = scored(pred)
+        assert (s["fields_total"], s["fields_correct"]) == (2, 2) and set(s["fields"]) == set(base)
+    # without a schema (old runs): ground-truth fields only
+    rec = _ext("image->agent", "image", "a", "letter-02", "clean", out="f.json")
+    (tmp_path / "f.json").write_text(json.dumps({**base, "recipient": "x"}))
+    assert score_extraction(rec, base, tmp_path)["fields_total"] == 2
+
+
+def test_invented_field_in_score(run):
+    d, manifest = run
+    doc = "invoice-00"
+    fields_file = d / "docs" / manifest[doc]["fields"]
+    gt = json.loads(fields_file.read_text())
+    kid = gt["fields"].pop("kid")  # the document has no KID: the schema still lists it
+    fields_file.write_text(json.dumps(gt))
+    (d / "outputs" / "f.json").write_text(json.dumps({**gt["fields"], "kid": kid}))
+    _write(d, "extractions.jsonl", [_ext("image->agent", "image", "a", doc, "clean", out="outputs/f.json")])
+    s = score(_meta(a=LLM), d)
+    (ex,) = s["extraction"]["aggregate"]
+    n = len(gt["fields"])
+    assert (ex["fields_total"], ex["fields_correct"]) == (n + 1, n)
+    assert s["method"]["invented_optional_fields"].startswith("count as wrong")
+
+
+# ---- 9. documents a pipeline's source was expected to cover but never extracted count as failed
+def test_unattempted_extractions_count_as_failed(run):
+    d, manifest = run
+    doc = "invoice-00"
+    _write(d, "transcripts.jsonl", [_t("o", doc, 1, "clean", 1, 1.0, out="outputs/x.md")])
+    (d / "outputs" / "f.json").write_text(
+        json.dumps(json.loads((d / "docs" / manifest[doc]["fields"]).read_text())["fields"])
+    )
+    _write(
+        d,
+        "extractions.jsonl",
+        [
+            _ext("image->agent", "image", "a", doc, "clean", out="outputs/f.json"),
+            _ext("o->agent", "o", "a", doc, "clean", out="outputs/f.json"),
+        ],
+    )
+    meta = {
+        **_meta(o=GPU, p=GPU, a=LLM),
+        "plan_items": [{"backend": "o", "variant": "clean", "limit": 2}, {"backend": "p", "variant": "both"}],
+        "extraction": {"agent": "a", "pipelines": ["o->agent", "image->agent", "p->agent"]},
+    }
+    s = score(meta, d)
+    agg = {(a["pipeline"], a["variant"]): a for a in s["extraction"]["aggregate"]}
+    o_docs = {r["doc_id"] for r in s["transcription"]["pages"] if r["backend"] == "o"}
+    assert agg[("o->agent", "clean")]["docs"] == len(o_docs) == 2  # o's selection: its first 2 pages
+    assert agg[("o->agent", "clean")]["coverage"] == pytest.approx(1 / 2)
+    n = len(manifest)  # image: every selected document (p selected all of them, both variants)
+    assert agg[("image->agent", "clean")]["docs"] == agg[("image->agent", "degraded")]["docs"] == n
+    assert (
+        agg[("image->agent", "degraded")]["coverage"] == 0 and agg[("image->agent", "degraded")]["field_accuracy"] == 0
+    )
+    assert agg[("p->agent", "clean")]["coverage"] == 0  # planned pipeline whose pass never wrote a record
+    missing = next(x for x in s["extraction"]["docs"] if x["pipeline"] == "p->agent")
+    assert missing["agent"] == "a" and missing["source"] == "p" and missing["fields_correct"] == 0
+    assert missing["fields_total"] > 0
+    assert "never attempted" in s["method"]["expected_documents"]
+    # old run.json without plan items, or no extraction at all: attempted documents only
+    del meta["plan_items"]
+    s = score(meta, d)
+    assert {a["docs"] for a in s["extraction"]["aggregate"]} == {1}
+    assert "record" in s["method"]["expected_documents"]
+    meta["plan_items"] = [{"backend": "o", "variant": "clean"}]
+    _write(d, "extractions.jsonl", [])
+    assert score(meta, d)["extraction"]["aggregate"] == []
