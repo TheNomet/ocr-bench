@@ -134,6 +134,14 @@ formatting-sensitive:
 - end-to-end latency of `X->agent` is the sum of X's per-page latencies for the document
   (per page, the record chosen as above) plus the extraction call; unknown if a page has none; its
   cost adds X's per-page costs.
+- repeats (plan item `repeat: N`, `bench.extraction.plan_repeat.<plan>` -> run.json `extraction.repeat`):
+  records carry `repeat` 0..N-1. The main tables score the last repeat (a success beats a failure), so they
+  stay comparable with runs without repeats. Each repeat is also scored on its own into `scores.json`
+  `variation` (only when something was repeated; rules in `method.variation`): transcription at the
+  backend's lowest concurrency with repeats, every repeat over the same pages/documents with the usual
+  failure rules, std = sample std. `T->X` repeats re-read the one scored transcript (they measure X alone).
+  `facts.variation_facts` calls a gap between two means "outside the run-to-run range" only when it is
+  larger than the larger of their two min–max ranges.
 
 ## Safety rails
 

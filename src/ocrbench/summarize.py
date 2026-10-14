@@ -95,6 +95,11 @@ def build_prompt(meta: dict, scores: dict) -> tuple[str, str]:
     hidden = _hidden_note(full, meta)
     if hidden:
         lines.append(hidden)
+    if scores.get("variation"):
+        lines.append(
+            f"- {view.repeat_note(scores['variation'])} A difference within the run-to-run range is not evidence "
+            "that one is better"
+        )
     d = meta["documents"]
     lines.append(
         f"- documents: {d['count']} synthetic Norwegian documents, {d['page_images']} page images, "

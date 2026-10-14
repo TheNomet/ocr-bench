@@ -267,7 +267,17 @@ def _stage_extract(cfg: Config, d: Path, meta: dict) -> None:
     # the documents stage 1 attempted (extract.targets); one variant if every plan item used the same one
     variants = {it.get("variant", "both") for it in meta.get("plan_items") or []}
     variant = variants.pop() if len(variants) == 1 else "both"
-    asyncio.run(run(cfg, d / "docs", d, meta=meta, pipelines=meta["extraction"]["pipelines"], variant=variant))
+    asyncio.run(
+        run(
+            cfg,
+            d / "docs",
+            d,
+            meta=meta,
+            pipelines=meta["extraction"]["pipelines"],
+            variant=variant,
+            repeat=int(meta["extraction"].get("repeat", 1)),
+        )
+    )
 
 
 def _stage_score(cfg: Config, d: Path, meta: dict) -> None:

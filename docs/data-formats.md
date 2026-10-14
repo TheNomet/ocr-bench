@@ -85,7 +85,7 @@ runs/<id>/
 ### run.json
 
 ```json
-{"schema_version": 2,
+{"schema_version": 3,
  "id": "2026-10-09-ocr-vs-claude45", "plan": "ocr-vs-claude45",
  "plan_items": [{"backend": "unlimited-ocr", "concurrency": 1}],
  "created": "...", "git_commit": "90b8e41", "region": "eu-west-1",
@@ -105,7 +105,8 @@ runs/<id>/
              "extract": {"system": "...", "rules": "...", "max_tokens": 2048},
              "summarize": {"system": "...", "max_tokens": 12000, "temperature": 0.2}},
  "transcribers": ["unlimited-ocr", "sonnet-4.5"],
- "extraction": {"agent": "sonnet-4.5", "pipelines": ["..."], "agents": {"<pipeline>": "<extractor>"}},
+ "extraction": {"agent": "sonnet-4.5", "pipelines": ["..."], "agents": {"<pipeline>": "<extractor>"},
+                "repeat": 1},
  "summary": {"agent": "..."},
  "report": {"hide_backends": []},
  "stages": {"transcribe": {"finished": "...", "seconds": 3600.0}}}
@@ -117,7 +118,9 @@ live config, so a run re-scores identically anywhere.
 
 `schema_version` 1 (no field) is the layout before several self-hosted backends existed: an
 `ocr` block for the one self-hosted model and `llm_backends` for the rest. `runs.load()`
-upgrades it on read; such runs used the default prompts.
+upgrades it on read; such runs used the default prompts. Schema 3 added `extraction.repeat`
+(how many times every document was extracted, `bench.extraction.plan_repeat.<plan>`); older runs
+are upgraded to 1.
 
 ## 2a. Transcription records (inside the run folder)
 
@@ -126,6 +129,7 @@ runs/<id>/
   runs.jsonl                # one line per run (backend x concurrency)
   transcripts.jsonl         # one line per request
   outputs/<backend>/<doc_id>.p<n>.<variant>.r<run_id>.md   # raw model output
+  outputs/<backend>/<doc_id>.p<n>.<variant>.r<run_id>.x<i>.md   # repeat i > 0 (plan item `repeat: N`)
 ```
 
 `variant` is either `clean` or `degraded`.
@@ -143,8 +147,12 @@ runs/<id>/
 {"run_id": "...", "backend": "unlimited-ocr", "model": "...", "doc_id": "invoice-03", "page": 1,
  "variant": "clean", "concurrency": 16, "started": 1791462025.2, "latency_s": 3.1, "ok": true,
  "prompt_tokens": 1192, "completion_tokens": 490, "finish_reason": "stop", "retries": 0,
- "error": null, "output_file": "outputs/unlimited-ocr/invoice-03.p1.clean.r20261008-141236.md"}
+ "error": null, "output_file": "outputs/unlimited-ocr/invoice-03.p1.clean.r20261008-141236.md",
+ "repeat": 0}
 ```
+
+`repeat` is 0..N-1 for a plan item with `repeat: N` (records written before it existed have none:
+read as 0).
 
 ## 3. Extraction runs (same run directory)
 
@@ -152,6 +160,7 @@ runs/<id>/
 runs/<id>/
   extractions.jsonl
   outputs/extract/<pipeline_slug>/<doc_id>.<variant>.json   # parsed fields returned by the extractor
+  outputs/extract/<pipeline_slug>/<doc_id>.<variant>.x<i>.json   # repeat i > 0 (extraction.repeat > 1)
 ```
 
 `pipeline` is `"<source>-><extractor>"`. The source is a transcriber backend name, or `"image"`
@@ -164,7 +173,7 @@ extraction agent) or a backend name. In file names, `->` becomes `__`.
 {"pipeline": "unlimited-ocr->agent", "source": "unlimited-ocr", "agent": "sonnet-4.5", "agent_model": "...",
  "doc_id": "invoice-03", "variant": "degraded", "latency_s": 4.2, "ok": true,
  "prompt_tokens": 2100, "completion_tokens": 160, "error": null,
- "output_file": "outputs/extract/unlimited-ocr__agent/invoice-03.degraded.json"}
+ "output_file": "outputs/extract/unlimited-ocr__agent/invoice-03.degraded.json", "repeat": 0}
 ```
 
 When the source is a transcriber, the extractor reads the same transcript of each page that
@@ -172,6 +181,8 @@ scoring uses (the successful one from the lowest-concurrency run, the latest if 
 after the transcriber's `postprocess` steps, in page order. A document with a page the source
 failed on is recorded as a failed extraction. The source's transcription latency
 is **not** included in `latency_s`; the report adds the two together for end-to-end figures.
+With `extraction.repeat` N > 1 every document is extracted N times (`repeat` 0..N-1); a transcript
+source gives every repeat the same transcript.
 
 ## 4. Scores and site
 
@@ -180,3 +191,33 @@ is **not** included in `latency_s`; the report adds the two together for end-to-
 - `site/index.html`: the experiments index. `site/<id>/index.html` is the run page and
   `site/<id>/docs/<doc_id>.html` the document pages. Written by `ocrbench report`, which
   copies the images, so each `site/<id>/` folder is self-contained.
+
+### Run-to-run variation
+
+Only when something was repeated (a plan item with `repeat` > 1, or `extraction.repeat` > 1),
+`scores.json` has a `variation` block, and `method.variation` describes its rules. The main
+`transcription` and `extraction` blocks still score one record per page and document (the last
+repeat, a success beating a failure), so they compare with runs without repeats.
+
+```json
+"variation": {
+  "transcription": [
+    {"backend": "sonnet-5.5", "variant": "clean", "concurrency": 1, "repeats": 3, "pages": 54,
+     "cer_mean": 0.041, "cer_min": 0.038, "cer_max": 0.045, "cer_std": 0.0035,
+     "cer_median_mean": 0.012, "cer_median_min": "...", "word_recall_mean": "...", "num_recall_mean": 0.982, "...": "...",
+     "pages_differing": 0.87, "page_cer_range_mean": 0.011,
+     "per_repeat": [{"repeat": 0, "pages": 54, "coverage": 1.0, "cer": 0.040, "cer_median": 0.012,
+                     "word_recall": 0.97, "num_recall": 0.98}]}],
+  "extraction": [
+    {"pipeline": "image->sonnet-5.5", "variant": "clean", "repeats": 3, "docs": 48,
+     "field_accuracy_mean": 0.968, "field_accuracy_min": 0.962, "field_accuracy_max": 0.973,
+     "field_accuracy_std": 0.0055, "answers": 410, "flip_rate": 0.024, "correct_flip_rate": 0.012,
+     "per_repeat": [{"repeat": 0, "docs": 48, "coverage": 1.0, "field_accuracy": 0.962, "fields_correct": 395,
+                     "fields_total": 410, "mean_latency_s": 2.1}]}]
+}
+```
+
+Each statistic `<metric>_{mean,min,max,std}` is over the per-repeat values of `<metric>` (`std`: sample
+standard deviation). Transcription uses the backend's lowest concurrency with more than one repeat;
+every repeat is scored over the same pages, and a page a repeat has no successful transcript for
+scores as failed.

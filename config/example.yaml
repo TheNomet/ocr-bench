@@ -159,8 +159,14 @@ bench:
     # (such pipelines are hidden in reports).
     pipelines: ["unlimited-ocr->agent", "haiku-4.5->agent", "image->agent"]
     # Optional per-plan override. "<input>-><backend>" makes that backend the extractor instead of `agent`:
-    # plan_pipelines:
-    #   compare: ["image->agent", "image->haiku-4.5"]
+    plan_pipelines:
+      # compare: ["image->agent", "image->haiku-4.5"]
+      variation: ["image->sonnet-4.5", "image->haiku-4.5", "haiku-4.5->sonnet-4.5"]
+    # Optional per-plan: extract every document N times (default 1), to measure run-to-run variation.
+    # Each repeat is scored on its own (scores.json `variation`); the main tables score the last one.
+    # A "<transcriber>->X" pipeline re-reads the same transcript in every repeat (it measures X alone).
+    plan_repeat:
+      variation: 3
     concurrency: 8
   # Stage 4: an LLM reads the computed key facts and writes the recommendation (runs/<id>/summary.md).
   summary:
@@ -180,6 +186,7 @@ bench:
     smoke: "Quick health check: a couple of pages per backend."
     bedrock-only: "No GPU: Claude Sonnet 4.5 and Haiku 4.5 on Bedrock, transcribing vs reading the images."
     suite: "Self-hosted OCR vs hosted LLMs, single requests and batch load."
+    variation: "Run-to-run variation: the same pages and documents 3 times with identical settings, to tell real differences from sampling noise."
   # Named run plans: each item is one transcription run.
   # Pipelines whose transcriber a plan doesn't run are skipped for that plan.
   # Item fields: backend, concurrency, and optionally variant (clean | degraded | both, default both),
@@ -202,6 +209,13 @@ bench:
       - {backend: unlimited-ocr, concurrency: 32}
       - {backend: sonnet-4.5, concurrency: 16}
       - {backend: haiku-4.5, concurrency: 16}
+    # Run-to-run variation (with bench.extraction.plan_repeat.variation): every page 3 times at concurrency 1.
+    # Most useful for models that accept only temperature 1 (e.g. Claude 5.5 through some gateways: put
+    # those backends here instead); at temperature 0 it checks how deterministic a model really is.
+    # Concurrency 1 only: sampling noise doesn't depend on concurrency, more levels would only add cost.
+    variation:
+      - {backend: sonnet-4.5, concurrency: 1, repeat: 3}
+      - {backend: haiku-4.5, concurrency: 1, repeat: 3}
   max_retries: 4
 
 # Where the bench runs: "fargate" (inside the VPC — needed when endpoints are private)

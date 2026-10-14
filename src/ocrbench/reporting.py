@@ -74,6 +74,9 @@ def _md_run(meta: dict) -> list[str]:
         f"| code | git `{meta.get('git_commit') or '?'}` |",
         f"| started | {meta.get('created')} |",
     ]
+    reps = int((meta.get("extraction") or {}).get("repeat") or 1)
+    if reps > 1:
+        out.append(f"| extraction | every document extracted {reps} times per pipeline (run-to-run check) |")
     if items:
         out += ["", "Transcription runs in this plan:", ""]
         for it in items:
@@ -140,6 +143,29 @@ def results_md(scores: dict) -> str:
         if misses:
             out += ["", "Most-missed fields (count over clean + degraded):", ""]
             out += [f"- **{p}**: " + ", ".join(f"`{k}` ({v})" for k, v in m) for p, m in misses.items()]
+    if scores.get("variation"):
+        out += ["", variation_md(scores["variation"])]
+    return "\n".join(out)
+
+
+def variation_md(var: dict) -> str:
+    """The "Run-to-run variation" section: what it measures, the spread per transcriber / pipeline, per repeat."""
+    out = ["### Run-to-run variation", "", explain.VARIATION, "", view.repeat_note(var)]
+    tv, ev = var.get("transcription") or [], var.get("extraction") or []
+    if ev:
+        out += ["", "Field extraction, over the repeats:", ""] + metrics.markdown_table(
+            ev, metrics.VARIATION_EXTRACTION_MD
+        )
+    if tv:
+        out += ["", "Transcription, over the repeats:", ""]
+        out += metrics.markdown_table(tv, metrics.VARIATION_TRANSCRIPTION_MD)
+    if ev:
+        out += ["", "Field extraction, per repeat:", ""]
+        out += metrics.markdown_table(metrics.per_repeat_rows(ev, "pipeline"), metrics.REPEAT_EXTRACTION)
+    if tv:
+        out += ["", "Transcription, per repeat:", ""]
+        out += metrics.markdown_table(metrics.per_repeat_rows(tv, "backend"), metrics.REPEAT_TRANSCRIPTION)
+    out += ["", "Terms:", ""] + [f"- **{k}**: {v}" for k, v in metrics.VARIATION_GLOSSARY]
     return "\n".join(out)
 
 

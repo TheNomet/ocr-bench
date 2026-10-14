@@ -38,6 +38,7 @@ Terms:
 | `bench.extraction.agent` | Backend that extracts the fields in stage 2 (the `agent` in `<input>->agent`) |
 | `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"`; `"<input>-><backend>"` uses that backend as the extractor. A plan skips pipelines whose transcriber it doesn't run |
 | `bench.extraction.plan_pipelines.<plan>` | Pipelines for that plan instead of `pipelines` |
+| `bench.extraction.plan_repeat.<plan>` | Extract every document this many times in that plan (integer >= 1, default 1), to measure run-to-run variation (see [Run-to-run variation](#run-to-run-variation)). Recorded in run.json as `extraction.repeat` |
 | `bench.extraction.concurrency` | Parallel extraction requests (default 8) |
 | `bench.summary.agent` | Backend that writes the recommendation in stage 4 (default: the extraction agent). A strong reasoning model works best, e.g. Opus 5.5 with `reasoning_effort: medium` |
 | `bench.prompts.transcribe` | `system`, `user`, `max_tokens` for LLM transcription. A self-hosted backend uses its own `request` instead |
@@ -75,11 +76,43 @@ Each item of `bench.plans.<name>` is one transcription run of one backend.
 | `concurrency` | Requests in flight at once |
 | `variant` | `clean`, `degraded` or `both` (default) page images; anything else is rejected when the config loads |
 | `limit` | Only this many page images (default 0 = all). The pages are interleaved by document type, so a small limit still covers several types |
-| `repeat` | Send every page this many times (default 1), e.g. to measure run-to-run variation |
+| `repeat` | Send every page this many times (integer >= 1, default 1), e.g. to measure run-to-run variation. Records carry `repeat` 0..N-1 |
 | `warmup` | Send one untimed request first (default `true`): token fetch, CUDA graphs, connection pools. Not recorded or scored |
 
 Prompt defaults live in `src/ocrbench/prompts.py`. Whatever a run used is recorded in its
 `run.json` (`prompts`), and resumed or re-scored runs read it from there.
+
+## Run-to-run variation
+
+Models that accept only temperature 1 (no deterministic setting) give slightly different answers each
+run, so a small difference between two of them may be noise. A variation plan repeats the same work
+with identical settings and scores every repeat on its own:
+
+```yaml
+bench:
+  extraction:
+    plan_pipelines:
+      variation: ["image->sonnet-4.5", "image->haiku-4.5", "haiku-4.5->sonnet-4.5"]
+    plan_repeat:
+      variation: 3              # every document extracted 3 times per pipeline
+  plan_descriptions:
+    variation: "Run-to-run variation: the same pages and documents 3 times with identical settings."
+  plans:
+    variation:                  # every page 3 times, concurrency 1 only
+      - {backend: sonnet-4.5, concurrency: 1, repeat: 3}
+      - {backend: haiku-4.5, concurrency: 1, repeat: 3}
+```
+
+- Use concurrency 1 only: sampling noise doesn't depend on how many requests run at once, so more
+  levels only add cost. If a backend has repeats at several levels, the lowest is used.
+- A `<transcriber>->X` pipeline reads the same transcript (the one scored) in every repeat, so its
+  spread is the extractor's alone; an `image->X` pipeline's spread is the whole pipeline's.
+- `scores.json` then has a `variation` block (per transcriber and pipeline: the per-repeat results,
+  their min, max and sample standard deviation, the share of pages whose text changed and of field
+  answers that changed), the key facts say for each pair whether their gap is outside the larger of
+  their two run-to-run ranges, and the report and run page get a *Run-to-run variation* section.
+  The main tables keep scoring one repeat per page and document (the last). See
+  [data formats](data-formats.md#run-to-run-variation).
 
 ## Backends
 

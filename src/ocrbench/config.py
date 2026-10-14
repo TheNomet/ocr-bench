@@ -166,6 +166,10 @@ class Config:
         """How run pages of this plan are shown (bench.plan_report.<plan>), e.g. {"hide_backends": [...]}."""
         return (self.raw["bench"].get("plan_report") or {}).get(name) or {}
 
+    def extraction_repeat(self, name: str) -> int:
+        """How many times the plan extracts every document (bench.extraction.plan_repeat.<plan>, default 1)."""
+        return int(((self.raw["bench"].get("extraction") or {}).get("plan_repeat") or {}).get(name) or 1)
+
     @property
     def summary_agent(self) -> str:
         """Backend that writes the recommendation: bench.summary.agent, else the extraction agent."""
@@ -297,6 +301,12 @@ def validate(raw: dict, p: Path) -> None:
     ):
         if key and key not in raw["backends"]:
             raise ValueError(f"{p}: {role} {key!r} is not a backend")
+    plan_repeat = ex.get("plan_repeat") or {}
+    if not isinstance(plan_repeat, dict):
+        raise ValueError(f"{p}: bench.extraction.plan_repeat must map plan names to repeat counts")
+    for plan, n in plan_repeat.items():
+        if not _is_int(n) or n < 1:
+            raise ValueError(f"{p}: bench.extraction.plan_repeat.{plan} must be an integer >= 1, got {n!r}")
     for plan, items in (raw["bench"].get("plans") or {}).items():
         for it in items:
             if it["backend"] not in raw["backends"]:
@@ -305,6 +315,8 @@ def validate(raw: dict, p: Path) -> None:
                 raise ValueError(
                     f"{p}: bench.plans.{plan}: variant {it['variant']!r} must be one of {', '.join(VARIANTS)}"
                 )
+            if not _is_int(it.get("repeat", 1)) or it.get("repeat", 1) < 1:
+                raise ValueError(f"{p}: bench.plans.{plan}: repeat must be an integer >= 1, got {it['repeat']!r}")
 
 
 def load(path: str | Path | None = None) -> Config:

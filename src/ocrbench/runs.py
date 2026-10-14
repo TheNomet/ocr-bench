@@ -29,7 +29,7 @@ from .config import ROOT, Config
 RUNS = ROOT / "runs"
 STAGES = ["transcribe", "extract", "score", "summarize"]
 
-SCHEMA_VERSION = 2  # run.json layout; older runs are upgraded on load (see upgrade())
+SCHEMA_VERSION = 3  # run.json layout; older runs are upgraded on load (see upgrade())
 
 # GPU as marketed (EC2 reports slightly less usable memory); host vCPU/RAM come from the EC2 API,
 # with the per-family ratio below as a fallback.
@@ -105,13 +105,16 @@ def _v1_to_v2(m: dict) -> dict:
 def upgrade(meta: dict) -> dict:
     """run.json of an older schema -> the current one, one step per version, then stamped. Returns `meta`
     itself if it is current; never modifies it. Runs before schema 2 recorded no prompts: the defaults are
-    assumed (they were not always the current ones: the summarize prompt once had max_tokens 3000)."""
+    assumed (they were not always the current ones: the summarize prompt once had max_tokens 3000). Runs
+    before schema 3 extracted every document once (`extraction.repeat` 1)."""
     v = meta.get("schema_version", 1)
     if v >= SCHEMA_VERSION:
         return meta
     m = copy.deepcopy(meta)
     if v < 2:
         m = _v1_to_v2(m)
+    if v < 3 and isinstance(m.get("extraction"), dict):
+        m["extraction"].setdefault("repeat", 1)
     m["schema_version"] = SCHEMA_VERSION
     return m
 
@@ -303,6 +306,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
             "agent": ex["agent"],
             "pipelines": ex["pipelines"],
             "agents": agents,
+            "repeat": cfg.extraction_repeat(plan),
         },
         "summary": {
             "agent": cfg.summary_agent,

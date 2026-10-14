@@ -31,7 +31,7 @@ from urllib.parse import quote
 
 from PIL import Image
 
-from .. import metrics
+from .. import explain, metrics, view
 from ..fileio import read_jsonl, read_text
 from ..metrics import DASH, Metric, _num, fmt
 from . import markdown_lite
@@ -104,7 +104,11 @@ def render_table(rows: list[dict], cols: list[Col], group_key: str | None = None
         body.append("<tr>" + "".join(cells) + "</tr>")
     note = ""
     if any(c.better for c in cols) and best:
-        label = {"variant": "variant", "concurrency": "concurrency level"}.get(group_key or "", "group")
+        label = {
+            "variant": "variant",
+            "concurrency": "concurrency level",
+            "group": "model or pipeline and variant",
+        }.get(group_key or "", "group")
         note = f'<p class="muted small">Highlighted: best value per column within each {e(label)}. Click a header to sort.</p>'
     elif rows:
         note = '<p class="muted small">Click a header to sort.</p>'
@@ -256,6 +260,7 @@ class _Site:
         self.tr_pages: list[dict] = list(tr.get("pages") or [])
         self.ex_agg: list[dict] = list(ex.get("aggregate") or [])
         self.ex_docs: list[dict] = list(ex.get("docs") or [])
+        self.variation: dict = dict(self.scores.get("variation") or {})
 
         # (doc_id, page, variant) -> {backend: scored page entry}
         self.page_scores: dict[tuple[str, int, str], dict[str, dict]] = defaultdict(dict)
@@ -362,7 +367,9 @@ class _Site:
             "what the benchmark does, what the pipelines and metrics mean, and the document types.</p>"
             '<nav class="toc small">Jump to: <a href="#facts">Key facts</a> &middot; '
             '<a href="#recommendation">Recommendation</a> &middot; <a href="#setup">Setup</a> &middot; '
-            '<a href="#results">Results</a> &middot; <a href="#documents">Documents</a></nav>'
+            '<a href="#results">Results</a> &middot; '
+            + ('<a href="#variation">Run-to-run variation</a> &middot; ' if self.variation else "")
+            + '<a href="#documents">Documents</a></nav>'
         )
         if pg.facts_md:  # its "## Key facts" is a top-level section of the page: <h2>
             parts.append(f'<section id="facts" class="facts">{markdown_lite.render(pg.facts_md, shift=0)}</section>')
@@ -390,10 +397,41 @@ class _Site:
         parts.append(render_table(self.tr_agg, TRANSCRIPTION_COLS, "variant", "No transcription scores."))
         parts.append("<h3>Field extraction (stage 2)</h3>")
         parts.append(render_table(self.ex_agg, EXTRACTION_COLS, "variant", "No extraction scores."))
+        if self.variation:
+            parts.append(self.render_variation())
 
         parts.append(f'<h2 id="documents">Documents ({len(self.manifest)})</h2>')
         parts.append(self.render_doc_grid())
         return page_shell(f"ocr-bench — {self.tag}", "\n".join(parts), "", "../index.html", self._crumbs())
+
+    def render_variation(self) -> str:
+        """The "Run-to-run variation" section (runs that repeated something): spread per transcriber and
+        pipeline, then every repeat."""
+        tv = list(self.variation.get("transcription") or [])
+        labels = self.page.pipeline_labels
+        ev = [
+            {**a, "label": labels.get(a.get("pipeline"), a.get("pipeline"))}
+            for a in self.variation.get("extraction") or []
+        ]
+        parts = [
+            '<h3 id="variation">Run-to-run variation</h3>',
+            markdown_lite.render(f"{explain.VARIATION}\n\n{view.repeat_note(self.variation)}"),
+        ]
+        if ev:
+            parts.append("<h4>Field extraction, over the repeats</h4>")
+            parts.append(render_table(ev, metrics.VARIATION_EXTRACTION, "variant"))
+        if tv:
+            parts.append("<h4>Transcription, over the repeats</h4>")
+            parts.append(render_table(tv, metrics.VARIATION_TRANSCRIPTION, "variant"))
+        if ev:
+            parts.append("<h4>Field extraction, per repeat</h4>")
+            parts.append(render_table(metrics.per_repeat_rows(ev, "pipeline"), metrics.REPEAT_EXTRACTION, "group"))
+        if tv:
+            parts.append("<h4>Transcription, per repeat</h4>")
+            parts.append(render_table(metrics.per_repeat_rows(tv, "backend"), metrics.REPEAT_TRANSCRIPTION, "group"))
+        terms = "".join(f"<li><b>{e(k)}</b>: {e(v)}</li>" for k, v in metrics.VARIATION_GLOSSARY)
+        parts.append(f'<ul class="small muted">{terms}</ul>')
+        return "\n".join(parts)
 
     def render_doc_grid(self) -> str:
         if not self.manifest:

@@ -198,12 +198,13 @@ def visible(meta: dict, scores: dict, focus: bool = True) -> dict:
     """Scores as shown on a run page.
 
     Always hides `X->X` pipelines (same model reading and extracting). With focus=True, also hides
-    everything involving a backend in `report.hide_backends` (as transcriber or extractor).
+    everything involving a backend in `report.hide_backends` (as transcriber or extractor). The same
+    filter applies to the run-to-run `variation` block.
     """
     hidden = hidden_backends(meta) if focus else set()
     ex = scores.get("extraction") or {}
     tr = scores.get("transcription") or {}
-    return {
+    out = {
         **scores,
         "speed": [r for r in scores.get("speed") or [] if r["backend"] not in hidden],
         "transcription": {
@@ -215,11 +216,44 @@ def visible(meta: dict, scores: dict, focus: bool = True) -> dict:
             "docs": [d for d in ex.get("docs") or [] if not pipe_hidden(meta, d["pipeline"], hidden)],
         },
     }
+    var = scores.get("variation")
+    if var:  # only runs that repeated something have one; dropped when nothing of it is shown
+        tv = [a for a in var.get("transcription") or [] if a["backend"] not in hidden]
+        ev = [a for a in var.get("extraction") or [] if not pipe_hidden(meta, a["pipeline"], hidden)]
+        if tv or ev:
+            out["variation"] = {"transcription": tv, "extraction": ev}
+        else:
+            out.pop("variation")
+    return out
 
 
 def focus(meta: dict, scores: dict) -> tuple[dict, dict]:
     """(run.json, scores) as a run page shows them: see focused_meta and visible."""
     return focused_meta(meta), visible(meta, scores)
+
+
+def repeat_note(var: dict) -> str:
+    """One sentence on what scores["variation"] repeated: how many times every page was transcribed (at which
+    concurrency, by which backends) and every document extracted (by which pipelines)."""
+    parts = []
+    tr: dict[tuple[int, int], list[str]] = {}
+    for a in var.get("transcription") or []:
+        tr.setdefault((a["repeats"], a["concurrency"]), []).append(a["backend"])
+    for (n, c), bs in sorted(tr.items()):
+        names = ", ".join(f"`{b}`" for b in dict.fromkeys(bs))
+        parts.append(f"every page transcribed {n} times at concurrency {c} by {names}")
+    ex: dict[int, list[str]] = {}
+    for a in var.get("extraction") or []:
+        ex.setdefault(a["repeats"], []).append(a["pipeline"])
+    for n, ps in sorted(ex.items()):
+        parts.append(f"every document extracted {n} times by " + ", ".join(f"`{p}`" for p in dict.fromkeys(ps)))
+    if ex:
+        parts[-1] += " (a transcript-based pipeline re-reads the same transcript, so its repeats measure the extractor)"
+    return (
+        "Run-to-run check, identical settings each time: "
+        + "; ".join(parts)
+        + ". The spread between repeats is sampling noise; the key facts give each range."
+    )
 
 
 # --------------------------------------------------------------------------- the models table

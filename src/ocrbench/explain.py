@@ -45,6 +45,19 @@ VARIANTS = {
     "degraded": "simulated phone photo: tilted, downscaled, blurred, noisy, warm tint, low-quality JPEG",
 }
 
+# What the "Run-to-run variation" section measures (shown only for runs that repeated something).
+VARIATION = (
+    "The same pages and documents were sent several times with identical settings, and each repeat is scored on "
+    "its own. Some models accept only temperature 1 (no deterministic setting), so they sample and their answers "
+    "change from run to run; this measures how much, so a difference between two models can be told apart from "
+    "noise. A **range** is the worst to the best repeat; a gap between two models smaller than the larger of their "
+    "two ranges is *within the run-to-run range* and not evidence that one is better. Repeats are measured at one "
+    "concurrency (the lowest that has them, 1 in the example plan): sampling noise doesn't depend on how many "
+    "requests run at once, so higher levels would only add cost. A transcript-based pipeline re-reads the same "
+    "transcript in every repeat, so its range is the extractor's alone; an image-based pipeline's is the whole "
+    "pipeline's. The main tables above score one repeat (the last)."
+)
+
 CHALLENGES = {
     "letter": "prose paragraphs with amounts and dates inside sentences",
     "receipt": "narrow monospace column, label and amount on opposite sides",

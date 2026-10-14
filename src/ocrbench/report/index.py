@@ -158,6 +158,13 @@ def _latest(r: RunCard) -> str:
     )
 
 
+def _repeat_chip(scores: dict) -> str:
+    """ "run-to-run check" chip for a run that repeated something (scores["variation"])."""
+    var = scores.get("variation") or {}
+    n = max((a.get("repeats") or 0 for k in ("transcription", "extraction") for a in var.get(k) or []), default=0)
+    return f'<span class="chip">run-to-run check &middot; {e(n)} repeats</span>' if n > 1 else ""
+
+
 def _run_card(r: RunCard) -> str:
     m, docs = r.card_meta, r.card_meta.get("documents") or {}
     created = (m.get("created") or "")[:16].replace("T", " ")
@@ -169,7 +176,7 @@ def _run_card(r: RunCard) -> str:
         + (f'<div class="plan-desc">{markdown_lite.inline(desc)}</div>' if desc else "")
         + f'<div class="chips"><span class="chip">plan {e(m.get("plan"))}</span>'
         f'<span class="chip">{e(docs.get("count"))} docs &middot; {e(docs.get("page_images"))} page images</span>'
-        f'<span class="chip">{e(created)}</span></div></div>'
+        f'<span class="chip">{e(created)}</span>{_repeat_chip(r.scores)}</div></div>'
         f'<a class="open" href="{quote(m["id"])}/index.html">Open run &rarr;</a></summary>'
         + (
             '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'

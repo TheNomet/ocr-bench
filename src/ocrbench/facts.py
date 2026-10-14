@@ -150,12 +150,61 @@ def most_missed(docs: list[dict], n: int = 4) -> dict[str, list[tuple[str, int]]
     return {p: sorted(m.items(), key=lambda x: -x[1])[:n] for p, m in sorted(misses.items())}
 
 
+def _pairs(by_name: dict[str, dict], mean_key: str, range_key: str) -> list[dict]:
+    """Every pair with results on the same variant: is the gap between their means larger than the larger of
+    their two run-to-run ranges (outside: the repeats don't explain it) or not (within)?"""
+    out = []
+    for v in ("clean", "degraded"):
+        have = [n for n in by_name if v in by_name[n]]
+        for i, a in enumerate(have):
+            for b in have[i + 1 :]:
+                x, y = by_name[a][v], by_name[b][v]
+                gap, larger = abs(x[mean_key] - y[mean_key]), max(x[range_key], y[range_key])
+                out.append({"variant": v, "a": a, "b": b, "gap": gap, "larger_range": larger, "outside": gap > larger})
+    return out
+
+
+def variation_facts(var: dict) -> dict:
+    """From scores["variation"]: per transcriber (CER mean) and pipeline (field accuracy) and variant, the mean
+    over the repeats and its run-to-run range (max - min); and for every pair, whether their gap is outside
+    the run-to-run range. Pipelines and transcribers without repeats are not compared here."""
+    readers: dict[str, dict] = {}
+    for a in var.get("transcription") or []:
+        readers.setdefault(a["backend"], {})[a["variant"]] = {
+            "repeats": a["repeats"],
+            "concurrency": a["concurrency"],
+            "cer_mean": a["cer_mean"],
+            "cer_min": a["cer_min"],
+            "cer_max": a["cer_max"],
+            "cer_range": a["cer_max"] - a["cer_min"],
+            "number_recall_min": a["num_recall_min"],
+            "number_recall_max": a["num_recall_max"],
+            "pages_differing": a["pages_differing"],
+        }
+    pipes: dict[str, dict] = {}
+    for a in var.get("extraction") or []:
+        pipes.setdefault(a["pipeline"], {})[a["variant"]] = {
+            "repeats": a["repeats"],
+            "field_accuracy_mean": a["field_accuracy_mean"],
+            "field_accuracy_min": a["field_accuracy_min"],
+            "field_accuracy_max": a["field_accuracy_max"],
+            "field_accuracy_range": a["field_accuracy_max"] - a["field_accuracy_min"],
+            "flip_rate": a["flip_rate"],
+        }
+    return {
+        "readers": readers,
+        "pipelines": pipes,
+        "reader_pairs": _pairs(readers, "cer_mean", "cer_range"),
+        "pipeline_pairs": _pairs(pipes, "field_accuracy_mean", "field_accuracy_range"),
+    }
+
+
 def compute(meta: dict, scores: dict) -> dict:
     sp = scores["speed"]
     method = scores.get("method") or {}
     basis = method.get("cost_basis") or {}
     throughput = throughput_facts(sp, basis)
-    return {
+    out = {
         "pipelines": pipeline_facts(
             scores["extraction"]["aggregate"], method.get("ranking_min_coverage", MIN_COVERAGE)
         ),
@@ -164,6 +213,9 @@ def compute(meta: dict, scores: dict) -> dict:
         "selfhosted": selfhosted_facts(meta, sp, throughput, basis),
         "most_missed": most_missed(scores["extraction"]["docs"]),
     }
+    if scores.get("variation"):  # only runs that repeated something
+        out["variation"] = variation_facts(scores["variation"])
+    return out
 
 
 # --------------------------------------------------------------------------- markdown
@@ -290,6 +342,64 @@ def _md_selfhosted(name: str, x: dict) -> list[str]:
     return out
 
 
+def _pts(x: float) -> str:
+    return f"{x * 100:.1f} pts"
+
+
+def _md_variation(f: dict, labels: dict[str, str]) -> list[str]:
+    """Run-to-run ranges and which differences are outside them. Ranges and gaps of accuracy in percentage
+    points ("pts"), of CER as rates; every number the recommendation may quote is printed here."""
+    out = ["", "Run-to-run variation (identical repeats; range = best minus worst repeat):"]
+    if f["pipelines"]:
+        out += [
+            "",
+            "| pipeline | variant | repeats | field accuracy (mean of repeats) | min–max | range | answers that changed |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for p, vs in f["pipelines"].items():
+            for v, x in vs.items():
+                out.append(
+                    f"| {_name(p, labels)} | {v} | {x['repeats']} | {_pct(x['field_accuracy_mean'])} | "
+                    f"{_pct(x['field_accuracy_min'])}–{_pct(x['field_accuracy_max'])} | "
+                    f"{_pts(x['field_accuracy_range'])} | {_pct(x['flip_rate'])} |"
+                )
+    if f["readers"]:
+        out += [
+            "",
+            "| reader | variant | repeats | CER mean (mean of repeats) | min–max | range | number recall min–max "
+            "| pages not identical |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for b, vs in f["readers"].items():
+            for v, x in vs.items():
+                out.append(
+                    f"| `{b}` | {v} | {x['repeats']} | {x['cer_mean']:.3f} | {x['cer_min']:.3f}–{x['cer_max']:.3f} | "
+                    f"{x['cer_range']:.3f} | {_pct(x['number_recall_min'])}–{_pct(x['number_recall_max'])} | "
+                    f"{_pct(x['pages_differing'])} |"
+                )
+    pairs = [(x, "pipeline") for x in f["pipeline_pairs"]] + [(x, "reader") for x in f["reader_pairs"]]
+    if pairs:
+        out += [
+            "",
+            "Differences against the run-to-run range: a gap between two means larger than the larger of their two "
+            "ranges is outside it (the repeats don't explain it); otherwise it is within it, and not evidence that "
+            "one is better.",
+            "",
+            "| variant | compared | metric | gap | larger range | verdict |",
+            "|---|---|---|---|---|---|",
+        ]
+        for x, kind in pairs:
+            if kind == "pipeline":
+                who, metric = f"{_name(x['a'], labels)} vs {_name(x['b'], labels)}", "field accuracy"
+                gap, rng = _pts(x["gap"]), _pts(x["larger_range"])
+            else:
+                who, metric = f"`{x['a']}` vs `{x['b']}`", "CER mean"
+                gap, rng = f"{x['gap']:.3f}", f"{x['larger_range']:.3f}"
+            verdict = "**outside** the run-to-run range" if x["outside"] else "within the run-to-run range"
+            out.append(f"| {x['variant']} | {who} | {metric} | {gap} | {rng} | {verdict} |")
+    return out
+
+
 def to_md(f: dict, labels: dict[str, str] | None = None) -> str:
     """The key facts as Markdown. `labels`: readable pipeline names (view.pipeline_labels), shown with the raw key."""
     labels = labels or {}
@@ -303,4 +413,6 @@ def to_md(f: dict, labels: dict[str, str] | None = None) -> str:
     if mm:
         out += ["", "Fields missed most often (count over clean + degraded documents):", ""]
         out += [f"- {_name(p, labels)}: " + ", ".join(f"`{k}` ({n})" for k, n in items) for p, items in mm.items()]
+    if f.get("variation"):
+        out += _md_variation(f["variation"], labels)
     return "\n".join(out)

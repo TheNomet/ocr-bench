@@ -107,7 +107,7 @@ def build_request(
 async def extract_one(extractor, build, rec: dict, run_dir: Path, slug: str, max_retries: int) -> dict:
     """Build (`build()` -> Request, or None if the source lacks a page) and run one request, and complete its
     record (the record keeps the historical `agent` field names). latency_s is the last attempt's request
-    time (backoff sleeps excluded), for a failure too."""
+    time (backoff sleeps excluded), for a failure too. Repeat i > 0 (`rec["repeat"]`) writes `.x<i>.json`."""
     rec = {**rec, "ok": False, "error": None, "output_file": None, "prompt_tokens": None, "completion_tokens": None}
     try:  # e.g. a transcript recorded as ok whose output file is gone: a failed extraction, not a failed stage
         req = build()
@@ -120,7 +120,8 @@ async def extract_one(extractor, build, rec: dict, run_dir: Path, slug: str, max
         resp, _, attempt_s = await call_with_retries(lambda: extractor.complete(req), max_retries)
         rec.update(prompt_tokens=resp.prompt_tokens, completion_tokens=resp.completion_tokens)
         fields = parse_json(resp.text)
-        rel = Path("outputs") / "extract" / slug / f"{rec['doc_id']}.{rec['variant']}.json"
+        rep = int(rec.get("repeat") or 0)
+        rel = Path("outputs") / "extract" / slug / f"{rec['doc_id']}.{rec['variant']}{f'.x{rep}' if rep else ''}.json"
         (run_dir / rel).parent.mkdir(parents=True, exist_ok=True)
         (run_dir / rel).write_text(json.dumps(fields, ensure_ascii=False, indent=1), encoding="utf-8")
         rec.update(ok=True, output_file=str(rel), latency_s=attempt_s)
@@ -138,10 +139,13 @@ async def run(
     pipelines: list[str] | None = None,
     variant: str = "both",
     limit: int = 0,
+    repeat: int = 1,
 ) -> None:
-    """Extract every pipeline. The extractor of each pipeline is the one run.json recorded (`meta`), so a
-    resumed run uses the same models even if the config changed since; the config's agent is only the
-    fallback for a pipeline run.json doesn't know."""
+    """Extract every pipeline, every document `repeat` times (run.json `extraction.repeat`; records carry
+    `repeat` 0..N-1). For a `<transcriber>->X` pipeline every repeat reads the same transcript (the one
+    scoring uses), so repeats measure the extractor alone. The extractor of each pipeline is the one run.json
+    recorded (`meta`), so a resumed run uses the same models even if the config changed since; the config's
+    agent is only the fallback for a pipeline run.json doesn't know."""
     ex = cfg["bench"]["extraction"]
     pr = prompts.of(meta, "extract")
     steps = {k: b.get("postprocess") or [] for k, b in meta["backends"].items()}
@@ -179,29 +183,32 @@ async def run(
             extractor = extractors[key]
             texts = latest_transcripts(run_dir, source) if source != "image" else {}
             src_steps = steps.get(source) or []
-            jobs = [(d, v) for d in manifest for v in variants if (d["id"], v) in todo]
+            jobs = [
+                (d, v, i) for i in range(max(1, repeat)) for d in manifest for v in variants if (d["id"], v) in todo
+            ]
             if not jobs:
                 print(f"[extract {pipe}] nothing to do (no documents in {run_dir})", flush=True)
                 continue
-            print(f"[extract {pipe}] {len(jobs)} documents via {extractor.name}", flush=True)
+            times = f" x {repeat} repeats" if repeat > 1 else ""
+            print(f"[extract {pipe}] {len(jobs) // max(1, repeat)} documents{times} via {extractor.name}", flush=True)
             base = {"pipeline": pipe, "source": source, "agent": extractor.name, "agent_model": extractor.model}
 
             def build(d, v, source=source, texts=texts, src_steps=src_steps) -> Request | None:
                 schema = schemas[d["type"]]
                 return build_request(d, v, source, docs=docs, schema=schema, pr=pr, texts=texts, steps=src_steps)
 
-            async def one(d, v, base=base, slug=slug, extractor=extractor, build=build) -> dict:
+            async def one(d, v, i, base=base, slug=slug, extractor=extractor, build=build) -> dict:
                 async with sem:
-                    rec = {**base, "doc_id": d["id"], "variant": v}
+                    rec = {**base, "doc_id": d["id"], "variant": v, "repeat": i}
                     rec = await extract_one(extractor, lambda: build(d, v), rec, run_dir, slug, max_retries)
                     sink(rec)
                     return rec
 
-            recs = await asyncio.gather(*(one(d, v) for d, v in jobs))
+            recs = await asyncio.gather(*(one(d, v, i) for d, v, i in jobs))
             bad = [r for r in recs if not r["ok"]]
             print(f"  ok {len(recs) - len(bad)}/{len(recs)}", flush=True)
             for r in bad[:5]:
-                print(f"  ERR {r['doc_id']} {r['variant']}: {r['error']}", flush=True)
+                print(f"  ERR {r['doc_id']} {r['variant']} (repeat {r['repeat']}): {r['error']}", flush=True)
     finally:
         fh.close()
     if not written:  # nothing to do: keep the last pass

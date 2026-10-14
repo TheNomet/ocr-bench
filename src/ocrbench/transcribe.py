@@ -67,6 +67,7 @@ class Transcript:
     retries: int = 0
     error: str | None = None
     output_file: str | None = None
+    repeat: int = 0  # 0..N-1 for a plan item with `repeat: N` (every page sent N times)
 
 
 def backoff_s(retry: int) -> float:
@@ -100,7 +101,17 @@ async def _one(be, ref: PageRef, sem, *, conc, run_id, out_dir, max_retries, pro
     async with sem:
         started = time.time()
         base = Transcript(
-            run_id, be.name, be.model, ref.doc_id, ref.page, ref.variant, conc, started, latency_s=0.0, ok=False
+            run_id,
+            be.name,
+            be.model,
+            ref.doc_id,
+            ref.page,
+            ref.variant,
+            conc,
+            started,
+            latency_s=0.0,
+            ok=False,
+            repeat=rep,
         )
         retries, lat = 0, 0.0
         try:

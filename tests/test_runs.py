@@ -26,10 +26,10 @@ def test_upgrade_is_idempotent_and_stamps_the_version():
 
 
 def test_future_schema_bump_keeps_v2_runs(monkeypatch):
-    monkeypatch.setattr(runs, "SCHEMA_VERSION", 3)
+    monkeypatch.setattr(runs, "SCHEMA_VERSION", 4)
     v2 = {"schema_version": 2, "id": "r", "backends": {"x": {"kind": "bedrock"}}, "prompts": {"p": 1}}
     m = runs.upgrade(v2)
-    assert m["schema_version"] == 3 and m["backends"] == v2["backends"] and m["prompts"] == {"p": 1}
+    assert m["schema_version"] == 4 and m["backends"] == v2["backends"] and m["prompts"] == {"p": 1}
 
 
 def test_published_ids_carry_no_account():

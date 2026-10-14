@@ -12,7 +12,11 @@ Choices that affect comparisons, all reported in scores["method"]:
 - Fields are the ground truth's. A schema field the ground truth leaves out (an optional field absent from
   the document) counts as one wrong field if the extractor invented a value for it, so guessing never pays.
 - One transcript per (backend, page, variant) is scored: the successful one from the lowest-concurrency run,
-  the latest if there are several (so a deliberate re-run replaces it). End-to-end latency uses that same one.
+  the latest if there are several (so a deliberate re-run replaces it); within a run that sent every page
+  N times (`repeat: N`), its last repeat. End-to-end latency uses that same one. Likewise one extraction per
+  (pipeline, document, variant): the last repeat, a success beating a failure.
+- Repeats (`repeat: N`, `extraction.repeat`) are also scored one by one, into the `variation` block: how much
+  results move between identical runs (see VARIATION_METHOD). Only present when something was repeated.
 - Per-page CER and WER are capped at 1 (a failed page): a runaway page can't score worse than no answer.
 - Per-page cost of a self-hosted model = GPU price per hour / pages per hour at its best *sustained*
   throughput (the fastest run with <=1% errors), i.e. assuming the GPU is kept busy. The cost at
@@ -169,6 +173,11 @@ def _pct(xs: list[float], p: float) -> float | None:
     return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
 
 
+def _repeat(r: dict) -> int:
+    """Repeat index of a record (0..N-1); records written before repeats were recorded are repeat 0."""
+    return int(r.get("repeat") or 0)
+
+
 def _token_cost(price: dict | None, pt: float | None, ct: float | None) -> float | None:
     """USD per call; None if there is no price or the token usage is unknown (never $0 for "unknown")."""
     if not price or pt is None or ct is None:
@@ -272,10 +281,16 @@ def cost_basis(speed: list[dict], hourly: set[str], priced: set[str] | None = No
 
 def pick_transcript(current: dict | None, new: dict) -> dict | None:
     """Which successful transcript of a page is scored: the one from the lowest-concurrency run (the same
-    basis as the latency figures), and among equals the most recent one, so a deliberate re-run replaces it."""
+    basis as the latency figures), and among equals the most recent run, so a deliberate re-run replaces it.
+    Within one run that sent every page several times (`repeat: N`), its last repeat, whatever order the
+    repeats finished in."""
     if not new["ok"]:
         return current
-    if current is None or new["concurrency"] <= current["concurrency"]:
+    if current is None or new["concurrency"] < current["concurrency"]:
+        return new
+    if new["concurrency"] == current["concurrency"] and (
+        new.get("run_id") != current.get("run_id") or _repeat(new) >= _repeat(current)
+    ):
         return new
     return current
 
@@ -374,11 +389,19 @@ def transcription(
 
 
 def latest_extractions(records: list[dict], manifest: dict) -> dict[tuple[str, str, str], dict]:
-    """The latest record per (pipeline, doc, variant); a success beats a later failure."""
+    """The record scored per (pipeline, doc, variant): a success beats a failure; among equals the last
+    repeat (`extraction.repeat` > 1), then the latest record."""
     latest: dict[tuple[str, str, str], dict] = {}
     for e in records:
         k = (e["pipeline"], e["doc_id"], e["variant"])
-        if e["doc_id"] in manifest and (k not in latest or e["ok"] or not latest[k]["ok"]):
+        if e["doc_id"] not in manifest:
+            continue
+        cur = latest.get(k)
+        if (
+            cur is None
+            or (e["ok"] and not cur["ok"])
+            or (bool(e["ok"]) == bool(cur["ok"]) and _repeat(e) >= _repeat(cur))
+        ):
             latest[k] = e
     return latest
 
@@ -476,6 +499,30 @@ def expected_extractions(
     return {p: every if source(p) == "image" else by_src.get(source(p), set()) for p in pipes}
 
 
+def _not_attempted(meta: dict, pipe: str, doc_id: str, variant: str, repeat: int | None = None) -> dict:
+    """The record of a document a pipeline was expected to extract but never attempted: a failed extraction."""
+    from .view import extractor, source
+
+    rec = {
+        "pipeline": pipe,
+        "source": source(pipe),
+        "agent": extractor(meta, pipe),
+        "doc_id": doc_id,
+        "variant": variant,
+        "ok": False,
+        "error": "not attempted",
+        "output_file": None,
+        "latency_s": 0.0,
+    }
+    return rec if repeat is None else {**rec, "repeat": repeat}
+
+
+def _truth(docs: Path, manifest: dict, schemas: dict, doc_id: str) -> tuple[dict, list[str]]:
+    """(ground-truth fields, schema field names) of a document."""
+    truth = json.loads(read_text(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
+    return truth, list((schemas.get(manifest[doc_id]["type"]) or {}).get("fields") or {})
+
+
 def extraction(
     meta: dict,
     docs: Path,
@@ -486,32 +533,16 @@ def extraction(
     basis: dict[str, dict],
     expected: dict[str, set[tuple[str, str]]] | None = None,
 ) -> tuple[list, list]:
-    from .view import extractor, source
-
     prices = {k: v.get("price_per_mtok") for k, v in meta["backends"].items()}
     schemas = json.loads(read_text(docs / "schemas.json") or "{}")
     chosen: dict[tuple[str, str, str], dict] = dict(latest_extractions(records, manifest))
     for pipe, keys in (expected or {}).items():
         for doc_id, variant in keys:
             if doc_id in manifest:  # selected, never attempted: a failed extraction
-                chosen.setdefault(
-                    (pipe, doc_id, variant),
-                    {
-                        "pipeline": pipe,
-                        "source": source(pipe),
-                        "agent": extractor(meta, pipe),
-                        "doc_id": doc_id,
-                        "variant": variant,
-                        "ok": False,
-                        "error": "not attempted",
-                        "output_file": None,
-                        "latency_s": 0.0,
-                    },
-                )
+                chosen.setdefault((pipe, doc_id, variant), _not_attempted(meta, pipe, doc_id, variant))
     docs_out = []
     for (_, doc_id, _), e in sorted(chosen.items()):
-        truth = json.loads(read_text(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
-        schema_fields = list((schemas.get(manifest[doc_id]["type"]) or {}).get("fields") or {})
+        truth, schema_fields = _truth(docs, manifest, schemas, doc_id)
         docs_out.append(score_extraction(e, truth, run_dir, schema_fields))
     src_lat = source_latency(transcripts, manifest)
 
@@ -543,6 +574,203 @@ def extraction(
     return agg, docs_out
 
 
+# --------------------------------------------------------------------------- run-to-run variation
+VARIATION_TEXT_METRICS = ("cer", "cer_median", "word_recall", "num_recall")
+VARIATION_METHOD = {
+    "repeats": "transcription: the repeat indices (plan item `repeat: N`) at the backend's lowest concurrency "
+    "with more than one; extraction: run.json `extraction.repeat` (and any repeat index recorded)",
+    "pages": "every repeat is scored over the same pages: those selected at that concurrency; a page a repeat "
+    "has no successful transcript for scores as failed (CER 1, recall 0)",
+    "documents": "every repeat is scored over the documents of the main table, with the same rules (a missing "
+    "or failed extraction scores 0, an invented optional field is one wrong field)",
+    "std": "sample standard deviation (n-1) of the per-repeat values",
+    "pages_differing": "share of pages whose normalised transcripts (as scored) are not identical in every "
+    "repeat; a failed request counts as a different answer",
+    "page_cer_range_mean": "mean over pages of the per-page CER range (max - min over the repeats)",
+    "flip_rate": "share of (document, field) answers whose normalised value is not the same in every repeat "
+    "(a failed extraction or an omitted field is no value)",
+    "correct_flip_rate": "share of (document, field) answers that are right in some repeats and wrong in others "
+    "(an omitted optional field the document doesn't have is right)",
+    "main_tables": "the main tables score one repeat per page and document: the last one (a success beats a failure)",
+    "transcript_input": "the repeats of a `<transcriber>->X` pipeline all read the one transcript scored per page, "
+    "so they measure the extractor alone",
+}
+
+
+def _spread(values: list[float], key: str) -> dict:
+    return {
+        f"{key}_mean": st.mean(values),
+        f"{key}_min": min(values),
+        f"{key}_max": max(values),
+        f"{key}_std": st.stdev(values) if len(values) > 1 else 0.0,
+    }
+
+
+def _planned_repeats(meta: dict) -> dict[tuple[str, int], list[dict]]:
+    """(backend, concurrency) -> the plan items that ran it."""
+    out: dict[tuple[str, int], list[dict]] = {}
+    for it in meta.get("plan_items") or []:
+        out.setdefault((it["backend"], int(it.get("concurrency", 1))), []).append(it)
+    return out
+
+
+def transcription_variation(
+    meta: dict, docs: Path, run_dir: Path, transcripts: list[dict], manifest: dict, tpages: list[dict]
+) -> list[dict]:
+    """Per transcriber x variant: how much the scores move between repeats of the same pages (see
+    VARIATION_METHOD). Only backends with more than one repeat at some concurrency."""
+    from .transcribe import pages as select
+
+    steps = {k: b.get("postprocess") or [] for k, b in meta["backends"].items()}
+    items = _planned_repeats(meta)
+    seen: dict[tuple[str, int], set[int]] = {}
+    for r in transcripts:
+        if r["doc_id"] in manifest:
+            seen.setdefault((r["backend"], int(r["concurrency"])), set()).add(_repeat(r))
+    for k, its in items.items():
+        seen.setdefault(k, set()).update(range(max(int(it.get("repeat", 1)) for it in its)))
+    scored = {(p["backend"], p["doc_id"], p["page"], p["variant"]) for p in tpages}
+    gt_cache: dict[tuple[str, int], tuple[str, list[str]]] = {}
+
+    def gt_of(doc_id: str, page: int) -> tuple[str, list[str]]:
+        if (doc_id, page) not in gt_cache:
+            pg = next(p for p in manifest[doc_id]["pages"] if p["n"] == page)
+            nums = json.loads(read_text(docs / pg["gt_meta"]) or '{"numbers": []}')["numbers"]
+            gt_cache[(doc_id, page)] = (read_text(docs / pg["gt"]) or "", nums)
+        return gt_cache[(doc_id, page)]
+
+    out = []
+    for be in sorted({b for b, _ in seen}):
+        concs = sorted(c for b, c in seen if b == be and len(seen[(b, c)]) > 1)
+        if not concs:
+            continue
+        conc, reps = concs[0], sorted(seen[(be, concs[0])])
+        chosen: dict[tuple, dict | None] = {}
+        for r in transcripts:
+            if r["backend"] == be and int(r["concurrency"]) == conc and r["doc_id"] in manifest:
+                k = (r["doc_id"], r["page"], r["variant"], _repeat(r))
+                chosen[k] = pick_transcript(chosen.get(k), r)
+        wanted = {(d, p, v) for d, p, v, _ in chosen}
+        for it in items.get((be, conc), []):
+            wanted |= {
+                (x.doc_id, x.page, x.variant) for x in select(docs, it.get("variant", "both"), int(it.get("limit", 0)))
+            }
+        for v in ("clean", "degraded"):
+            keys = sorted((d, p) for d, p, vv in wanted if vv == v and (be, d, p, v) in scored)
+            if not keys:
+                continue
+            per: dict[int, list[dict]] = {rep: [] for rep in reps}
+            differing, ranges = 0, []
+            for doc_id, page in keys:
+                gt, nums = gt_of(doc_id, page)
+                ms = []
+                for rep in reps:
+                    r = chosen.get((doc_id, page, v, rep))
+                    hyp = read_text(run_dir / r["output_file"]) if r else None
+                    if hyp is None:
+                        m = {**failed_page_metrics(nums), "ok": False}
+                    else:
+                        m = {**page_metrics(gt, nums, postprocess.apply(steps.get(be), hyp)), "ok": True}
+                    per[rep].append(m)
+                    ms.append(m)
+                differing += len({m["clean_text"] if m["ok"] else None for m in ms}) > 1
+                ranges.append(max(m["cer"] for m in ms) - min(m["cer"] for m in ms))
+            rows = [
+                {
+                    "repeat": rep,
+                    "pages": len(ms),
+                    "coverage": sum(m["ok"] for m in ms) / len(ms),
+                    "cer": st.mean(m["cer"] for m in ms),
+                    "cer_median": st.median(m["cer"] for m in ms),
+                    "word_recall": st.mean(m["word_recall"] for m in ms),
+                    "num_recall": st.mean(m["num_recall"] for m in ms),
+                }
+                for rep, ms in per.items()
+            ]
+            entry: dict = {"backend": be, "variant": v, "concurrency": conc, "repeats": len(reps), "pages": len(keys)}
+            for m in VARIATION_TEXT_METRICS:
+                entry.update(_spread([row[m] for row in rows], m))
+            entry.update(pages_differing=differing / len(keys), page_cer_range_mean=st.mean(ranges), per_repeat=rows)
+            out.append(entry)
+    return out
+
+
+def _answer(v) -> object:
+    """A field value as compared between repeats: normalised like scoring; no value = None."""
+    if is_empty(v):
+        return None
+    if isinstance(v, list):
+        return tuple(sorted(norm_value(x) for x in v))
+    return norm_value(v)
+
+
+def extraction_variation(
+    meta: dict, docs: Path, run_dir: Path, records: list[dict], manifest: dict, edocs: list[dict]
+) -> list[dict]:
+    """Per pipeline x variant: how much field accuracy moves between repeats of the same extractions (see
+    VARIATION_METHOD). Only pipelines with more than one repeat."""
+    planned = int((meta.get("extraction") or {}).get("repeat") or 1)
+    schemas = json.loads(read_text(docs / "schemas.json") or "{}")
+    reps_of: dict[str, set[int]] = {}
+    for e in records:
+        if e["doc_id"] in manifest:
+            reps_of.setdefault(e["pipeline"], set()).add(_repeat(e))
+    for d in edocs:
+        reps_of.setdefault(d["pipeline"], set()).update(range(planned))
+    out = []
+    for pipe in sorted(reps_of):
+        reps = sorted(reps_of[pipe])
+        if len(reps) < 2:
+            continue
+        by_rep = {
+            rep: latest_extractions([e for e in records if e["pipeline"] == pipe and _repeat(e) == rep], manifest)
+            for rep in reps
+        }
+        for v in ("clean", "degraded"):
+            keys = sorted({d["doc_id"] for d in edocs if d["pipeline"] == pipe and d["variant"] == v})
+            if not keys:
+                continue
+            scored: dict[int, list[dict]] = {rep: [] for rep in reps}
+            for doc_id in keys:
+                truth, schema_fields = _truth(docs, manifest, schemas, doc_id)
+                for rep in reps:
+                    e = by_rep[rep].get((pipe, doc_id, v)) or _not_attempted(meta, pipe, doc_id, v, rep)
+                    scored[rep].append(score_extraction(e, truth, run_dir, schema_fields))
+            rows = []
+            for rep, ds in scored.items():
+                tot, cor = sum(d["fields_total"] for d in ds), sum(d["fields_correct"] for d in ds)
+                okd = [d for d in ds if d["ok"]]
+                rows.append(
+                    {
+                        "repeat": rep,
+                        "docs": len(ds),
+                        "coverage": len(okd) / len(ds),
+                        "field_accuracy": cor / max(1, tot),
+                        "fields_correct": cor,
+                        "fields_total": tot,
+                        "mean_latency_s": st.mean(d["latency_s"] for d in okd) if okd else None,
+                    }
+                )
+            answers = flips = correct_flips = 0
+            for i in range(len(keys)):
+                names = dict.fromkeys(f for rep in reps for f in scored[rep][i]["fields"])
+                for f in names:
+                    xs = [scored[rep][i]["fields"].get(f) for rep in reps]
+                    answers += 1
+                    flips += len({_answer(x["predicted"]) if x else None for x in xs}) > 1
+                    correct_flips += len({bool(x["correct"]) if x else True for x in xs}) > 1
+            entry: dict = {"pipeline": pipe, "variant": v, "repeats": len(reps), "docs": len(keys)}
+            entry.update(_spread([r["field_accuracy"] for r in rows], "field_accuracy"))
+            entry.update(
+                answers=answers,
+                flip_rate=flips / answers if answers else 0.0,
+                correct_flip_rate=correct_flips / answers if answers else 0.0,
+                per_repeat=rows,
+            )
+            out.append(entry)
+    return out
+
+
 def score(meta: dict, run_dir: Path) -> dict:
     """Score runs/<id>/ using only its own files."""
     from .runs import upgrade
@@ -562,7 +790,9 @@ def score(meta: dict, run_dir: Path) -> dict:
     records = read_jsonl(run_dir / "extractions.jsonl")
     expected_ex = expected_extractions(meta, expected, records)
     eagg, edocs = extraction(meta, docs, run_dir, records, manifest, transcripts, basis, expected_ex)
-    return {
+    var_t = transcription_variation(meta, docs, run_dir, transcripts, manifest, tpages)
+    var_e = extraction_variation(meta, docs, run_dir, records, manifest, edocs)
+    out: dict = {
         "run_id": meta["id"],
         "method": {
             "failures": "counted: failed pages score CER=1/recall 0, failed extractions score 0 (see coverage)",
@@ -576,7 +806,10 @@ def score(meta: dict, run_dir: Path) -> dict:
             else "documents with an extraction record (run.json has no plan items, or no extraction ran)",
             "invented_optional_fields": "count as wrong: a schema field absent from the ground truth is scored "
             "only if the extractor returned a non-empty value for it (one wrong field)",
-            "transcript_per_page": "successful one from the lowest-concurrency run (latest if several)",
+            "transcript_per_page": "successful one from the lowest-concurrency run (latest if several; within a "
+            "run that repeated every page, its last repeat)"
+            if var_t
+            else "successful one from the lowest-concurrency run (latest if several)",
             "text_normalisation": "Markdown/HTML tags removed, HTML entities decoded, whitespace unified",
             "error_rate_cap": "per-page CER and WER capped at 1; empty ground truth: 0 if output empty, else 1",
             "empty_ground_truth_recall": "a page with no words / numbers has word / number recall 1",
@@ -592,3 +825,7 @@ def score(meta: dict, run_dir: Path) -> dict:
         "transcription": {"aggregate": tagg, "pages": tpages},
         "extraction": {"aggregate": eagg, "docs": edocs},
     }
+    if var_t or var_e:  # only runs that repeated something: other scores.json files stay as they were
+        out["method"]["variation"] = VARIATION_METHOD
+        out["variation"] = {"transcription": var_t, "extraction": var_e}
+    return out

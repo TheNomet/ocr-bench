@@ -187,6 +187,72 @@ _ALL = [
         ),
     ),
     Metric("cost_per_1k_docs_usd", "$/1k docs", "usd", "low"),
+    # run-to-run variation (scores["variation"]): one row per transcriber or pipeline and variant
+    Metric("repeats", "Repeats", "int", None, "Identical repeats compared"),
+    Metric("repeat", "Repeat", "int", None, "Repeat index (0 = first)"),
+    *(
+        Metric(
+            f"{key}_{stat}",
+            f"{label}: {name}",
+            kind,
+            "low" if stat == "std" else None,
+            f"{label} of each repeat: {title}",
+        )
+        for key, label, kind in (
+            ("cer", "CER mean", "rate"),
+            ("cer_median", "CER median", "rate"),
+            ("word_recall", "Word recall", "pct"),
+            ("num_recall", "Number recall", "pct"),
+            ("field_accuracy", "Field accuracy", "pct"),
+        )
+        for stat, name, title in (
+            ("mean", "mean of repeats", "mean over the repeats"),
+            ("min", "min", "worst-to-best range, lower end"),
+            ("max", "max", "worst-to-best range, upper end"),
+            ("std", "std", "sample standard deviation over the repeats"),
+        )
+    ),
+    Metric(
+        "pages_differing",
+        "Pages not identical",
+        "pct",
+        "low",
+        "Share of pages whose scored text differs between repeats",
+        glossary=(
+            "pages not identical",
+            "share of pages whose normalised transcript (as scored) is not the same in every repeat; a failed "
+            "request counts as a different answer",
+        ),
+    ),
+    Metric(
+        "page_cer_range_mean",
+        "Per-page CER range",
+        "rate",
+        "low",
+        "Mean over pages of max - min CER across repeats",
+        glossary=("per-page CER range", "for each page, its highest minus its lowest CER over the repeats; averaged"),
+    ),
+    Metric("answers", "Answers", "int", None, "(document, field) answers compared between repeats"),
+    Metric(
+        "flip_rate",
+        "Answers changed",
+        "pct",
+        "low",
+        "Share of (document, field) answers not the same in every repeat",
+        glossary=(
+            "answers changed",
+            "share of (document, field) answers whose normalised value is not the same in every repeat (a failed "
+            "extraction or an omitted field is no value)",
+        ),
+    ),
+    Metric(
+        "correct_flip_rate",
+        "Right/wrong flips",
+        "pct",
+        "low",
+        "Share of answers right in some repeats and wrong in others",
+        glossary=("right/wrong flips", "share of (document, field) answers right in some repeats and wrong in others"),
+    ),
 ]
 REGISTRY: dict[str, Metric] = {m.key: m for m in _ALL}
 
@@ -279,6 +345,101 @@ _GLOSSARY_ORDER = (
     "cost_per_1k_pages_usd",
 )
 GLOSSARY: list[tuple[str, str]] = [REGISTRY[k].glossary for k in _GLOSSARY_ORDER]  # type: ignore[misc]
+
+# Run-to-run variation tables (only for runs that repeated something). The site shows every column.
+VARIATION_TRANSCRIPTION = cols(
+    "backend",
+    "variant",
+    "concurrency",
+    "repeats",
+    "pages",
+    "cer_mean",
+    "cer_min",
+    "cer_max",
+    "cer_std",
+    "cer_median_mean",
+    "cer_median_min",
+    "cer_median_max",
+    "word_recall_min",
+    "word_recall_max",
+    "num_recall_mean",
+    "num_recall_min",
+    "num_recall_max",
+    "num_recall_std",
+    "pages_differing",
+    "page_cer_range_mean",
+)
+VARIATION_TRANSCRIPTION_MD = cols(
+    "backend",
+    "variant",
+    "repeats",
+    "cer_mean",
+    "cer_min",
+    "cer_max",
+    "cer_std",
+    "num_recall_min",
+    "num_recall_max",
+    "pages_differing",
+    "page_cer_range_mean",
+)
+VARIATION_EXTRACTION = cols(
+    "label",
+    "pipeline",
+    "variant",
+    "repeats",
+    "docs",
+    "field_accuracy_mean",
+    "field_accuracy_min",
+    "field_accuracy_max",
+    "field_accuracy_std",
+    "answers",
+    "flip_rate",
+    "correct_flip_rate",
+)
+VARIATION_EXTRACTION_MD = cols(
+    "pipeline",
+    "variant",
+    "repeats",
+    "field_accuracy_mean",
+    "field_accuracy_min",
+    "field_accuracy_max",
+    "field_accuracy_std",
+    "flip_rate",
+    "correct_flip_rate",
+)
+REPEAT_TRANSCRIPTION = cols(
+    "backend", "variant", "repeat", "pages", "coverage", "cer", "cer_median", "word_recall", "num_recall"
+)
+REPEAT_EXTRACTION = cols(
+    "pipeline",
+    "variant",
+    "repeat",
+    "docs",
+    "coverage",
+    "field_accuracy",
+    "fields_correct",
+    "fields_total",
+    "mean_latency_s",
+)
+VARIATION_GLOSSARY: list[tuple[str, str]] = [
+    (
+        "run-to-run range",
+        "worst to best result over identical repeats (min–max of the per-repeat means); a gap between two pipelines "
+        "or readers smaller than the larger of their two ranges is within the run-to-run range",
+    ),
+    ("std", "sample standard deviation (n-1) of the per-repeat means"),
+    *(REGISTRY[k].glossary for k in ("pages_differing", "page_cer_range_mean", "flip_rate", "correct_flip_rate")),  # type: ignore[misc]
+]
+
+
+def per_repeat_rows(entries: list[dict], key: str) -> list[dict]:
+    """One row per repeat of every scores["variation"] entry, carrying the entry's `key` (backend or pipeline)
+    and variant, and `group` (key|variant) for highlighting the best repeat of each."""
+    return [
+        {key: a[key], "variant": a["variant"], "group": f"{a[key]}|{a['variant']}", **r}
+        for a in entries
+        for r in a.get("per_repeat") or []
+    ]
 
 
 def markdown_table(rows: list[dict], columns: list[Metric]) -> list[str]:

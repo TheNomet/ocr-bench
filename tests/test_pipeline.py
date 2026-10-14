@@ -609,3 +609,89 @@ def test_record_endpoint_warns_when_price_is_unknown(tmp_path, monkeypatch, caps
     monkeypatch.setattr(aws, "endpoint_info", lambda c, n: {})
     runs.record_endpoint(cfg, d, "unlimited-ocr")
     assert "could not read the instance type" in capsys.readouterr().err
+
+
+class NoisyBackend(GroundTruthBackend):
+    """GroundTruthBackend that, every fifth call, adds an invented number to a transcript or gets one field
+    wrong: a model sampling at temperature 1 (5 doesn't divide the pages or documents per repeat, so the
+    noise lands on different pages in each repeat)."""
+
+    calls = 0
+
+    async def complete(self, req):
+        resp = await super().complete(req)
+        self.calls += 1
+        if self.calls % 5:
+            return resp
+        if "extract these fields" in req.prompt or "Document type: " in req.prompt:
+            fields = json.loads(resp.text)
+            fields[next(iter(fields))] = "wrong"
+            return Response(json.dumps(fields), resp.prompt_tokens, resp.completion_tokens)
+        return Response(resp.text + "\n98765", resp.prompt_tokens, resp.completion_tokens, "stop")
+
+
+def test_end_to_end_variation_plan(fake_docs, tmp_path, monkeypatch):
+    """The example `variation` plan with fakes: repeated transcription and extraction -> the variation block,
+    its key facts, the report section and the run page, with the number check covering its figures."""
+    import re
+
+    from ocrbench import cli, extract, reporting, runs, transcribe
+
+    cfg = config_mod.load(ROOT / "config" / "example.yaml")
+    cfg.raw["runner"]["mode"] = "local"
+    monkeypatch.setattr(runs, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    fake = {}
+
+    def get(c, n):  # haiku-4.5 samples, sonnet-4.5 is deterministic: nothing about the names matters
+        return fake.setdefault(n, (NoisyBackend if n == "haiku-4.5" else GroundTruthBackend)(n, fake_docs))
+
+    monkeypatch.setattr(transcribe, "get_backend", get)
+    monkeypatch.setattr(extract, "get_backend", get)
+
+    class A:
+        plan, id, stages, docs = "variation", None, "transcribe,extract,score", str(fake_docs)
+
+    cli.cmd_run(cfg, A())
+    (d,) = (tmp_path / "runs").iterdir()
+    meta = runs.load(d)
+    assert meta["extraction"]["repeat"] == 3
+    manifest = json.loads((fake_docs / "manifest.json").read_text())
+    n_pages = sum(len(x["pages"]) for x in manifest)
+    tr = [json.loads(x) for x in (d / "transcripts.jsonl").read_text().splitlines()]
+    assert len(tr) == 2 * 2 * 3 * n_pages and {r["repeat"] for r in tr} == {0, 1, 2}
+    ex = [json.loads(x) for x in (d / "extractions.jsonl").read_text().splitlines()]
+    assert len(ex) == 3 * 2 * 3 * len(manifest) and len({r["output_file"] for r in ex}) == len(ex)
+
+    s = json.loads((d / "scores.json").read_text())
+    var = s["variation"]
+    tv = {(a["backend"], a["variant"]): a for a in var["transcription"]}
+    assert set(tv) == {(b, v) for b in ("sonnet-4.5", "haiku-4.5") for v in ("clean", "degraded")}
+    assert all(a["repeats"] == 3 and a["concurrency"] == 1 for a in tv.values())
+    assert tv[("sonnet-4.5", "clean")]["pages_differing"] == 0 and tv[("sonnet-4.5", "clean")]["cer_std"] == 0
+    assert tv[("haiku-4.5", "clean")]["pages_differing"] > 0
+    ev = {(a["pipeline"], a["variant"]): a for a in var["extraction"]}
+    assert {p for p, _ in ev} == {"image->sonnet-4.5", "image->haiku-4.5", "haiku-4.5->sonnet-4.5"}
+    assert ev[("image->sonnet-4.5", "clean")]["flip_rate"] == 0 and ev[("image->haiku-4.5", "clean")]["flip_rate"] > 0
+    assert (
+        ev[("image->haiku-4.5", "clean")]["field_accuracy_min"]
+        < ev[("image->haiku-4.5", "clean")]["field_accuracy_max"]
+    )
+    # the main tables still score one repeat per page and document
+    assert all(a["pages"] == n_pages for a in s["transcription"]["aggregate"])
+    assert all(a["docs"] == len(manifest) for a in s["extraction"]["aggregate"])
+
+    report = (d / "report.md").read_text()
+    assert "Run-to-run variation (identical repeats" in report and "### Run-to-run variation" in report
+    assert "every document extracted 3 times per pipeline" in report
+    run_page = (tmp_path / "site" / meta["id"] / "index.html").read_text()
+    assert 'id="variation"' in run_page and "Answers changed" in run_page
+    index = (tmp_path / "site" / "index.html").read_text()
+    assert "run-to-run check &middot; 3 repeats" in index
+
+    # a recommendation quoting the computed ranges verifies; a made-up spread is flagged
+    pts = re.findall(r"(\d+\.\d) pts", report)
+    assert pts
+    quoted = f"`image->haiku-4.5` moved by {pts[0]} points between repeats."
+    assert reporting.unverified(meta, s, quoted) == []
+    assert reporting.unverified(meta, s, "`image->haiku-4.5` moved by 73.21 points.") == ["73.21"]
