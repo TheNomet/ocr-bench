@@ -67,6 +67,20 @@ def test_range_scans_added_diff_lines(repo, deny):
     assert f"{sha} a.txt:2  (denylist line 3)" in r.stderr
 
 
+def test_binary_content_is_not_scanned_but_its_name_is(repo, deny):
+    """Like `tree`/`dir` (grep -I): bytes of rendered PDFs/PNGs can match short patterns by chance."""
+    data = b"\x89PNG\r\n\x1a\n\x00\x01" + SECRET.encode() + b"\x00\xff"
+    (repo / "img.png").write_bytes(data)
+    git(repo, "add", "img.png")
+    assert guard(repo, deny, "staged").returncode == 0
+    git(repo, "commit", "-qm", "binary")
+    assert guard(repo, deny, "range", "HEAD~1..HEAD").returncode == 0
+    (repo / f"{SECRET}.png").write_bytes(data)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "named")
+    assert guard(repo, deny, "range", "HEAD~1..HEAD").returncode == 1
+
+
 def test_report_never_shows_matched_text_or_pattern(repo, tmp_path):
     """CI logs are public: only locations and denylist line numbers, with denylisted names masked."""
     p = tmp_path / "deny-re"

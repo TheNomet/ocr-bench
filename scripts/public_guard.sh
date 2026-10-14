@@ -134,7 +134,9 @@ from_grep() {
   [ "${st[0]}" -le 1 ] && [ "${st[1]}" -eq 0 ] || fail "command failed (${st[0]}): $*"
 }
 
-difflags=(--no-color --no-textconv --no-ext-diff --text --no-renames -U0 --src-prefix=a/ --dst-prefix=b/)
+# No --text: binary files (rendered PDFs/PNGs) show as "Binary files ... differ", so only their names are
+# scanned, as `tree`/`dir` skip them (grep -I). Short patterns match random bytes in compressed data.
+difflags=(--no-color --no-textconv --no-ext-diff --no-renames -U0 --src-prefix=a/ --dst-prefix=b/)
 mode=${1:-staged}
 case "$mode" in
   staged)
