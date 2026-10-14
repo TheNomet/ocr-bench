@@ -4,8 +4,20 @@ set -euo pipefail
 guard="$(git rev-parse --show-toplevel)/scripts/public_guard.sh"
 remote=${1:-}
 zero=$(git hash-object --stdin </dev/null | tr '[:xdigit:]' '0')
-while read -r _ local_sha _ remote_sha; do
+while read -r _ local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$zero" ] && continue # branch deletion: nothing to scan
+  # Ref names and annotated tags (tagger, message, nested tags) are public as well.
+  {
+    printf '%s\n' "$remote_ref"
+    obj=$local_sha
+    while [ "$(git cat-file -t "$obj")" = tag ]; do
+      git cat-file tag "$obj"
+      obj=$(git cat-file tag "$obj" | sed -n '1s/^object //p')
+    done
+  } | "$guard" text || {
+    echo "pre-push: blocked by a ref name or annotated tag (stdin line 1 = remote ref name, then \`git cat-file tag\`)" >&2
+    exit 1
+  }
   if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
     "$guard" range "$remote_sha..$local_sha"
   else

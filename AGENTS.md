@@ -88,8 +88,11 @@ site/                      LOCAL build of the site (gitignored); published to th
   changes results, record it there and bump `runs.SCHEMA_VERSION` with an `upgrade()` step.
 - **Runs are committed, their `config.yaml` is not.** Everything else in `runs/<id>/` is meant
   to be public: SageMaker endpoint names are kept out of records (`model@sagemaker`). If you add a field to `run.json` or the
-  records, make sure it can't carry hosts, account ids or client ids. The guard (`scripts/public_guard.sh`)
-  runs on every commit/push and on the site in `just publish`.
+  records, make sure it can't carry hosts, account ids or client ids. Images on a private registry are
+  recorded as `<private-registry>/<image>[:tag|@digest]`. The guard (`scripts/public_guard.sh`)
+  runs on every commit/push, on the site in `just publish`, and in CI when the `PUBLIC_DENYLIST`
+  repository secret is set (it warns and skips otherwise). Its output names file:line and the denylist
+  line, never the matched text.
 - **The site is published from a `gh-pages` branch**, never from `main`
   ([README: Publishing](README.md#publishing)); `.github/workflows/pages.yml` only deploys that
   branch. Keep `just publish` refusing when regenerated reports leave `runs/` uncommitted.

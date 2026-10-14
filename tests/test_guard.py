@@ -62,7 +62,35 @@ def commit(repo: Path, name: str, text: str, msg: str = "change", **env: str) ->
 def test_range_scans_added_diff_lines(repo, deny):
     commit(repo, "a.txt", f"hello\nleak {SECRET}\n")
     r = guard(repo, deny, "range", "HEAD~1..HEAD")
-    assert r.returncode == 1 and "BLOCKED" in r.stderr and SECRET in r.stderr
+    assert r.returncode == 1 and "BLOCKED" in r.stderr
+    sha = git(repo, "rev-parse", "--short=12", "HEAD").strip()
+    assert f"{sha} a.txt:2  (denylist line 3)" in r.stderr
+
+
+def test_report_never_shows_matched_text_or_pattern(repo, tmp_path):
+    """CI logs are public: only locations and denylist line numbers, with denylisted names masked."""
+    p = tmp_path / "deny-re"
+    p.write_text("zqx-[a-z]+-token\n")
+    commit(repo, f"docs/{SECRET}.md", f"x\n{SECRET}\n", f"msg\n\nsee {SECRET}")
+    r = guard(repo, p, "range", "HEAD~1..HEAD")
+    assert r.returncode == 1 and SECRET not in r.stderr + r.stdout and "zqx-[a-z]" not in r.stderr
+    assert "docs/<denylisted>.md:2  (denylist line 1)" in r.stderr
+    assert "file name docs/<denylisted>.md" in r.stderr and "message line 3" in r.stderr
+
+
+def test_report_locations_per_mode(repo, deny, tmp_path):
+    (repo / "b:c.txt").write_text(f"one\ntwo {SECRET}\n")
+    git(repo, "add", "b:c.txt")
+    assert "  b:c.txt:2  (denylist line 3)" in guard(repo, deny, "staged").stderr
+    assert "b:c.txt:2 (index)" in guard(repo, deny, "tree").stderr
+    assert "stdin line 2" in guard(repo, deny, "text", stdin=f"ok\n{SECRET}\n").stderr
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "i.html").write_text(f"\n\n{SECRET}\n")
+    assert f"{site}/i.html:3" in guard(repo, deny, "dir", str(site)).stderr
+    git(repo, "commit", "-qm", "x", env={"GIT_AUTHOR_NAME": SECRET})
+    r = guard(repo, deny, "range", "HEAD~1..HEAD")
+    assert " author  (denylist line 3)" in r.stderr and SECRET not in r.stderr
 
 
 @pytest.mark.parametrize(
@@ -149,7 +177,7 @@ def test_missing_denylist(repo, tmp_path):
     r = subprocess.run(
         ["bash", str(GUARD), "text"], cwd=repo, env=env, input="x", capture_output=True, text=True, check=False
     )
-    assert r.returncode == 0
+    assert r.returncode == 0 and r.stderr.startswith("WARNING:") and "SKIPPED" in r.stderr
 
 
 # ---------------------------------------------------------------------------- pre-push hook
@@ -165,8 +193,8 @@ def hooked(repo):
 ZERO = "0" * 40
 
 
-def push(repo, deny, local_sha, remote_sha, remote="origin"):
-    stdin = f"refs/heads/main {local_sha} refs/heads/main {remote_sha}\n"
+def push(repo, deny, local_sha, remote_sha, remote="origin", ref="refs/heads/main"):
+    stdin = f"{ref} {local_sha} {ref} {remote_sha}\n"
     return guard(repo, deny, remote, "https://example.invalid/r.git", stdin=stdin, script=PRE_PUSH)
 
 
@@ -198,3 +226,31 @@ def test_pre_push_new_branch(hooked, deny):
 
 def test_pre_push_branch_deletion_skipped(hooked, deny):
     assert push(hooked, deny, ZERO, git(hooked, "rev-parse", "HEAD").strip()).returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("args", "env", "blocked"),
+    [
+        (["-a", "-m", "release notes"], {}, False),
+        (["-a", "-m", f"release {SECRET}"], {}, True),
+        (["-a", "-m", "release"], {"GIT_COMMITTER_EMAIL": f"{SECRET}@example.invalid"}, True),  # tagger
+        ([], {}, False),  # lightweight tag: only the ref name
+    ],
+)
+def test_pre_push_scans_annotated_tags(hooked, deny, args, env, blocked):
+    head = git(hooked, "rev-parse", "HEAD").strip()
+    git(hooked, "update-ref", "refs/remotes/origin/main", head)  # the commit itself is already pushed
+    git(hooked, "tag", *args, "v1", env=env)
+    tag = git(hooked, "rev-parse", "refs/tags/v1").strip()
+    r = push(hooked, deny, tag, ZERO, ref="refs/tags/v1")
+    assert r.returncode == int(blocked), r.stderr
+    assert SECRET not in r.stderr
+
+
+def test_pre_push_scans_nested_tags_and_ref_names(hooked, deny):
+    head = git(hooked, "rev-parse", "HEAD").strip()
+    git(hooked, "update-ref", "refs/remotes/origin/main", head)
+    git(hooked, "tag", "-a", "-m", f"inner {SECRET}", "inner")
+    git(hooked, "tag", "-a", "-m", "outer", "outer", "inner")
+    assert push(hooked, deny, git(hooked, "rev-parse", "outer").strip(), ZERO, ref="refs/tags/outer").returncode == 1
+    assert push(hooked, deny, head, ZERO, ref=f"refs/heads/{SECRET}").returncode == 1

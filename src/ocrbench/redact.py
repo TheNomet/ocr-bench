@@ -17,6 +17,19 @@ _FILE_EXT = (
     r"|lock|gz|tgz|tar|zip|tmp|bak|cfg|ini"
 )
 _TLDS = r"com|net|org|io|ai|cloud|de|no|se|dk|uk|eu|internal|local|corp|lan|intra|intranet|cn"
+_IPV4 = r"(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_H16 = r"[0-9a-f]{1,4}"
+# Full, compressed and IPv4-suffixed IPv6, with an optional zone id (fe80::1%eth0). Not inside a longer
+# token, and it must contain a digit, so `a::b` scopes and a bare `::` stay; times (12:30:45) have
+# neither eight groups nor `::`.
+_IPV6 = (
+    r"(?<![\w:.])(?=[0-9a-f:]*\d)(?:"
+    rf"(?:{_H16}:){{6}}{_IPV4}"
+    rf"|(?:{_H16}(?::{_H16}){{0,4}})?::(?:{_H16}:){{0,5}}{_IPV4}"
+    rf"|(?:{_H16}:){{7}}{_H16}"
+    rf"|(?:{_H16}(?::{_H16}){{0,6}})?::(?:{_H16}(?::{_H16}){{0,6}})?"
+    r")(?:%[\w.~-]+)?(?![\w%]|:[0-9a-f]|\.\d)"
+)
 
 _PATTERNS: list[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]]] = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)", re.S), "<private-key>"),
@@ -51,6 +64,8 @@ _PATTERNS: list[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]]] = 
     (re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I), "<id>"),
     (re.compile(r"\b[0-9a-f]{32,}\b", re.I), "<id>"),
     (re.compile(r"\b[\w.+-]+@" + _LABEL + r"(?:\." + _LABEL + r")+\b", re.I), "<email>"),
+    # before the host contexts (host='fe80::1' would lose only its first group) and the IPv4 rule (::ffff:10.0.0.1)
+    (re.compile(_IPV6, re.I), "<ip>"),
     # host contexts: host='x' (urllib3), //x, @x
     (
         re.compile(r"(?i)\b(host(?:name)?|server|domain|netloc)([\"']?\s*[=:]\s*[\"']?)[^\s\"',)/:\]]+"),
@@ -58,7 +73,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]]] = 
     ),
     (re.compile(r"(?<=//)" + _LABEL + r"(?:\." + _LABEL + r")+", re.I), "<host>"),
     (re.compile(r"(?<=@)" + _LABEL + r"(?:\." + _LABEL + r")+", re.I), "<host>"),
-    (re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"), "<ip>"),
+    (re.compile(r"\b" + _IPV4 + r"\b"), "<ip>"),
     # any name with two or more dots whose last label is alphabetic and not a file extension
     (
         re.compile(

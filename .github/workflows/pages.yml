@@ -1,6 +1,7 @@
 # Deploys the already-built static site from the `gh-pages` branch to GitHub Pages.
 # The site is built and checked locally by `just publish` (it needs the local runs and config);
-# this workflow only ships it. Run it from main: `gh workflow run pages.yml`.
+# this workflow re-runs the denylist guard on it (when the PUBLIC_DENYLIST secret is set) and ships it.
+# Run it from main: `gh workflow run pages.yml`.
 name: pages
 
 on:
@@ -25,13 +26,39 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # The guard script comes from the dispatching ref (main); gh-pages holds only the site.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: gh-pages
+          path: site
           persist-credentials: false
+      # Same check as `just publish`, in case gh-pages was pushed another way. Without the
+      # PUBLIC_DENYLIST secret it warns and deploys; with it, a match stops the deploy.
+      - name: denylist scan
+        shell: bash
+        working-directory: site
+        env:
+          PUBLIC_DENYLIST: ${{ secrets.PUBLIC_DENYLIST }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PUBLIC_DENYLIST" ]; then
+            echo "::warning title=public guard skipped::The PUBLIC_DENYLIST secret is not set, so the site was not scanned."
+            exit 0
+          fi
+          umask 077
+          deny="$RUNNER_TEMP/public-denylist"
+          trap 'rm -f "$deny"' EXIT
+          printf '%s\n' "$PUBLIC_DENYLIST" >"$deny"
+          export PUBLIC_GUARD_DENYLIST="$deny"
+          unset PUBLIC_DENYLIST PUBLIC_GUARD_ALLOW_MISSING
+          ../repo/scripts/public_guard.sh tree
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
-          path: .
+          path: site
       - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

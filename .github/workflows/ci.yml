@@ -1,4 +1,4 @@
-# Lint, type check, tests, Terraform validation, workflow lint and a secret scan on every push and pull request.
+# Lint, type check, tests, Terraform validation, workflow lint, a secret scan and the denylist guard on every push and pull request.
 # Actions are pinned by commit SHA (the exact tag is in the comment); Dependabot keeps them current.
 name: ci
 
@@ -118,3 +118,55 @@ jobs:
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The denylist guard (scripts/public_guard.sh) also runs here, so web edits and squash merges, which
+  # skip the local hooks, are scanned too. The denylist comes from the PUBLIC_DENYLIST secret; without it
+  # (forks, Dependabot, first setup) the job warns and passes. The guard prints only locations.
+  public-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the range scan needs the pushed commits and their parents
+          persist-credentials: false
+      - name: denylist scan
+        shell: bash
+        env:
+          PUBLIC_DENYLIST: ${{ secrets.PUBLIC_DENYLIST }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PUBLIC_DENYLIST" ]; then
+            echo "::warning title=public guard skipped::The PUBLIC_DENYLIST secret is not set (or not available to this run), so the denylist scan did not run."
+            exit 0
+          fi
+          umask 077
+          deny="$RUNNER_TEMP/public-denylist"
+          trap 'rm -f "$deny"' EXIT
+          printf '%s\n' "$PUBLIC_DENYLIST" >"$deny"
+          export PUBLIC_GUARD_DENYLIST="$deny"
+          unset PUBLIC_DENYLIST PUBLIC_GUARD_ALLOW_MISSING
+          have() { [ -n "$1" ] && [ "${1//0/}" != "" ] && git cat-file -e "$1^{commit}" 2>/dev/null; }
+          scripts/public_guard.sh tree
+          case "$EVENT" in
+            push)
+              if have "$BEFORE"; then
+                scripts/public_guard.sh range "$BEFORE..$GITHUB_SHA"
+              else
+                # new branch (all-zero before) or force-push (old tip not fetched): scan all history
+                scripts/public_guard.sh range "$GITHUB_SHA"
+              fi
+              ;;
+            pull_request)
+              if have "$PR_BASE" && have "$PR_HEAD"; then
+                scripts/public_guard.sh range "$PR_BASE..$PR_HEAD"
+              else
+                scripts/public_guard.sh range "$GITHUB_SHA"
+              fi
+              ;;
+            *) scripts/public_guard.sh range "$GITHUB_SHA" ;;
+          esac
