@@ -3,6 +3,8 @@
  "method": {
   "failures": "counted: failed pages score CER=1/recall 0, failed extractions score 0 (see coverage)",
   "expected_pages": "every page a plan item selected; one never attempted counts as failed",
+  "expected_documents": "every document the pipeline's source was expected to cover (image: all selected documents; a transcriber: the documents its plan items selected); one never attempted counts as a failed extraction",
+  "invented_optional_fields": "count as wrong: a schema field absent from the ground truth is scored only if the extractor returned a non-empty value for it (one wrong field)",
   "transcript_per_page": "successful one from the lowest-concurrency run (latest if several)",
   "text_normalisation": "Markdown/HTML tags removed, HTML entities decoded, whitespace unified",
   "error_rate_cap": "per-page CER and WER capped at 1; empty ground truth: 0 if output empty, else 1",

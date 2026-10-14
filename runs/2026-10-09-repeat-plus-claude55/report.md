@@ -176,8 +176,8 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 - **word recall / precision**: share of the page's words found / share of output words that are on the page; ignores order
 - **number recall**: share of the amounts, dates, account numbers etc. on the page that appear in the output
 - **invented numbers**: numbers of 3+ characters in the output that are not on the page
-- **coverage**: share of pages or documents that got an answer. Failures count against the backend: CER 1 and no numbers found for a page, every field wrong for a document. Cheapest and fastest pipeline only compare pipelines with at least 99% coverage
-- **field accuracy**: share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored)
+- **coverage**: share of pages or documents that got an answer. Failures, and selected pages or documents never attempted, count against the backend: CER 1 and no numbers found for a page, every field wrong for a document. Cheapest and fastest pipeline only compare pipelines with at least 99% coverage
+- **field accuracy**: share of extracted fields equal to the ground truth (case, spaces and a kr/NOK prefix ignored). A value given for an optional field the document doesn't have counts as one wrong field
 - **end-to-end**: per document: transcription time of all its pages (each page's lowest-concurrency transcript) plus the extraction call
 - **$/1k**: LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput (fastest run with at most 1% errors, GPU kept busy; if none, the run with the fewest errors, flagged); the cost one request at a time is shown next to it. Unknown token usage = no cost, never $0
 
