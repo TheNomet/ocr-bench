@@ -127,6 +127,18 @@ _ALL = [
         "Pages whose output is >3x the page length (repetition loop)",
         glossary=("runaway", "pages where the output was more than 3x the page length (a repetition loop)"),
     ),
+    Metric(
+        "truncated",
+        "Token limit",
+        "int",
+        "low",
+        "Pages whose output stopped at the output-token limit (cut off, or empty)",
+        glossary=(
+            "token limit",
+            "pages where the model used its whole output-token budget, so the text is cut off or empty "
+            "(an empty one is a failed page, CER 1)",
+        ),
+    ),
     Metric("wer", "WER", "rate", "low", "Word error rate"),
     Metric(
         "word_recall",
@@ -288,6 +300,7 @@ TRANSCRIPTION = cols(
     "cer",
     "cer_median",
     "runaway",
+    "truncated",
     "wer",
     "word_recall",
     "word_precision",
@@ -303,6 +316,7 @@ TRANSCRIPTION_MD = cols(
     "cer",
     "cer_median",
     "runaway",
+    "truncated",
     "word_recall",
     "num_recall",
     "num_missing",
@@ -336,6 +350,7 @@ _GLOSSARY_ORDER = (
     "cer",
     "cer_median",
     "runaway",
+    "truncated",
     "word_recall",
     "num_recall",
     "num_hallucinated",
@@ -408,7 +423,7 @@ VARIATION_EXTRACTION_MD = cols(
     "correct_flip_rate",
 )
 REPEAT_TRANSCRIPTION = cols(
-    "backend", "variant", "repeat", "pages", "coverage", "cer", "cer_median", "word_recall", "num_recall"
+    "backend", "variant", "repeat", "pages", "coverage", "cer", "cer_median", "word_recall", "num_recall", "truncated"
 )
 REPEAT_EXTRACTION = cols(
     "pipeline",

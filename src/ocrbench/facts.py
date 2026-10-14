@@ -74,6 +74,7 @@ def reading_facts(ta: list[dict]) -> dict:
             "cer_median": a.get("cer_median"),
             "number_recall": a["num_recall"],
             "runaway_pages": a.get("runaway", 0),
+            "token_limit_pages": a.get("truncated", 0),
             "invented_numbers_excl_runaway": a.get("num_hallucinated_excl_runaway", a["num_hallucinated"]),
         }
     return out
@@ -292,14 +293,15 @@ def _md_every_pipeline(p: dict, labels: dict[str, str]) -> list[str]:
 def _md_readers(reading: dict, throughput: dict) -> list[str]:
     out = [
         "",
-        "| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |",
-        "|---|---|---|---|---|---|",
+        "| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages "
+        "| pages at token limit |",
+        "|---|---|---|---|---|---|---|",
     ]
     for b, vs in reading.items():
         for v, r in vs.items():
             out.append(
                 f"| `{b}` | {v} | {r['cer_median']:.3f} | {_pct(r['number_recall'])} | "
-                f"{r['invented_numbers_excl_runaway']} | {r['runaway_pages']} |"
+                f"{r['invented_numbers_excl_runaway']} | {r['runaway_pages']} | {r.get('token_limit_pages', 0)} |"
             )
     out += ["", "| reader | p50 s/page (one at a time) | max pages/min (at concurrency) |", "|---|---|---|"]
     for b, t in throughput.items():

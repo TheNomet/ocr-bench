@@ -238,6 +238,24 @@ def test_variation_block_by_hand(tmp_path):
     assert s["method"]["variation"]["std"].startswith("sample")
 
 
+def test_token_limit_pages_are_counted_per_repeat_and_in_the_facts(tmp_path):
+    from ocrbench import facts
+
+    meta, run = make_run(tmp_path)
+    recs = _lines(run / "transcripts.jsonl")
+    for r in recs:
+        if r["backend"] == "b" and r["doc_id"] == "invoice-00" and r["repeat"] == 1:
+            r["finish_reason"] = "length"  # the "Sum 10" page was cut off at the token limit
+    (run / "transcripts.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
+    s = score.score(meta, run)
+    (t,) = s["variation"]["transcription"]
+    assert [r["truncated"] for r in t["per_repeat"]] == [0, 1, 0]
+    # main tables: repeat 2 failed on that page, so the cut-off repeat 1 is the one scored
+    assert facts.reading_facts(s["transcription"]["aggregate"])["b"]["clean"]["token_limit_pages"] == 1
+    agg = [{**a, "truncated": 2} for a in s["transcription"]["aggregate"] if a["backend"] == "b"]
+    assert facts.reading_facts(agg)["b"]["clean"]["token_limit_pages"] == 2
+
+
 def test_no_variation_block_without_repeats(tmp_path):
     meta, run = make_run(tmp_path)
     keep = lambda r: r.get("repeat", 0) == 0  # noqa: E731

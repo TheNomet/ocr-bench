@@ -671,6 +671,7 @@ def transcription_variation(
                         m = {**failed_page_metrics(nums), "ok": False}
                     else:
                         m = {**page_metrics(gt, nums, postprocess.apply(steps.get(be), hyp)), "ok": True}
+                    m["truncated"] = bool(r and r.get("finish_reason") == "length")
                     per[rep].append(m)
                     ms.append(m)
                 differing += len({m["clean_text"] if m["ok"] else None for m in ms}) > 1
@@ -684,6 +685,7 @@ def transcription_variation(
                     "cer_median": st.median(m["cer"] for m in ms),
                     "word_recall": st.mean(m["word_recall"] for m in ms),
                     "num_recall": st.mean(m["num_recall"] for m in ms),
+                    "truncated": sum(m["truncated"] for m in ms),
                 }
                 for rep, ms in per.items()
             ]
