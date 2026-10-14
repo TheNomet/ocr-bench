@@ -1,0 +1,9 @@
+{
+  "type": "newsletter",
+  "fields": {
+    "issue_date": "24.06.2026",
+    "meeting_date": "30.07.2026",
+    "new_fee": "5 895,00",
+    "dugnad_date": "07.07.2026"
+  }
+}

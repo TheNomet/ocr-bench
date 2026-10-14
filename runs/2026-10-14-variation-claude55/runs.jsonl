@@ -1,0 +1,2 @@
+{"run_id": "20261014-205923-675449", "backend": "sonnet-5.5", "model": "anthropic.claude-sonnet-5-5", "concurrency": 1, "pages": 324, "wall_s": 1491.169474346, "started": 1792011569.8792048, "instance_type": null}
+{"run_id": "20261014-212421-21c2ed", "backend": "haiku-5.5", "model": "anthropic.claude-haiku-5-5", "concurrency": 1, "pages": 324, "wall_s": 1489.2013880830002, "started": 1792013066.51364, "instance_type": null}

@@ -1,0 +1,54 @@
+# Kontoutskrift
+
+**Elvedalen Sparebank**
+**Kundeservice**
+**Tlf. 454 27 143**
+
+Linnea Åsheim
+Kongens gate 88 A
+5003 Bergen
+
+| | |
+|---|---|
+| Kontonummer | 7212.63.49646 |
+| Kontotype | Brukskonto |
+| Periode | 01.04.2026 - 30.04.2026 |
+| Inngående saldo | 24 870,58 |
+
+| Dato | Forklaring | Inn | Ut | Saldo |
+|---|---|---:|---:|---:|
+| 02.04.2026 | Varekjøp Apotek Sentrum | | 481,79 | 24 388,79 |
+| 02.04.2026 | Varekjøp Jernvare Sørlandet | | 1 033,64 | 23 355,15 |
+| 03.04.2026 | Husleie | | 11 909,00 | 11 446,15 |
+| 05.04.2026 | Varekjøp Nærbutikken | | 1 658,66 | 9 787,49 |
+| 07.04.2026 | Vipps *Erik | | 238,58 | 9 548,91 |
+| 08.04.2026 | Overføring til sparekonto | | 1 483,20 | 8 065,71 |
+| 11.04.2026 | Vipps *Pål | | 178,33 | 7 887,38 |
+| 13.04.2026 | Varekjøp Bakeriet | | 1 526,50 | 6 360,88 |
+| 14.04.2026 | Lønn Solberg Barnehage | 30 977,75 | | 37 338,63 |
+| 14.04.2026 | Vipps *Sigrid | | 174,45 | 37 164,18 |
+| 14.04.2026 | Vipps *Ahmed | | 278,46 | 36 885,72 |
+| 15.04.2026 | Varekjøp Bokhandelen | | 1 324,85 | 35 560,87 |
+| 20.04.2026 | Treningssenter Puls | | 480,73 | 35 080,14 |
+| 20.04.2026 | Varekjøp Sportshuset | | 964,23 | 34 115,91 |
+| 21.04.2026 | Forsikring Trygghjem | | 468,59 | 33 647,32 |
+| 21.04.2026 | Varekjøp Bakeriet | | 1 752,16 | 31 895,16 |
+| 21.04.2026 | Varekjøp Matkroken | | 391,67 | 31 503,49 |
+| 21.04.2026 | Buss månedskort | | 564,89 | 30 938,60 |
+| 22.04.2026 | Mobilabonnement Prat | | 310,29 | 30 628,31 |
+| 23.04.2026 | Varekjøp Matkroken | | 299,86 | 30 328,45 |
+| 24.04.2026 | Varekjøp Sportshuset | | 337,32 | 29 991,13 |
+| 25.04.2026 | Minibank uttak | | 795,64 | 29 195,49 |
+| 25.04.2026 | Varekjøp Bokhandelen | | 772,38 | 28 423,11 |
+| 26.04.2026 | Varekjøp Sportshuset | | 1 744,84 | 26 678,27 |
+| 26.04.2026 | Vipps *Sigrid | | 176,51 | 26 501,76 |
+| 27.04.2026 | Strøm Lysglimt Energi | | 2 471,65 | 24 030,11 |
+
+| | |
+|---|---|
+| Antall transaksjoner | 26 |
+| Sum inn | 30 977,75 |
+| Sum ut | 31 818,22 |
+| **Utgående saldo** | **24 030,11** |
+
+Kontoutskriften er laget 01.05.2026. Ta kontakt med oss innen rimelig tid dersom du finner feil i oversikten.

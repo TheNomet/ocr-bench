@@ -1,0 +1,968 @@
+[
+  {
+    "id": "letter-00",
+    "type": "letter",
+    "title": "Spørsmål om medlemskap",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "letter-00/p1.png",
+        "degraded": "letter-00/p1.degraded.jpg",
+        "gt": "letter-00/p1.gt.txt",
+        "gt_meta": "letter-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "letter-00/fields.json",
+    "pdf": "letter-00/doc.pdf"
+  },
+  {
+    "id": "letter-01",
+    "type": "letter",
+    "title": "Spørsmål om medlemskap",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "letter-01/p1.png",
+        "degraded": "letter-01/p1.degraded.jpg",
+        "gt": "letter-01/p1.gt.txt",
+        "gt_meta": "letter-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "letter-01/fields.json",
+    "pdf": "letter-01/doc.pdf"
+  },
+  {
+    "id": "letter-02",
+    "type": "letter",
+    "title": "Invitasjon til hagefest",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "letter-02/p1.png",
+        "degraded": "letter-02/p1.degraded.jpg",
+        "gt": "letter-02/p1.gt.txt",
+        "gt_meta": "letter-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "letter-02/fields.json",
+    "pdf": "letter-02/doc.pdf"
+  },
+  {
+    "id": "letter-03",
+    "type": "letter",
+    "title": "Vannlekkasje på badet",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "letter-03/p1.png",
+        "degraded": "letter-03/p1.degraded.jpg",
+        "gt": "letter-03/p1.gt.txt",
+        "gt_meta": "letter-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "letter-03/fields.json",
+    "pdf": "letter-03/doc.pdf"
+  },
+  {
+    "id": "letter-04",
+    "type": "letter",
+    "title": "Spørsmål om medlemskap",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "letter-04/p1.png",
+        "degraded": "letter-04/p1.degraded.jpg",
+        "gt": "letter-04/p1.gt.txt",
+        "gt_meta": "letter-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "letter-04/fields.json",
+    "pdf": "letter-04/doc.pdf"
+  },
+  {
+    "id": "letter-05",
+    "type": "letter",
+    "title": "Spørsmål om medlemskap",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "letter-05/p1.png",
+        "degraded": "letter-05/p1.degraded.jpg",
+        "gt": "letter-05/p1.gt.txt",
+        "gt_meta": "letter-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "letter-05/fields.json",
+    "pdf": "letter-05/doc.pdf"
+  },
+  {
+    "id": "receipt-00",
+    "type": "receipt",
+    "title": "Kvittering Matkroken Nordlys",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "receipt-00/p1.png",
+        "degraded": "receipt-00/p1.degraded.jpg",
+        "gt": "receipt-00/p1.gt.txt",
+        "gt_meta": "receipt-00/p1.gt.json",
+        "width": 455,
+        "height": 1113
+      }
+    ],
+    "fields": "receipt-00/fields.json",
+    "pdf": "receipt-00/doc.pdf"
+  },
+  {
+    "id": "receipt-01",
+    "type": "receipt",
+    "title": "Kvittering Bakeriet på Hjørnet",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "receipt-01/p1.png",
+        "degraded": "receipt-01/p1.degraded.jpg",
+        "gt": "receipt-01/p1.gt.txt",
+        "gt_meta": "receipt-01/p1.gt.json",
+        "width": 455,
+        "height": 1231
+      }
+    ],
+    "fields": "receipt-01/fields.json",
+    "pdf": "receipt-01/doc.pdf"
+  },
+  {
+    "id": "receipt-02",
+    "type": "receipt",
+    "title": "Kvittering Jernvare Sørlandet",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "receipt-02/p1.png",
+        "degraded": "receipt-02/p1.degraded.jpg",
+        "gt": "receipt-02/p1.gt.txt",
+        "gt_meta": "receipt-02/p1.gt.json",
+        "width": 455,
+        "height": 1082
+      }
+    ],
+    "fields": "receipt-02/fields.json",
+    "pdf": "receipt-02/doc.pdf"
+  },
+  {
+    "id": "receipt-03",
+    "type": "receipt",
+    "title": "Kvittering Hus & Hage Ørsta",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "receipt-03/p1.png",
+        "degraded": "receipt-03/p1.degraded.jpg",
+        "gt": "receipt-03/p1.gt.txt",
+        "gt_meta": "receipt-03/p1.gt.json",
+        "width": 455,
+        "height": 1168
+      }
+    ],
+    "fields": "receipt-03/fields.json",
+    "pdf": "receipt-03/doc.pdf"
+  },
+  {
+    "id": "receipt-04",
+    "type": "receipt",
+    "title": "Kvittering Nærbutikken Solsiden",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "receipt-04/p1.png",
+        "degraded": "receipt-04/p1.degraded.jpg",
+        "gt": "receipt-04/p1.gt.txt",
+        "gt_meta": "receipt-04/p1.gt.json",
+        "width": 455,
+        "height": 964
+      }
+    ],
+    "fields": "receipt-04/fields.json",
+    "pdf": "receipt-04/doc.pdf"
+  },
+  {
+    "id": "receipt-05",
+    "type": "receipt",
+    "title": "Kvittering Grønt & Godt Torget",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "receipt-05/p1.png",
+        "degraded": "receipt-05/p1.degraded.jpg",
+        "gt": "receipt-05/p1.gt.txt",
+        "gt_meta": "receipt-05/p1.gt.json",
+        "width": 455,
+        "height": 1082
+      }
+    ],
+    "fields": "receipt-05/fields.json",
+    "pdf": "receipt-05/doc.pdf"
+  },
+  {
+    "id": "bank_statement-00",
+    "type": "bank_statement",
+    "title": "Kontoutskrift juni 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "bank_statement-00/p1.png",
+        "degraded": "bank_statement-00/p1.degraded.jpg",
+        "gt": "bank_statement-00/p1.gt.txt",
+        "gt_meta": "bank_statement-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "bank_statement-00/fields.json",
+    "pdf": "bank_statement-00/doc.pdf"
+  },
+  {
+    "id": "bank_statement-01",
+    "type": "bank_statement",
+    "title": "Kontoutskrift august 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "bank_statement-01/p1.png",
+        "degraded": "bank_statement-01/p1.degraded.jpg",
+        "gt": "bank_statement-01/p1.gt.txt",
+        "gt_meta": "bank_statement-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "bank_statement-01/fields.json",
+    "pdf": "bank_statement-01/doc.pdf"
+  },
+  {
+    "id": "bank_statement-02",
+    "type": "bank_statement",
+    "title": "Kontoutskrift april 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "bank_statement-02/p1.png",
+        "degraded": "bank_statement-02/p1.degraded.jpg",
+        "gt": "bank_statement-02/p1.gt.txt",
+        "gt_meta": "bank_statement-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "bank_statement-02/fields.json",
+    "pdf": "bank_statement-02/doc.pdf"
+  },
+  {
+    "id": "bank_statement-03",
+    "type": "bank_statement",
+    "title": "Kontoutskrift juni 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "bank_statement-03/p1.png",
+        "degraded": "bank_statement-03/p1.degraded.jpg",
+        "gt": "bank_statement-03/p1.gt.txt",
+        "gt_meta": "bank_statement-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "bank_statement-03/fields.json",
+    "pdf": "bank_statement-03/doc.pdf"
+  },
+  {
+    "id": "bank_statement-04",
+    "type": "bank_statement",
+    "title": "Kontoutskrift juli 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "bank_statement-04/p1.png",
+        "degraded": "bank_statement-04/p1.degraded.jpg",
+        "gt": "bank_statement-04/p1.gt.txt",
+        "gt_meta": "bank_statement-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "bank_statement-04/fields.json",
+    "pdf": "bank_statement-04/doc.pdf"
+  },
+  {
+    "id": "bank_statement-05",
+    "type": "bank_statement",
+    "title": "Kontoutskrift april 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "bank_statement-05/p1.png",
+        "degraded": "bank_statement-05/p1.degraded.jpg",
+        "gt": "bank_statement-05/p1.gt.txt",
+        "gt_meta": "bank_statement-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "bank_statement-05/fields.json",
+    "pdf": "bank_statement-05/doc.pdf"
+  },
+  {
+    "id": "holiday_survey-00",
+    "type": "holiday_survey",
+    "title": "Ferieundersøkelse 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "holiday_survey-00/p1.png",
+        "degraded": "holiday_survey-00/p1.degraded.jpg",
+        "gt": "holiday_survey-00/p1.gt.txt",
+        "gt_meta": "holiday_survey-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "holiday_survey-00/fields.json",
+    "pdf": "holiday_survey-00/doc.pdf"
+  },
+  {
+    "id": "holiday_survey-01",
+    "type": "holiday_survey",
+    "title": "Ferieundersøkelse 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "holiday_survey-01/p1.png",
+        "degraded": "holiday_survey-01/p1.degraded.jpg",
+        "gt": "holiday_survey-01/p1.gt.txt",
+        "gt_meta": "holiday_survey-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "holiday_survey-01/fields.json",
+    "pdf": "holiday_survey-01/doc.pdf"
+  },
+  {
+    "id": "holiday_survey-02",
+    "type": "holiday_survey",
+    "title": "Ferieundersøkelse 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "holiday_survey-02/p1.png",
+        "degraded": "holiday_survey-02/p1.degraded.jpg",
+        "gt": "holiday_survey-02/p1.gt.txt",
+        "gt_meta": "holiday_survey-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "holiday_survey-02/fields.json",
+    "pdf": "holiday_survey-02/doc.pdf"
+  },
+  {
+    "id": "holiday_survey-03",
+    "type": "holiday_survey",
+    "title": "Ferieundersøkelse 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "holiday_survey-03/p1.png",
+        "degraded": "holiday_survey-03/p1.degraded.jpg",
+        "gt": "holiday_survey-03/p1.gt.txt",
+        "gt_meta": "holiday_survey-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "holiday_survey-03/fields.json",
+    "pdf": "holiday_survey-03/doc.pdf"
+  },
+  {
+    "id": "holiday_survey-04",
+    "type": "holiday_survey",
+    "title": "Ferieundersøkelse 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "holiday_survey-04/p1.png",
+        "degraded": "holiday_survey-04/p1.degraded.jpg",
+        "gt": "holiday_survey-04/p1.gt.txt",
+        "gt_meta": "holiday_survey-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "holiday_survey-04/fields.json",
+    "pdf": "holiday_survey-04/doc.pdf"
+  },
+  {
+    "id": "holiday_survey-05",
+    "type": "holiday_survey",
+    "title": "Ferieundersøkelse 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "holiday_survey-05/p1.png",
+        "degraded": "holiday_survey-05/p1.degraded.jpg",
+        "gt": "holiday_survey-05/p1.gt.txt",
+        "gt_meta": "holiday_survey-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "holiday_survey-05/fields.json",
+    "pdf": "holiday_survey-05/doc.pdf"
+  },
+  {
+    "id": "invoice-00",
+    "type": "invoice",
+    "title": "Faktura nr. 81271",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "invoice-00/p1.png",
+        "degraded": "invoice-00/p1.degraded.jpg",
+        "gt": "invoice-00/p1.gt.txt",
+        "gt_meta": "invoice-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "invoice-00/fields.json",
+    "pdf": "invoice-00/doc.pdf"
+  },
+  {
+    "id": "invoice-01",
+    "type": "invoice",
+    "title": "Faktura nr. 77399",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "invoice-01/p1.png",
+        "degraded": "invoice-01/p1.degraded.jpg",
+        "gt": "invoice-01/p1.gt.txt",
+        "gt_meta": "invoice-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "invoice-01/fields.json",
+    "pdf": "invoice-01/doc.pdf"
+  },
+  {
+    "id": "invoice-02",
+    "type": "invoice",
+    "title": "Faktura nr. 46789",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "invoice-02/p1.png",
+        "degraded": "invoice-02/p1.degraded.jpg",
+        "gt": "invoice-02/p1.gt.txt",
+        "gt_meta": "invoice-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "invoice-02/fields.json",
+    "pdf": "invoice-02/doc.pdf"
+  },
+  {
+    "id": "invoice-03",
+    "type": "invoice",
+    "title": "Faktura nr. 74878",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "invoice-03/p1.png",
+        "degraded": "invoice-03/p1.degraded.jpg",
+        "gt": "invoice-03/p1.gt.txt",
+        "gt_meta": "invoice-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "invoice-03/fields.json",
+    "pdf": "invoice-03/doc.pdf"
+  },
+  {
+    "id": "invoice-04",
+    "type": "invoice",
+    "title": "Faktura nr. 56850",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "invoice-04/p1.png",
+        "degraded": "invoice-04/p1.degraded.jpg",
+        "gt": "invoice-04/p1.gt.txt",
+        "gt_meta": "invoice-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "invoice-04/fields.json",
+    "pdf": "invoice-04/doc.pdf"
+  },
+  {
+    "id": "invoice-05",
+    "type": "invoice",
+    "title": "Faktura nr. 60102",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "invoice-05/p1.png",
+        "degraded": "invoice-05/p1.degraded.jpg",
+        "gt": "invoice-05/p1.gt.txt",
+        "gt_meta": "invoice-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "invoice-05/fields.json",
+    "pdf": "invoice-05/doc.pdf"
+  },
+  {
+    "id": "payslip-00",
+    "type": "payslip",
+    "title": "Lønnsslipp april 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "payslip-00/p1.png",
+        "degraded": "payslip-00/p1.degraded.jpg",
+        "gt": "payslip-00/p1.gt.txt",
+        "gt_meta": "payslip-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "payslip-00/fields.json",
+    "pdf": "payslip-00/doc.pdf"
+  },
+  {
+    "id": "payslip-01",
+    "type": "payslip",
+    "title": "Lønnsslipp november 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "payslip-01/p1.png",
+        "degraded": "payslip-01/p1.degraded.jpg",
+        "gt": "payslip-01/p1.gt.txt",
+        "gt_meta": "payslip-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "payslip-01/fields.json",
+    "pdf": "payslip-01/doc.pdf"
+  },
+  {
+    "id": "payslip-02",
+    "type": "payslip",
+    "title": "Lønnsslipp februar 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "payslip-02/p1.png",
+        "degraded": "payslip-02/p1.degraded.jpg",
+        "gt": "payslip-02/p1.gt.txt",
+        "gt_meta": "payslip-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "payslip-02/fields.json",
+    "pdf": "payslip-02/doc.pdf"
+  },
+  {
+    "id": "payslip-03",
+    "type": "payslip",
+    "title": "Lønnsslipp juli 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "payslip-03/p1.png",
+        "degraded": "payslip-03/p1.degraded.jpg",
+        "gt": "payslip-03/p1.gt.txt",
+        "gt_meta": "payslip-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "payslip-03/fields.json",
+    "pdf": "payslip-03/doc.pdf"
+  },
+  {
+    "id": "payslip-04",
+    "type": "payslip",
+    "title": "Lønnsslipp september 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "payslip-04/p1.png",
+        "degraded": "payslip-04/p1.degraded.jpg",
+        "gt": "payslip-04/p1.gt.txt",
+        "gt_meta": "payslip-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "payslip-04/fields.json",
+    "pdf": "payslip-04/doc.pdf"
+  },
+  {
+    "id": "payslip-05",
+    "type": "payslip",
+    "title": "Lønnsslipp september 2026",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "payslip-05/p1.png",
+        "degraded": "payslip-05/p1.degraded.jpg",
+        "gt": "payslip-05/p1.gt.txt",
+        "gt_meta": "payslip-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "payslip-05/fields.json",
+    "pdf": "payslip-05/doc.pdf"
+  },
+  {
+    "id": "rental_contract-00",
+    "type": "rental_contract",
+    "title": "Husleiekontrakt",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "rental_contract-00/p1.png",
+        "degraded": "rental_contract-00/p1.degraded.jpg",
+        "gt": "rental_contract-00/p1.gt.txt",
+        "gt_meta": "rental_contract-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      },
+      {
+        "n": 2,
+        "clean": "rental_contract-00/p2.png",
+        "degraded": "rental_contract-00/p2.degraded.jpg",
+        "gt": "rental_contract-00/p2.gt.txt",
+        "gt_meta": "rental_contract-00/p2.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "rental_contract-00/fields.json",
+    "pdf": "rental_contract-00/doc.pdf"
+  },
+  {
+    "id": "rental_contract-01",
+    "type": "rental_contract",
+    "title": "Husleiekontrakt",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "rental_contract-01/p1.png",
+        "degraded": "rental_contract-01/p1.degraded.jpg",
+        "gt": "rental_contract-01/p1.gt.txt",
+        "gt_meta": "rental_contract-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      },
+      {
+        "n": 2,
+        "clean": "rental_contract-01/p2.png",
+        "degraded": "rental_contract-01/p2.degraded.jpg",
+        "gt": "rental_contract-01/p2.gt.txt",
+        "gt_meta": "rental_contract-01/p2.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "rental_contract-01/fields.json",
+    "pdf": "rental_contract-01/doc.pdf"
+  },
+  {
+    "id": "rental_contract-02",
+    "type": "rental_contract",
+    "title": "Husleiekontrakt",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "rental_contract-02/p1.png",
+        "degraded": "rental_contract-02/p1.degraded.jpg",
+        "gt": "rental_contract-02/p1.gt.txt",
+        "gt_meta": "rental_contract-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      },
+      {
+        "n": 2,
+        "clean": "rental_contract-02/p2.png",
+        "degraded": "rental_contract-02/p2.degraded.jpg",
+        "gt": "rental_contract-02/p2.gt.txt",
+        "gt_meta": "rental_contract-02/p2.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "rental_contract-02/fields.json",
+    "pdf": "rental_contract-02/doc.pdf"
+  },
+  {
+    "id": "rental_contract-03",
+    "type": "rental_contract",
+    "title": "Husleiekontrakt",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "rental_contract-03/p1.png",
+        "degraded": "rental_contract-03/p1.degraded.jpg",
+        "gt": "rental_contract-03/p1.gt.txt",
+        "gt_meta": "rental_contract-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      },
+      {
+        "n": 2,
+        "clean": "rental_contract-03/p2.png",
+        "degraded": "rental_contract-03/p2.degraded.jpg",
+        "gt": "rental_contract-03/p2.gt.txt",
+        "gt_meta": "rental_contract-03/p2.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "rental_contract-03/fields.json",
+    "pdf": "rental_contract-03/doc.pdf"
+  },
+  {
+    "id": "rental_contract-04",
+    "type": "rental_contract",
+    "title": "Husleiekontrakt",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "rental_contract-04/p1.png",
+        "degraded": "rental_contract-04/p1.degraded.jpg",
+        "gt": "rental_contract-04/p1.gt.txt",
+        "gt_meta": "rental_contract-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      },
+      {
+        "n": 2,
+        "clean": "rental_contract-04/p2.png",
+        "degraded": "rental_contract-04/p2.degraded.jpg",
+        "gt": "rental_contract-04/p2.gt.txt",
+        "gt_meta": "rental_contract-04/p2.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "rental_contract-04/fields.json",
+    "pdf": "rental_contract-04/doc.pdf"
+  },
+  {
+    "id": "rental_contract-05",
+    "type": "rental_contract",
+    "title": "Husleiekontrakt",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "rental_contract-05/p1.png",
+        "degraded": "rental_contract-05/p1.degraded.jpg",
+        "gt": "rental_contract-05/p1.gt.txt",
+        "gt_meta": "rental_contract-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      },
+      {
+        "n": 2,
+        "clean": "rental_contract-05/p2.png",
+        "degraded": "rental_contract-05/p2.degraded.jpg",
+        "gt": "rental_contract-05/p2.gt.txt",
+        "gt_meta": "rental_contract-05/p2.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "rental_contract-05/fields.json",
+    "pdf": "rental_contract-05/doc.pdf"
+  },
+  {
+    "id": "newsletter-00",
+    "type": "newsletter",
+    "title": "Nytt fra Kvernhuset Borettslag nr. 4",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "newsletter-00/p1.png",
+        "degraded": "newsletter-00/p1.degraded.jpg",
+        "gt": "newsletter-00/p1.gt.txt",
+        "gt_meta": "newsletter-00/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "newsletter-00/fields.json",
+    "pdf": "newsletter-00/doc.pdf"
+  },
+  {
+    "id": "newsletter-01",
+    "type": "newsletter",
+    "title": "Nytt fra Kvernhuset Borettslag nr. 4",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "newsletter-01/p1.png",
+        "degraded": "newsletter-01/p1.degraded.jpg",
+        "gt": "newsletter-01/p1.gt.txt",
+        "gt_meta": "newsletter-01/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "newsletter-01/fields.json",
+    "pdf": "newsletter-01/doc.pdf"
+  },
+  {
+    "id": "newsletter-02",
+    "type": "newsletter",
+    "title": "Nytt fra Tårnåsen Borettslag nr. 6",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "newsletter-02/p1.png",
+        "degraded": "newsletter-02/p1.degraded.jpg",
+        "gt": "newsletter-02/p1.gt.txt",
+        "gt_meta": "newsletter-02/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "newsletter-02/fields.json",
+    "pdf": "newsletter-02/doc.pdf"
+  },
+  {
+    "id": "newsletter-03",
+    "type": "newsletter",
+    "title": "Nytt fra Elvebredden Borettslag nr. 3",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "newsletter-03/p1.png",
+        "degraded": "newsletter-03/p1.degraded.jpg",
+        "gt": "newsletter-03/p1.gt.txt",
+        "gt_meta": "newsletter-03/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "newsletter-03/fields.json",
+    "pdf": "newsletter-03/doc.pdf"
+  },
+  {
+    "id": "newsletter-04",
+    "type": "newsletter",
+    "title": "Nytt fra Tårnåsen Borettslag nr. 4",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "newsletter-04/p1.png",
+        "degraded": "newsletter-04/p1.degraded.jpg",
+        "gt": "newsletter-04/p1.gt.txt",
+        "gt_meta": "newsletter-04/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "newsletter-04/fields.json",
+    "pdf": "newsletter-04/doc.pdf"
+  },
+  {
+    "id": "newsletter-05",
+    "type": "newsletter",
+    "title": "Nytt fra Kvernhuset Borettslag nr. 6",
+    "language": "nb",
+    "pages": [
+      {
+        "n": 1,
+        "clean": "newsletter-05/p1.png",
+        "degraded": "newsletter-05/p1.degraded.jpg",
+        "gt": "newsletter-05/p1.gt.txt",
+        "gt_meta": "newsletter-05/p1.gt.json",
+        "width": 1190,
+        "height": 1684
+      }
+    ],
+    "fields": "newsletter-05/fields.json",
+    "pdf": "newsletter-05/doc.pdf"
+  }
+]

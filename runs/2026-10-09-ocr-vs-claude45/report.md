@@ -17,14 +17,14 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 | page images → Claude Sonnet 4.5 (2025-09-29) (`image->agent`) | 97.0% | 83.0% | 3.4 | $7.44 |
 | Unlimited-OCR text → Claude Sonnet 4.5 (2025-09-29) (`unlimited-ocr->agent`) | 95.7% | 81.5% | 9.0 | $5.87 |
 
-| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages |
-|---|---|---|---|---|---|
-| `haiku-4.5` | clean | 0.033 | 99.3% | 3 | 0 |
-| `haiku-4.5` | degraded | 0.081 | 87.1% | 124 | 1 |
-| `sonnet-4.5` | clean | 0.002 | 99.8% | 2 | 0 |
-| `sonnet-4.5` | degraded | 0.079 | 87.8% | 132 | 1 |
-| `unlimited-ocr` | clean | 0.006 | 99.5% | 1 | 0 |
-| `unlimited-ocr` | degraded | 0.043 | 90.8% | 85 | 0 |
+| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages | pages at token limit |
+|---|---|---|---|---|---|---|
+| `haiku-4.5` | clean | 0.033 | 99.3% | 3 | 0 | 0 |
+| `haiku-4.5` | degraded | 0.081 | 87.1% | 124 | 1 | 1 |
+| `sonnet-4.5` | clean | 0.002 | 99.8% | 2 | 0 | 0 |
+| `sonnet-4.5` | degraded | 0.079 | 87.8% | 132 | 1 | 2 |
+| `unlimited-ocr` | clean | 0.006 | 99.5% | 1 | 0 | 0 |
+| `unlimited-ocr` | degraded | 0.043 | 90.8% | 85 | 0 | 0 |
 
 | reader | p50 s/page (one at a time) | max pages/min (at concurrency) |
 |---|---|---|
@@ -167,6 +167,7 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 - **CER**: character error rate after removing Markdown/HTML formatting; 0 = perfect, capped at 1 per page (a failed or runaway page). Sensitive to reading order.
 - **CER median**: the typical page; the mean also counts each failed or runaway page as 1
 - **runaway**: pages where the output was more than 3x the page length (a repetition loop)
+- **token limit**: pages where the model used its whole output-token budget, so the text is cut off or empty (an empty one is a failed page, CER 1)
 - **word recall / precision**: share of the page's words found / share of output words that are on the page; ignores order
 - **number recall**: share of the amounts, dates, account numbers etc. on the page that appear in the output
 - **invented numbers**: numbers of 3+ characters in the output that are not on the page
@@ -193,14 +194,14 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 
 ### Transcription quality (stage 1)
 
-| Backend | Variant | Pages | Coverage | CER mean | CER median | Runaway | Word recall | Number recall | Numbers missing | Invented numbers |
-|---|---|---|---|---|---|---|---|---|---|---|
-| haiku-4.5 | clean | 54 | 100.0% | 0.038 | 0.033 | 0 | 97.5% | 99.3% | 3 | 3 |
-| haiku-4.5 | degraded | 54 | 100.0% | 0.110 | 0.081 | 1 | 88.0% | 87.1% | 130 | 124 |
-| sonnet-4.5 | clean | 54 | 100.0% | 0.028 | 0.002 | 0 | 99.6% | 99.8% | 1 | 2 |
-| sonnet-4.5 | degraded | 54 | 100.0% | 0.160 | 0.079 | 1 | 91.9% | 87.8% | 132 | 410 |
-| unlimited-ocr | clean | 54 | 100.0% | 0.012 | 0.006 | 0 | 97.3% | 99.5% | 2 | 1 |
-| unlimited-ocr | degraded | 54 | 100.0% | 0.075 | 0.043 | 0 | 85.6% | 90.8% | 135 | 85 |
+| Backend | Variant | Pages | Coverage | CER mean | CER median | Runaway | Token limit | Word recall | Number recall | Numbers missing | Invented numbers |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| haiku-4.5 | clean | 54 | 100.0% | 0.038 | 0.033 | 0 | 0 | 97.5% | 99.3% | 3 | 3 |
+| haiku-4.5 | degraded | 54 | 100.0% | 0.110 | 0.081 | 1 | 1 | 88.0% | 87.1% | 130 | 124 |
+| sonnet-4.5 | clean | 54 | 100.0% | 0.028 | 0.002 | 0 | 0 | 99.6% | 99.8% | 1 | 2 |
+| sonnet-4.5 | degraded | 54 | 100.0% | 0.160 | 0.079 | 1 | 2 | 91.9% | 87.8% | 132 | 410 |
+| unlimited-ocr | clean | 54 | 100.0% | 0.012 | 0.006 | 0 | 0 | 97.3% | 99.5% | 2 | 1 |
+| unlimited-ocr | degraded | 54 | 100.0% | 0.075 | 0.043 | 0 | 0 | 85.6% | 90.8% | 135 | 85 |
 
 ### Field extraction (stage 2)
 

@@ -1,0 +1,249 @@
+{
+ "schema_version": 3,
+ "id": "2026-10-14-variation-claude55",
+ "plan": "variation-claude55",
+ "plan_description": "Run-to-run variation of Claude Sonnet 5.5 and Haiku 5.5 (the gateway accepts only temperature 1): every page and document 3 times with identical settings, one request at a time.",
+ "plan_items": [
+  {
+   "backend": "sonnet-5.5",
+   "concurrency": 1,
+   "repeat": 3
+  },
+  {
+   "backend": "haiku-5.5",
+   "concurrency": 1,
+   "repeat": 3
+  }
+ ],
+ "report": {
+  "hide_backends": []
+ },
+ "created": "2026-10-14T22:58:03",
+ "git_commit": "2deb4c3",
+ "region": "eu-north-1",
+ "runner": {
+  "mode": "fargate",
+  "cpu": 2048,
+  "memory": 4096
+ },
+ "documents": {
+  "count": 48,
+  "pages": 54,
+  "page_images": 108,
+  "types": {
+   "letter": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Personal letter written by a private person",
+    "fields": [
+     "sender_name",
+     "date",
+     "recipient",
+     "amounts",
+     "phone"
+    ]
+   },
+   "receipt": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Shop receipt (kvittering) from a store",
+    "fields": [
+     "merchant",
+     "date",
+     "time",
+     "total",
+     "vat",
+     "card_last4",
+     "item_count"
+    ]
+   },
+   "bank_statement": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Monthly bank account statement for a private customer",
+    "fields": [
+     "account_number",
+     "period_start",
+     "period_end",
+     "opening_balance",
+     "closing_balance",
+     "transaction_count"
+    ]
+   },
+   "holiday_survey": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Filled-in holiday preferences questionnaire (ferieundersøkelse)",
+    "fields": [
+     "name",
+     "destination",
+     "date_from",
+     "date_to",
+     "travellers",
+     "budget_per_person",
+     "activities",
+     "accommodation",
+     "pets",
+     "signed_date"
+    ]
+   },
+   "invoice": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Invoice from a company to a private customer",
+    "fields": [
+     "invoice_number",
+     "invoice_date",
+     "due_date",
+     "kid",
+     "account_number",
+     "subtotal",
+     "vat",
+     "total_due"
+    ]
+   },
+   "payslip": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Monthly payslip from an employer to an employee",
+    "fields": [
+     "employer",
+     "employee",
+     "period",
+     "gross_pay",
+     "tax_withheld",
+     "net_pay",
+     "payment_date",
+     "account_number"
+    ]
+   },
+   "rental_contract": {
+    "docs": 6,
+    "pages": 12,
+    "description": "Residential tenancy agreement between a landlord and a tenant (2 pages)",
+    "fields": [
+     "landlord",
+     "tenant",
+     "property_address",
+     "start_date",
+     "monthly_rent",
+     "deposit",
+     "notice_period"
+    ]
+   },
+   "newsletter": {
+    "docs": 6,
+    "pages": 6,
+    "description": "Newsletter from a housing co-op board to residents",
+    "fields": [
+     "issue_date",
+     "meeting_date",
+     "new_fee",
+     "dugnad_date"
+    ]
+   }
+  },
+  "seed": 7,
+  "per_type": 6
+ },
+ "backends": {
+  "sonnet-5.5": {
+   "kind": "openai_compatible",
+   "label": null,
+   "postprocess": [],
+   "model": "anthropic.claude-sonnet-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "reasoning_effort": null,
+   "via": "OpenAI-compatible gateway"
+  },
+  "haiku-5.5": {
+   "kind": "openai_compatible",
+   "label": null,
+   "postprocess": [],
+   "model": "anthropic.claude-haiku-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "reasoning_effort": null,
+   "via": "OpenAI-compatible gateway"
+  },
+  "sonnet-4.5": {
+   "kind": "openai_compatible",
+   "label": null,
+   "postprocess": [],
+   "model": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+   "price_per_mtok": {
+    "input": 3.0,
+    "output": 15.0
+   },
+   "temperature": 0.0,
+   "reasoning_effort": null,
+   "via": "OpenAI-compatible gateway"
+  },
+  "opus-5.5": {
+   "kind": "openai_compatible",
+   "label": null,
+   "postprocess": [],
+   "model": "anthropic.claude-opus-5-5",
+   "price_per_mtok": null,
+   "temperature": 1,
+   "reasoning_effort": "medium",
+   "via": "OpenAI-compatible gateway"
+  }
+ },
+ "prompts": {
+  "transcribe": {
+   "system": "You are a precise OCR engine. You transcribe documents; you never summarise, translate or correct them.",
+   "user": "Transcribe this document page to Markdown. Reproduce all text exactly as written, in reading order, including every number, date, account number and table (as Markdown tables). Do not summarise, translate, correct or add anything. Output only the transcription.",
+   "max_tokens": 8192
+  },
+  "extract": {
+   "system": "You extract structured data from documents. You copy values exactly as they appear in the document (same number formatting, same spelling). You answer with one JSON object and nothing else.",
+   "rules": "Copy values verbatim. For list fields, return every matching item. If a value is genuinely absent, omit the key. Reply with JSON only.",
+   "max_tokens": 2048
+  },
+  "summarize": {
+   "system": "You are a careful technical analyst. An engineering team must choose how to read documents. You are given key facts that were computed exactly from a benchmark. Your job is to interpret them: explain what they mean, the trade-offs, and what to choose for which goal. You never compute new numbers.",
+   "max_tokens": 12000,
+   "temperature": 0.2
+  }
+ },
+ "transcribers": [
+  "sonnet-5.5",
+  "haiku-5.5"
+ ],
+ "extraction": {
+  "agent": "sonnet-4.5",
+  "pipelines": [
+   "image->sonnet-5.5",
+   "image->haiku-5.5"
+  ],
+  "agents": {
+   "image->sonnet-5.5": "sonnet-5.5",
+   "image->haiku-5.5": "haiku-5.5"
+  },
+  "repeat": 3
+ },
+ "summary": {
+  "agent": "opus-5.5",
+  "temperature": 1
+ },
+ "stages": {
+  "transcribe": {
+   "finished": "2026-10-14T21:49:15",
+   "seconds": 2992.4
+  },
+  "extract": {
+   "finished": "2026-10-14T21:51:31",
+   "seconds": 111.6
+  },
+  "score": {
+   "finished": "2026-10-14T21:51:51",
+   "seconds": 1.3
+  },
+  "summarize": {
+   "finished": "2026-10-14T22:04:58",
+   "seconds": 16.6
+  }
+ }
+}
