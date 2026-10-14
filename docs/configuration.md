@@ -54,6 +54,12 @@ Terms:
 | `runner.assign_public_ip` | Give the Fargate task a public IP (default `false`; only for public subnets without a NAT) |
 | `runner.base_image` | Python 3.12 base for the bench image |
 | `runner.extra_ca_pem` | PEM baked into the bench image and trusted for outbound TLS |
+| `retention.runs_days` | Days before the run copies under `s3://<p>-artifacts/runs/` expire (default 60). `0` = never. Weights (`models/`) never expire. The committed `runs/<id>/` folders are not affected; an expired run can still be resumed in Fargate mode, its next upload restores it |
+| `retention.log_days` | CloudWatch retention of the bench task and endpoint logs (default 14). Must be a value CloudWatch accepts: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288 or 3653 |
+| `retention.ecr_untagged_days` | Days after which images a rebuild left untagged expire in both ECR repos (default 14, >= 1). A task definition or SageMaker model still pinned to such a digest can't start after that: `just images` applies right after building, and `ocrbench run` refuses a Fargate run while the task definition pins an older bench image than `.state/<p>/images.json` |
+| `retention.ecr_keep_mirrors` | Newest source-image mirrors (`mirror-*` tags) kept in `<p>-vllm` (default 2, >= 1); an expired one is mirrored again by the next `just images` |
+
+`retention.*` is applied by Terraform: re-run `just deploy` after changing it.
 
 `runner.cpu`, `memory`, `max_minutes` and `stop_grace_seconds` are fixed in the task definition when
 Terraform applies. In `fargate` mode `ocrbench run` refuses to start while they differ from what

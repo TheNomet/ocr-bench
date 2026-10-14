@@ -64,11 +64,16 @@ def _pinned_images(cfg: Config) -> dict:
 def _models_to_create(cfg: Config, names: list[str], with_model: bool) -> list[str]:
     """Self-hosted backends whose SageMaker model Terraform creates. --with-model: all of them (images and
     weights are in place). Without it, the ones the previous render had, so a plain apply (the first step of
-    `just deploy`) never destroys a model, and a backend just added waits for its image and weights."""
+    `just deploy`) never destroys a model, and a backend just added waits for its image and weights. With no
+    previous render on this machine (the state may be remote), the ones whose model exists in SageMaker."""
     if with_model:
         return names
     p = state_dir(cfg) / "terraform.tfvars.json"
-    prev = json.loads(p.read_text()) if p.exists() else {}
+    if not p.exists():
+        from . import aws
+
+        return aws.existing_models(cfg, names)
+    prev = json.loads(p.read_text())
     had = prev.get("create_selfhosted_models") or []
     if had is True:  # rendered before this was a list: one flag for every backend
         had = list(prev.get("selfhosted") or {})
@@ -82,6 +87,17 @@ _TASK_DEFINITION_VARS = {
     "runner_max_minutes": "max_minutes",
     "runner_stop_grace_seconds": "stop_grace_seconds",
 }
+
+# How long the stack keeps things (tfvars name -> retention.<key>)
+_RETENTION_VARS = {
+    "retention_runs_days": "runs_days",
+    "retention_log_days": "log_days",
+    "retention_ecr_untagged_days": "ecr_untagged_days",
+    "retention_ecr_keep_mirrors": "ecr_keep_mirrors",
+}
+
+# Local files a fetch removes when S3 no longer has them (a later stage replaced them there)
+_PRUNE_ON_FETCH = ("*.partial.jsonl",)
 
 
 def cmd_tf_vars(cfg: Config, _a) -> None:
@@ -111,6 +127,7 @@ def cmd_tf_vars(cfg: Config, _a) -> None:
         "create_cidr": net.get("create", {}).get("cidr", "10.42.0.0/24"),
         "ecs_cluster": cfg["ecs"]["cluster"],
         **{var: int(r["runner"][key]) for var, key in _TASK_DEFINITION_VARS.items()},
+        **{var: int(r["retention"][key]) for var, key in _RETENTION_VARS.items()},
         "create_selfhosted_models": _models_to_create(cfg, list(images["selfhosted"]), bool(_a.with_model)),
         **images,
         "kms_sign_key_arns": sorted(set(kms_arns)),
@@ -337,6 +354,22 @@ def _check_task_definition(cfg: Config) -> None:
             + "\n  ".join(diff)
             + "\napply it first (`just deploy`), so the run records what it actually ran with"
         )
+    _check_bench_image(cfg, deployed)
+
+
+def _check_bench_image(cfg: Config, deployed: dict) -> None:
+    """A bench image built since the last render isn't in the task definition, which still pins the previous
+    digest: that one is now untagged and ECR expires it (retention.ecr_untagged_days), after which the task
+    can't start. Unknown here (no images.json: built elsewhere) is left to ECS."""
+    from .images import recorded
+
+    built = recorded(cfg).get("bench_image")
+    if built and built != deployed.get("bench_image_ref"):
+        raise SystemExit(
+            f"the bench task definition runs {deployed.get('bench_image_ref') or 'the latest tag'}, but the "
+            f"last build is {built} (.state/{cfg.prefix}/images.json): run `just images` or `just deploy` "
+            "to point the task at it"
+        )
 
 
 def cmd_run(cfg: Config, a) -> None:
@@ -394,7 +427,7 @@ def cmd_run(cfg: Config, a) -> None:
             ",".join(stages),
         ]
         _, code = aws.run_task(cfg, o, args)
-        print(f"fetched {aws.s3_sync_down(cfg.bucket, f'runs/{d.name}', d)} files -> {d}")
+        print(f"fetched {aws.s3_sync_down(cfg.bucket, f'runs/{d.name}', d, prune=_PRUNE_ON_FETCH)} files -> {d}")
         if code != 0:
             raise SystemExit(f"bench task exited with {code}")
     _report(cfg, [d.name])
@@ -404,7 +437,7 @@ def cmd_fetch(cfg: Config, a) -> None:
     from . import aws, runs
 
     d = runs.run_dir(a.run)
-    print(f"fetched {aws.s3_sync_down(cfg.bucket, f'runs/{a.run}', d)} files -> {d}")
+    print(f"fetched {aws.s3_sync_down(cfg.bucket, f'runs/{a.run}', d, prune=_PRUNE_ON_FETCH)} files -> {d}")
 
 
 def _report(cfg: Config, ids: list[str]) -> None:

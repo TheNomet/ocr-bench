@@ -86,15 +86,19 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
 
 resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
-  # Run copies and docs expire; model weights are kept for as long as the stack exists.
-  rule {
-    id     = "expire-runs"
-    status = "Enabled"
-    filter {
-      prefix = "runs/"
-    }
-    expiration {
-      days = 60
+  # Run copies and docs expire (retention.runs_days; 0 = never); model weights are kept for as long as the
+  # stack exists.
+  dynamic "rule" {
+    for_each = var.retention_runs_days > 0 ? [var.retention_runs_days] : []
+    content {
+      id     = "expire-runs"
+      status = "Enabled"
+      filter {
+        prefix = "runs/"
+      }
+      expiration {
+        days = rule.value
+      }
     }
   }
   rule {
@@ -134,8 +138,9 @@ resource "aws_ecr_repository" "repo" {
 }
 
 # Rebuilds move the tags, leaving the previous images untagged; deployments pin digests and every
-# rebuild re-applies, so untagged images can go. Mirrors of source images (mirror-<digest>, vllm repo)
-# are big: keep the two newest (an expired one is simply mirrored again by the next `just images`).
+# rebuild re-applies, so untagged images can go (retention.ecr_untagged_days). Mirrors of source images
+# (mirror-<digest>, vllm repo) are big: keep the newest retention.ecr_keep_mirrors (an expired one is simply
+# mirrored again by the next `just images`).
 resource "aws_ecr_lifecycle_policy" "repo" {
   for_each   = aws_ecr_repository.repo
   repository = each.value.name
@@ -143,14 +148,14 @@ resource "aws_ecr_lifecycle_policy" "repo" {
     rules = [
       {
         rulePriority = 1
-        description  = "keep the two newest source-image mirrors"
-        selection    = { tagStatus = "tagged", tagPrefixList = ["mirror-"], countType = "imageCountMoreThan", countNumber = 2 }
+        description  = "keep the ${var.retention_ecr_keep_mirrors == 2 ? "two" : var.retention_ecr_keep_mirrors} newest source-image mirrors" # wording of the original policy
+        selection    = { tagStatus = "tagged", tagPrefixList = ["mirror-"], countType = "imageCountMoreThan", countNumber = var.retention_ecr_keep_mirrors }
         action       = { type = "expire" }
       },
       {
         rulePriority = 2
-        description  = "expire untagged images after 14 days"
-        selection    = { tagStatus = "untagged", countType = "sinceImagePushed", countUnit = "days", countNumber = 14 }
+        description  = "expire untagged images after ${var.retention_ecr_untagged_days} days"
+        selection    = { tagStatus = "untagged", countType = "sinceImagePushed", countUnit = "days", countNumber = var.retention_ecr_untagged_days }
         action       = { type = "expire" }
       },
     ]
@@ -176,7 +181,7 @@ resource "aws_iam_role" "sagemaker" {
 resource "aws_cloudwatch_log_group" "endpoint" {
   for_each          = var.selfhosted
   name              = "/aws/sagemaker/Endpoints/${local.p}-${each.key}"
-  retention_in_days = 14
+  retention_in_days = var.retention_log_days
 }
 
 resource "aws_iam_role_policy" "sagemaker" {
@@ -229,7 +234,7 @@ locals {
 
 resource "aws_cloudwatch_log_group" "bench" {
   name              = "/ecs/${local.p}-bench"
-  retention_in_days = 14
+  retention_in_days = var.retention_log_days
 }
 
 data "aws_iam_policy_document" "ecs_assume" {

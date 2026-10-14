@@ -36,7 +36,7 @@ src/ocrbench/
   reporting.py, report/    report.md, per-run site, experiments index
   images.py                crane-based image builds (one SageMaker image per self-hosted backend, bench runner)
   weights.py               HF snapshot -> S3, SHA-256 verified
-  aws.py                   S3 sync, SageMaker endpoint lifecycle, Fargate run_task, pricing
+  aws.py                   S3 sync (fetch drops local *.partial.jsonl gone from S3), SageMaker endpoints, Fargate, pricing
 infra/terraform/           one root module; network/ submodule for network.mode=create
 justfile                   deploy / run / report / destroy
 .state/<prefix>/           LOCAL: tfvars, outputs.json, local tf state (gitignored)
@@ -53,7 +53,8 @@ site/                      LOCAL build of the site (gitignored); published to th
 2. Terraform creates the bucket, the ECR repos (`<prefix>-vllm`, `<prefix>-bench`), IAM, the
    Fargate task definition and optionally a VPC. Once the images and weights exist, it also
    creates one SageMaker **model** per self-hosted backend listed in `create_selfhosted_models`
-   (a list of backend names; `tf-vars` keeps the previous list so a re-deploy doesn't delete models).
+   (a list of backend names; `tf-vars` keeps the previous list so a re-deploy doesn't delete models; with no
+   local tfvars it keeps the models that exist in SageMaker, and refuses without AWS credentials).
 3. The SageMaker **endpoints** are *not* in Terraform. `ocrbench endpoint up [--backend B]` creates one with
    `InstancePools`, a priority list of GPU types, because single GPU types often have no
    capacity. The AWS provider doesn't support instance pools.
@@ -139,6 +140,9 @@ formatting-sensitive:
 - A GPU endpoint deletes itself after `backends.<name>.sagemaker.max_lifetime_hours`; bench tasks stop at
   `runner.max_minutes`. Images are deployed by digest (`.state/<prefix>/images.json`), the bench
   image installs from `uv.lock` with hashes, and every model file is hash-checked against Hugging Face.
+  `ocrbench run` (Fargate) refuses while `images.json`'s bench digest isn't the deployed one: an
+  un-applied rebuild leaves the pinned digest untagged, and ECR expires it after `retention.ecr_untagged_days`.
+- Retention (S3 `runs/`, CloudWatch logs, ECR untagged images and mirrors) is `retention.*` in the config.
 - Error text is redacted (`redact.py`) before it is written to records.
 - `scripts/public_guard.sh` fails closed (no denylist / bad pattern = error) and also scans file
   names, commit messages and authors (`commit-msg` hook).

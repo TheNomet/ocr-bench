@@ -69,16 +69,25 @@ def s3_sync_up(local: Path, bucket: str, prefix: str, *, delete: bool = False) -
     return n
 
 
-def s3_sync_down(bucket: str, prefix: str, local: Path) -> int:
+def s3_sync_down(bucket: str, prefix: str, local: Path, *, prune: tuple[str, ...] = ()) -> int:
+    """Download new or changed files; never deletes local files, except those matching a `prune` glob
+    (relative to `local`) that S3 doesn't have: leftovers a later stage removed there, e.g. the
+    extractions.partial.jsonl of a killed task. Files that only exist locally (config.yaml, report.md) stay."""
     s3 = boto3.client("s3")
     n = 0
-    for key, o in _objects(s3, bucket, prefix).items():
+    objects = _objects(s3, bucket, prefix)
+    for key, o in objects.items():
         dst = local / key[len(prefix.rstrip("/")) + 1 :]
         if _same(dst, o):
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         s3.download_file(bucket, key, str(dst))
         n += 1
+    for pattern in prune if objects else ():  # an empty prefix (expired, never uploaded) says nothing
+        for f in sorted(local.glob(pattern)) if local.exists() else []:
+            if f.is_file() and f"{prefix.rstrip('/')}/{f.relative_to(local).as_posix()}" not in objects:
+                f.unlink()
+                print(f"removed {f.relative_to(local)} (no longer in s3://{bucket}/{prefix.rstrip('/')}/)")
     return n
 
 
@@ -92,7 +101,7 @@ def _schedule_name(endpoint: str) -> str:
 
 
 def _not_found(e: ClientError) -> bool:
-    """SageMaker reports a missing endpoint as ValidationException "Could not find endpoint ..."."""
+    """SageMaker reports a missing endpoint (or model) as ValidationException "Could not find ..."."""
     err = e.response.get("Error", {})
     return err.get("Code") == "ValidationException" and "could not find" in str(err.get("Message", "")).lower()
 
@@ -304,6 +313,32 @@ def delete_endpoint(cfg: Config, endpoint: str) -> None:
 
 def endpoint_down(cfg: Config, backend: str) -> None:
     delete_endpoint(cfg, cfg.endpoint_name(backend))
+
+
+def existing_models(cfg: Config, backends: list[str]) -> list[str]:
+    """The self-hosted backends whose SageMaker model (<prefix>-<name>-model) exists. For tf-vars on a machine
+    without the last render: rendering none would make the next apply delete them. Fails (SystemExit) rather
+    than guess: without credentials, or on any error other than "not found"."""
+    if not backends:
+        return []
+    if boto3.Session().get_credentials() is None:
+        raise SystemExit(
+            "tf-vars: no previous terraform.tfvars.json here and no AWS credentials to check which SageMaker "
+            "models exist (rendering none would delete them on apply): log in, or use `tf-vars --with-model`"
+        )
+    sm = boto3.client("sagemaker", region_name=cfg.region)
+    out = []
+    for b in backends:
+        try:
+            sm.describe_model(ModelName=cfg.model_name(b))
+        except ClientError as e:
+            if _not_found(e):
+                continue
+            raise SystemExit(f"tf-vars: could not check SageMaker model {cfg.model_name(b)} ({_error(e)})") from e
+        except BotoCoreError as e:
+            raise SystemExit(f"tf-vars: could not check SageMaker model {cfg.model_name(b)} ({_error(e)})") from e
+        out.append(b)
+    return out
 
 
 def stack_endpoints(cfg: Config) -> list[str]:

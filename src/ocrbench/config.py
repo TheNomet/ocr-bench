@@ -188,6 +188,7 @@ DEFAULTS: dict = {
         "base_image": "docker.io/library/python:3.12-slim",
         "extra_ca_pem": None,
     },
+    "retention": {"runs_days": 60, "log_days": 14, "ecr_untagged_days": 14, "ecr_keep_mirrors": 2},
     "bench": {
         "max_retries": 4,
         "extraction": {"concurrency": 8},
@@ -206,6 +207,10 @@ def _merge(base: dict, over: dict) -> dict:
 KINDS = ("selfhosted", "bedrock", "openai_compatible")
 _SELFHOSTED_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,30}")
 _SAGEMAKER_NAME_MAX = 63
+# retention.log_days: the values CloudWatch Logs accepts (0, "never expire", is left out on purpose)
+LOG_RETENTION_DAYS = (
+    1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653,
+)  # fmt: skip
 
 
 def _is_num(v: Any) -> bool:
@@ -276,6 +281,15 @@ def validate(raw: dict, p: Path) -> None:
             raise ValueError(f"{p}: runner.{key} must be an integer > 0, got {run.get(key)!r}")
     if not isinstance(run.get("assign_public_ip"), bool):
         raise ValueError(f"{p}: runner.assign_public_ip must be true or false, got {run.get('assign_public_ip')!r}")
+    ret = raw.get("retention") or {}
+    for key, low in (("runs_days", 0), ("ecr_untagged_days", 1), ("ecr_keep_mirrors", 1)):
+        if not _is_int(ret.get(key)) or ret[key] < low:
+            raise ValueError(f"{p}: retention.{key} must be an integer >= {low}, got {ret.get(key)!r}")
+    if not _is_int(ret.get("log_days")) or ret["log_days"] not in LOG_RETENTION_DAYS:
+        raise ValueError(
+            f"{p}: retention.log_days must be one of CloudWatch's {', '.join(map(str, LOG_RETENTION_DAYS))}, "
+            f"got {ret.get('log_days')!r}"
+        )
     ex = raw["bench"].get("extraction") or {}
     for role, key in (
         ("bench.extraction.agent", ex.get("agent")),

@@ -195,6 +195,7 @@ publish:
     scripts/public_guard.sh dir site
     tmp=$(mktemp -d)
     cp -R site/. "$tmp/"
+    find "$tmp" \( -name .DS_Store -o -name '._*' -o -name Thumbs.db -o -name desktop.ini \) -type f -delete
     touch "$tmp/.nojekyll"
     url=$(git remote get-url origin)
     name=$(git config user.name); email=$(git config user.email)

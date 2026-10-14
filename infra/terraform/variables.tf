@@ -66,6 +66,24 @@ variable "bench_image_tag" {
   default = "latest"
 }
 
+# ---- retention: retention.* in the config (defaults in ocrbench/config.py DEFAULTS), so none here ----
+variable "retention_runs_days" {
+  description = "Days before run copies under s3://<bucket>/runs/ expire; 0 = never"
+  type        = number
+}
+variable "retention_log_days" {
+  description = "CloudWatch retention of the bench task and endpoint logs (a value CloudWatch accepts)"
+  type        = number
+}
+variable "retention_ecr_untagged_days" {
+  description = "Days after which untagged images (left by a rebuild) expire in both ECR repos"
+  type        = number
+}
+variable "retention_ecr_keep_mirrors" {
+  description = "Newest source-image mirrors (mirror-* tags) kept in the vllm repo"
+  type        = number
+}
+
 # ---- self-hosted models ----
 variable "selfhosted" {
   description = "Self-hosted backends (config kind: selfhosted): name -> pinned image (repo@sha256:..., empty = <name>-sagemaker tag) and network isolation. Endpoint permissions cover every name here."

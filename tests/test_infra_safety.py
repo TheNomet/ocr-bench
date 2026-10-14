@@ -89,6 +89,11 @@ def _load_with(tmp_path: Path, edit) -> config_mod.Config:
         (lambda r: r["runner"].update(assign_public_ip="DISABLED"), "assign_public_ip"),
         (lambda r: r["bench"]["plans"]["smoke"][0].update(variant="cleen"), "variant 'cleen'"),
         (lambda r: r["backends"]["sonnet-4.5"].update(reasoning_effort="medium"), "reasoning_effort"),
+        (lambda r: r.update(retention={"runs_days": -1}), "retention.runs_days"),
+        (lambda r: r.update(retention={"ecr_untagged_days": 0}), "retention.ecr_untagged_days"),
+        (lambda r: r.update(retention={"ecr_keep_mirrors": 1.5}), "retention.ecr_keep_mirrors"),
+        (lambda r: r.update(retention={"log_days": 10}), "retention.log_days"),
+        (lambda r: r.update(retention={"log_days": True}), "retention.log_days"),
     ],
 )
 def test_validate_rejects(tmp_path, edit, match):
@@ -118,6 +123,20 @@ def test_defaults_come_from_config(cfg):
     assert cfg["runner"]["max_minutes"] == 240 and cfg["runner"]["assign_public_ip"] is False
     assert cfg.sagemaker("unlimited-ocr")["max_lifetime_hours"] == 8
     assert cfg.sagemaker("unlimited-ocr")["wait_timeout_s"] == config_mod.SAGEMAKER_DEFAULTS["wait_timeout_s"]
+
+
+def test_retention_defaults_match_what_was_hard_coded(tmp_path):
+    """main.tf had 60 / 14 / 14 / 2: the defaults must render the same, so a plan shows no change."""
+    c = _load_with(tmp_path, lambda r: r.pop("retention", None))
+    assert {var: c["retention"][k] for var, k in cli._RETENTION_VARS.items()} == {
+        "retention_runs_days": 60,
+        "retention_log_days": 14,
+        "retention_ecr_untagged_days": 14,
+        "retention_ecr_keep_mirrors": 2,
+    }
+    assert _load_with(tmp_path, lambda r: r.update(retention={"runs_days": 0}))["retention"]["runs_days"] == 0
+    tf = (ROOT / "infra" / "terraform" / "variables.tf").read_text()
+    assert all(f'variable "{var}"' in tf for var in cli._RETENTION_VARS)
 
 
 # ------------------------------------------------------------------ endpoint up: fail closed
@@ -253,6 +272,50 @@ def test_task_sync_removes_files_a_stage_replaced(monkeypatch, tmp_path):
         st.assert_no_pending_responses()
 
 
+def test_fetch_removes_only_stale_partial_files(monkeypatch, tmp_path):
+    """A killed task left extractions.partial.jsonl locally; the next task replaced it in S3. Files that are
+    only local (config.yaml, report.md) and partials S3 still has stay."""
+    for f in ("extractions.partial.jsonl", "config.yaml", "report.md", "x.partial.jsonl"):
+        (tmp_path / f).write_text("old\n")
+    s3 = boto3.client("s3", region_name="eu-west-1")
+    monkeypatch.setattr(aws.boto3, "client", lambda *_a, **_k: s3)
+    monkeypatch.setattr(s3, "download_file", lambda b, k, dst: Path(dst).write_text("new\n"))
+    listing = {"Contents": [{"Key": "runs/r/x.partial.jsonl", "Size": 4, "ETag": '"e"'}]}
+    with Stubber(s3) as st:
+        st.add_response("list_objects_v2", listing, {"Bucket": "b", "Prefix": "runs/r/"})
+        assert aws.s3_sync_down("b", "runs/r", tmp_path, prune=cli._PRUNE_ON_FETCH) == 1
+        st.add_response("list_objects_v2", {}, {"Bucket": "b", "Prefix": "runs/r/"})
+        (tmp_path / "y.partial.jsonl").write_text("old\n")
+        aws.s3_sync_down("b", "runs/r", tmp_path, prune=cli._PRUNE_ON_FETCH)  # empty prefix: prunes nothing
+        st.assert_no_pending_responses()
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "config.yaml",
+        "report.md",
+        "x.partial.jsonl",
+        "y.partial.jsonl",
+    ]
+
+
+def test_fetch_and_fargate_run_prune_partials(cfg, monkeypatch, tmp_path):
+    from ocrbench import runs
+
+    calls = []
+    monkeypatch.setattr(runs, "RUNS", tmp_path)
+    monkeypatch.setattr(aws, "s3_sync_down", lambda *a, **k: calls.append(k) or 0)
+    cli.cmd_fetch(cfg, types.SimpleNamespace(run="r1"))
+    (tmp_path / "r1").mkdir()
+    runs.save(tmp_path / "r1", {"schema_version": runs.SCHEMA_VERSION, "id": "r1", "stages": {}})
+    (tmp_path / "r1" / "config.yaml").write_text("{}")
+    monkeypatch.setattr(cli, "_check_task_definition", lambda _c: None)
+    monkeypatch.setattr(cli, "outputs", lambda _c: {})
+    monkeypatch.setattr(cli, "_report", lambda *_a: None)
+    monkeypatch.setattr(aws, "s3_sync_up", lambda *a, **k: 0)
+    monkeypatch.setattr(aws, "run_task", lambda *a: ("t", 0))
+    assert cfg["runner"]["mode"] == "fargate"
+    cli.cmd_run(cfg, types.SimpleNamespace(id="r1", plan=None, stages="score", docs=str(tmp_path)))
+    assert calls == [{"prune": cli._PRUNE_ON_FETCH}] * 2
+
+
 def test_describe_task_retries_until_listed(monkeypatch, clock):
     ecs = stubs(monkeypatch, "ecs")["ecs"]
     ecs.add_response("describe_tasks", {"tasks": []})
@@ -310,9 +373,11 @@ def test_reupload_removes_files_of_the_old_snapshot(monkeypatch):
 # ------------------------------------------------------------------ tf-vars + task definition drift
 def test_tf_vars_keep_the_models_of_the_last_render(cfg, monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "state_dir", lambda _c: tmp_path)
+    monkeypatch.setattr(aws, "existing_models", lambda _c, names: names[1:])
     names = ["a", "b"]
     assert cli._models_to_create(cfg, names, with_model=True) == names
-    assert cli._models_to_create(cfg, names, with_model=False) == []  # first deploy: no tfvars yet
+    # no tfvars on this machine (first deploy, or remote state): the models SageMaker has
+    assert cli._models_to_create(cfg, names, with_model=False) == ["b"]
     (tmp_path / "terraform.tfvars.json").write_text(json.dumps({"create_selfhosted_models": ["a"]}))
     assert cli._models_to_create(cfg, names, with_model=False) == ["a"]  # b was just added: waits
     (tmp_path / "terraform.tfvars.json").write_text(
@@ -321,8 +386,57 @@ def test_tf_vars_keep_the_models_of_the_last_render(cfg, monkeypatch, tmp_path):
     assert cli._models_to_create(cfg, names, with_model=False) == names
 
 
-def test_run_refuses_when_the_task_definition_is_stale(cfg, monkeypatch, tmp_path):
+def test_existing_models_asks_sagemaker_and_fails_closed(cfg, monkeypatch):
+    sm = stubs(monkeypatch, "sagemaker")["sagemaker"]
+    a, b = cfg.model_name("a"), cfg.model_name("b")
+    sm.add_response(
+        "describe_model",
+        {"ModelName": a, "ModelArn": f"arn:aws:sagemaker:eu-west-1:000000000000:model/{a}", "CreationTime": T0},
+        {"ModelName": a},
+    )
+    sm.add_client_error("describe_model", "ValidationException", f"Could not find model {b}.", 400, {"ModelName": b})
+    with sm:
+        assert aws.existing_models(cfg, ["a", "b"]) == ["a"]
+        sm.add_client_error("describe_model", "AccessDeniedException", "not allowed", 403)
+        with pytest.raises(SystemExit, match=f"could not check SageMaker model {a}.*AccessDenied"):
+            aws.existing_models(cfg, ["a"])
+        sm.assert_no_pending_responses()
+    assert aws.existing_models(cfg, []) == []
+
+
+def test_existing_models_refuses_without_credentials(cfg, monkeypatch):
+    for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(aws.boto3, "Session", lambda: types.SimpleNamespace(get_credentials=lambda: None))
+    monkeypatch.setattr(aws.boto3, "client", lambda *a, **k: pytest.fail("must not guess"))
+    with pytest.raises(SystemExit, match="no AWS credentials"):
+        aws.existing_models(cfg, ["a"])
+
+
+def test_tf_vars_renders_retention_and_existing_models(cfg, monkeypatch, tmp_path):
+    from ocrbench import images
+
     monkeypatch.setattr(cli, "state_dir", lambda _c: tmp_path)
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    (tmp_path / "infra" / "terraform").mkdir(parents=True)
+    monkeypatch.setattr(images, "recorded", lambda _c: {})
+    monkeypatch.setattr(aws, "existing_models", lambda _c, names: list(names))
+    cli.cmd_tf_vars(cfg, types.SimpleNamespace(with_model=False))
+    v = json.loads((tmp_path / "terraform.tfvars.json").read_text())
+    assert v["create_selfhosted_models"] == ["unlimited-ocr"]
+    assert {k: v[k] for k in cli._RETENTION_VARS} == {
+        "retention_runs_days": 60,
+        "retention_log_days": 14,
+        "retention_ecr_untagged_days": 14,
+        "retention_ecr_keep_mirrors": 2,
+    }
+
+
+def test_run_refuses_when_the_task_definition_is_stale(cfg, monkeypatch, tmp_path):
+    from ocrbench import images
+
+    monkeypatch.setattr(cli, "state_dir", lambda _c: tmp_path)
+    monkeypatch.setattr(images, "recorded", lambda _c: {})
     with pytest.raises(SystemExit, match="is missing"):
         cli._check_task_definition(cfg)
     deployed = {var: cfg["runner"][key] for var, key in cli._TASK_DEFINITION_VARS.items()}
@@ -331,6 +445,23 @@ def test_run_refuses_when_the_task_definition_is_stale(cfg, monkeypatch, tmp_pat
     cfg.raw["runner"]["max_minutes"] = 30
     with pytest.raises(SystemExit, match="runner.max_minutes: 30 in the config, 240 deployed"):
         cli._check_task_definition(cfg)
+
+
+def test_run_refuses_when_a_newer_bench_image_is_not_deployed(cfg, monkeypatch, tmp_path):
+    """`ocrbench images bench` without an apply: the task still pins the old digest, which ECR will expire."""
+    from ocrbench import images
+
+    monkeypatch.setattr(cli, "state_dir", lambda _c: tmp_path)
+    old, new = "r/b@sha256:" + "a" * 64, "r/b@sha256:" + "b" * 64
+    deployed = {var: cfg["runner"][key] for var, key in cli._TASK_DEFINITION_VARS.items()}
+    (tmp_path / "terraform.tfvars.json").write_text(json.dumps({**deployed, "bench_image_ref": old}))
+    monkeypatch.setattr(images, "recorded", lambda _c: {"bench_image": new})
+    with pytest.raises(SystemExit, match=r"last build is r/b@sha256:b+ .*just images"):
+        cli._check_task_definition(cfg)
+    monkeypatch.setattr(images, "recorded", lambda _c: {"bench_image": old})
+    cli._check_task_definition(cfg)
+    monkeypatch.setattr(images, "recorded", lambda _c: {})  # built on another machine: can't tell, left to ECS
+    cli._check_task_definition(cfg)
 
 
 # ------------------------------------------------------------------ SIGTERM in the task
