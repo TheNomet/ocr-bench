@@ -184,8 +184,9 @@ resource "aws_iam_role_policy" "sagemaker" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Effect = "Allow", Action = ["s3:GetObject", "s3:ListBucket"],
-      Resource = [aws_s3_bucket.artifacts.arn, "${aws_s3_bucket.artifacts.arn}/models/*"] },
+      { Effect = "Allow", Action = ["s3:GetObject"], Resource = "${aws_s3_bucket.artifacts.arn}/models/*" },
+      { Effect = "Allow", Action = ["s3:ListBucket"], Resource = aws_s3_bucket.artifacts.arn,
+      Condition = { StringLike = { "s3:prefix" = ["models/*"] } } },
       { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = "*" },
       { Effect = "Allow", Action = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"],
       Resource = aws_ecr_repository.repo["vllm"].arn },
@@ -197,7 +198,7 @@ resource "aws_iam_role_policy" "sagemaker" {
 }
 
 resource "aws_sagemaker_model" "selfhosted" {
-  for_each                 = var.create_selfhosted_models ? var.selfhosted : {}
+  for_each                 = { for k, v in var.selfhosted : k => v if contains(var.create_selfhosted_models, k) }
   name                     = "${local.p}-${each.key}-model"
   execution_role_arn       = aws_iam_role.sagemaker.arn
   enable_network_isolation = each.value.network_isolation
@@ -272,8 +273,9 @@ resource "aws_iam_role_policy" "task" {
     Version = "2012-10-17"
     Statement = concat(
       [
-        { Effect = "Allow", Action = ["s3:ListBucket"], Resource = aws_s3_bucket.artifacts.arn },
-        { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject"], Resource = "${aws_s3_bucket.artifacts.arn}/runs/*" },
+        { Effect = "Allow", Action = ["s3:ListBucket"], Resource = aws_s3_bucket.artifacts.arn,
+        Condition = { StringLike = { "s3:prefix" = ["runs/*"] } } },
+        { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.artifacts.arn}/runs/*" },
       ],
       length(local.endpoint_arns) > 0 ? [{ Effect = "Allow", Action = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"],
       Resource = local.endpoint_arns }] : [],
@@ -283,7 +285,7 @@ resource "aws_iam_role_policy" "task" {
         # profile ARN plus the un-prefixed foundation model in every region it routes to; full ARNs pass through.
         Effect = "Allow", Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
         Resource = flatten([for m in var.bedrock_model_ids : startswith(m, "arn:") ? [m] : [
-          "arn:aws:bedrock:*::foundation-model/${replace(m, "/^(us|eu|apac|global|us-gov)\\./", "")}",
+          "arn:aws:bedrock:*::foundation-model/${replace(m, "/^(us|us-gov|eu|apac|jp|au|ca|global)\\./", "")}",
           "arn:aws:bedrock:*:${var.account_id}:inference-profile/${m}",
         ]])
       }] : [],
@@ -307,9 +309,11 @@ resource "aws_ecs_task_definition" "bench" {
     name      = "bench"
     image     = var.bench_image_ref != "" ? var.bench_image_ref : "${aws_ecr_repository.repo["bench"].repository_url}:${var.bench_image_tag}"
     essential = true
-    # hard limit: the task stops itself even if nobody is watching it
-    entryPoint = ["timeout", "${var.runner_max_minutes}m", "python", "-m", "ocrbench.cli"]
-    command    = ["--help"]
+    # hard limit: the task stops itself even if nobody is watching it. SIGTERM first (the bench then syncs
+    # its partial results to S3), SIGKILL after the grace period.
+    entryPoint  = ["timeout", "-k", "${var.runner_stop_grace_seconds}s", "${var.runner_max_minutes}m", "python", "-m", "ocrbench.cli"]
+    command     = ["--help"]
+    stopTimeout = min(var.runner_stop_grace_seconds, 120) # ECS StopTask: Fargate allows at most 120 s
     environment = [
       { name = "OCRBENCH_BUCKET", value = local.bucket },
       { name = "AWS_REGION", value = var.region },
@@ -344,15 +348,21 @@ resource "aws_iam_role" "scheduler" {
   })
 }
 
+# Every endpoint of the stack, not just the configured ones: a schedule must still fire for an endpoint
+# whose backend has since left the config.
 resource "aws_iam_role_policy" "scheduler" {
-  count = length(local.endpoint_arns) > 0 ? 1 : 0
-  role  = aws_iam_role.scheduler.id
+  role = aws_iam_role.scheduler.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = ["sagemaker:DeleteEndpoint"]
-      Resource = local.endpoint_arns
+      Resource = "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/${local.p}-*"
     }]
   })
+}
+
+moved {
+  from = aws_iam_role_policy.scheduler[0]
+  to   = aws_iam_role_policy.scheduler
 }

@@ -10,6 +10,7 @@ import copy
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,26 @@ def _expand(v: Any) -> Any:
     return v
 
 
+# Page image variants a plan item (or `ocrbench transcribe --variant`) can ask for.
+VARIANTS = ("clean", "degraded", "both")
+
+# backends.<name>.sagemaker defaults (endpoint up/wait, tf-vars).
+SAGEMAKER_DEFAULTS: dict = {
+    "max_lifetime_hours": 8,
+    "container_startup_timeout_s": 1800,
+    "model_download_timeout_s": 1800,
+    "wait_timeout_s": 5400,
+    "network_isolation": True,
+}
+
+# Endpoint configs are named <endpoint>-<timestamp> (aws.endpoint_up); the longest SageMaker name we create.
+CONFIG_STAMP = "%Y%m%d%H%M%S"
+
+
+def endpoint_config_name(endpoint: str, at: datetime) -> str:
+    return f"{endpoint}-{at:{CONFIG_STAMP}}"
+
+
 @dataclass
 class Config:
     raw: dict
@@ -49,7 +70,7 @@ class Config:
     def get(self, key: str, default: Any = None) -> Any:
         return self.raw.get(key, default)
 
-    # ---- derived names (keep in sync with infra/terraform/locals.tf) ----
+    # ---- derived names (keep in sync with the locals in infra/terraform/main.tf) ----
     @property
     def prefix(self) -> str:
         return self.raw["name_prefix"]
@@ -91,6 +112,10 @@ class Config:
 
     def model_prefix(self, name: str) -> str:
         return f"models/{name}"
+
+    def sagemaker(self, name: str) -> dict:
+        """backends.<name>.sagemaker with SAGEMAKER_DEFAULTS filled in."""
+        return {**SAGEMAKER_DEFAULTS, **(self.backend(name).get("sagemaker") or {})}
 
     # ---- backends ----
     @property
@@ -157,6 +182,9 @@ DEFAULTS: dict = {
         "mode": "fargate",
         "cpu": 2048,
         "memory": 4096,
+        "max_minutes": 240,
+        "stop_grace_seconds": 120,
+        "assign_public_ip": False,
         "base_image": "docker.io/library/python:3.12-slim",
         "extra_ca_pem": None,
     },
@@ -177,6 +205,15 @@ def _merge(base: dict, over: dict) -> dict:
 
 KINDS = ("selfhosted", "bedrock", "openai_compatible")
 _SELFHOSTED_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,30}")
+_SAGEMAKER_NAME_MAX = 63
+
+
+def _is_num(v: Any) -> bool:
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def _is_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def upgrade(raw: dict) -> dict:
@@ -209,13 +246,36 @@ def validate(raw: dict, p: Path) -> None:
         for name in v.get("postprocess") or []:
             if name not in REGISTRY:
                 raise ValueError(f"{p}: backends.{k}.postprocess: unknown step {name!r} ({', '.join(REGISTRY)})")
+        if v["kind"] == "bedrock" and v.get("reasoning_effort"):
+            raise ValueError(
+                f"{p}: backends.{k}.reasoning_effort is not supported for kind bedrock (only openai_compatible)"
+            )
         if v["kind"] == "selfhosted":
             if not _SELFHOSTED_NAME.fullmatch(k):
                 raise ValueError(
                     f"{p}: self-hosted backend name {k!r} must be 1-31 chars of [a-z0-9-] (it names AWS resources)"
                 )
-            if len(f"{raw['name_prefix']}-{k}-model") > 63:
-                raise ValueError(f"{p}: name_prefix + backend name {k!r} too long for SageMaker (63 chars)")
+            # the longest SageMaker name per backend is its endpoint config: <prefix>-<name>-<14-digit stamp>
+            longest = endpoint_config_name(f"{raw['name_prefix']}-{k}", datetime(2000, 1, 1))
+            if len(longest) > _SAGEMAKER_NAME_MAX:
+                raise ValueError(
+                    f"{p}: name_prefix + backend name {k!r} too long for SageMaker: endpoint config "
+                    f"{longest!r} is {len(longest)} chars (max {_SAGEMAKER_NAME_MAX})"
+                )
+            sm = {**SAGEMAKER_DEFAULTS, **(v.get("sagemaker") or {})}
+            hours = sm["max_lifetime_hours"]
+            if not _is_num(hours) or hours < 0:
+                raise ValueError(f"{p}: backends.{k}.sagemaker.max_lifetime_hours must be a number >= 0, got {hours!r}")
+            for key in ("container_startup_timeout_s", "model_download_timeout_s", "wait_timeout_s"):
+                if not _is_num(sm[key]) or sm[key] <= 0:
+                    raise ValueError(f"{p}: backends.{k}.sagemaker.{key} must be a number > 0, got {sm[key]!r}")
+    run = raw["runner"]
+    for key in ("cpu", "memory", "max_minutes", "stop_grace_seconds"):
+        # max_minutes feeds GNU `timeout`, where 0 means no limit at all
+        if not _is_int(run.get(key)) or run[key] <= 0:
+            raise ValueError(f"{p}: runner.{key} must be an integer > 0, got {run.get(key)!r}")
+    if not isinstance(run.get("assign_public_ip"), bool):
+        raise ValueError(f"{p}: runner.assign_public_ip must be true or false, got {run.get('assign_public_ip')!r}")
     ex = raw["bench"].get("extraction") or {}
     for role, key in (
         ("bench.extraction.agent", ex.get("agent")),
@@ -227,6 +287,10 @@ def validate(raw: dict, p: Path) -> None:
         for it in items:
             if it["backend"] not in raw["backends"]:
                 raise ValueError(f"{p}: bench.plans.{plan}: backend {it['backend']!r} is not defined under backends")
+            if it.get("variant", "both") not in VARIANTS:
+                raise ValueError(
+                    f"{p}: bench.plans.{plan}: variant {it['variant']!r} must be one of {', '.join(VARIANTS)}"
+                )
 
 
 def load(path: str | Path | None = None) -> Config:

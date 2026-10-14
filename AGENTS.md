@@ -52,7 +52,8 @@ site/                      LOCAL build of the site (gitignored); published to th
    `infra/terraform/backend.tf` from the config. Terraform reads nothing else.
 2. Terraform creates the bucket, the ECR repos (`<prefix>-vllm`, `<prefix>-bench`), IAM, the
    Fargate task definition and optionally a VPC. Once the images and weights exist, it also
-   creates one SageMaker **model** per self-hosted backend (`create_selfhosted_models`).
+   creates one SageMaker **model** per self-hosted backend listed in `create_selfhosted_models`
+   (a list of backend names; `tf-vars` keeps the previous list so a re-deploy doesn't delete models).
 3. The SageMaker **endpoints** are *not* in Terraform. `ocrbench endpoint up [--backend B]` creates one with
    `InstancePools`, a priority list of GPU types, because single GPU types often have no
    capacity. The AWS provider doesn't support instance pools.

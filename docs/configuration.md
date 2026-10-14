@@ -32,7 +32,7 @@ Terms:
 | `backends.<name>.label` | Optional display name; default derived from the model id |
 | `backends.<name>.postprocess` | Steps applied to the backend's output before scoring and extraction: `strip_grounding` (DeepSeek-OCR `<\|det\|>`/`<\|ref\|>` tokens), `strip_think`, `unwrap_code_fence`. Recorded in the run; the raw output is kept |
 | `backends.<name>.temperature` | LLMs: overrides the request temperature (default 0). Some models accept only 1; `null` omits it. Recorded in the run and shown in the report |
-| `backends.<name>.reasoning_effort` | LLMs: `low` / `medium` / `high` for models with extended thinking (sent as `reasoning_effort`) |
+| `backends.<name>.reasoning_effort` | `openai_compatible` only: `low` / `medium` / `high` for models with extended thinking (sent as `reasoning_effort`). A `bedrock` backend with it is rejected |
 | `backends.<name>.price_per_mtok` | LLMs: `{input, output}` USD per million tokens, for cost figures. Without it the backend's cost is unknown and it is left out of "cheapest" |
 | `bench.docs.per_type/seed/scale` | Document generation |
 | `bench.extraction.agent` | Backend that extracts the fields in stage 2 (the `agent` in `<input>->agent`) |
@@ -46,12 +46,18 @@ Terms:
 | `bench.plan_report.<plan>.hide_backends` | Backends re-run only as a reproducibility check: hidden on the run page and in its recommendation, kept in the data and in *Compare runs* |
 | `bench.plan_descriptions.<plan>` | One line shown on every run of that plan (run ids are `<date>-<plan>`) |
 | `bench.plans.<name>` | List of `{backend, concurrency, variant?, limit?, repeat?, warmup?}` runs (see [Plan items](#plan-items)) |
-| `bench.max_retries` | Retries on 429/5xx and network errors, with exponential backoff |
+| `bench.max_retries` | Retries on 429/5xx and network errors, with exponential backoff (capped at 30 s, jittered) |
 | `runner.mode` | `fargate` (in the VPC) or `local` |
 | `runner.cpu/memory` | Fargate task size |
-| `runner.max_minutes` | Hard time limit per bench task (default 240) |
+| `runner.max_minutes` | Hard time limit per bench task (default 240, must be > 0) |
+| `runner.stop_grace_seconds` | After the time limit's SIGTERM, seconds the task gets to upload its partial results before SIGKILL (default 120; ECS `stopTimeout` is capped at 120) |
+| `runner.assign_public_ip` | Give the Fargate task a public IP (default `false`; only for public subnets without a NAT) |
 | `runner.base_image` | Python 3.12 base for the bench image |
 | `runner.extra_ca_pem` | PEM baked into the bench image and trusted for outbound TLS |
+
+`runner.cpu`, `memory`, `max_minutes` and `stop_grace_seconds` are fixed in the task definition when
+Terraform applies. In `fargate` mode `ocrbench run` refuses to start while they differ from what
+`.state/<prefix>/terraform.tfvars.json` was rendered with: re-run `just deploy` first.
 
 ## Plan items
 
@@ -61,7 +67,7 @@ Each item of `bench.plans.<name>` is one transcription run of one backend.
 |---|---|
 | `backend` | Backend key |
 | `concurrency` | Requests in flight at once |
-| `variant` | `clean`, `degraded` or `both` (default) page images |
+| `variant` | `clean`, `degraded` or `both` (default) page images; anything else is rejected when the config loads |
 | `limit` | Only this many page images (default 0 = all). The pages are interleaved by document type, so a small limit still covers several types |
 | `repeat` | Send every page this many times (default 1), e.g. to measure run-to-run variation |
 | `warmup` | Send one untimed request first (default `true`): token fetch, CUDA graphs, connection pools. Not recorded or scored |
@@ -102,7 +108,7 @@ backends:
     base_url: https://gateway.example.internal
     model: <model id the gateway expects>
     cache_bust: true            # gateway caches identical requests
-    ca_bundle: null
+    ca_bundle: null             # extra PEM to trust; a path that doesn't exist is an error
     headers: {}
     extra_body: {}
     auth:
@@ -134,13 +140,21 @@ prefix (`s3://<p>-artifacts/models/<name>/`), SageMaker model and endpoint. The 
 | `sagemaker.inference_ami_version` | Host image, which sets the NVIDIA driver |
 | `sagemaker.container_startup_timeout_s` | How long SageMaker waits for the container's health check (vLLM loading the model) before failing the endpoint (default 1800) |
 | `sagemaker.model_download_timeout_s` | How long SageMaker allows for copying the weights from S3 to the host (default 1800) |
+| `sagemaker.wait_timeout_s` | How long `endpoint up` / `endpoint wait` wait for InService before failing (default 5400). A failed or rolled-back update also fails them |
 | `sagemaker.network_isolation` | Run the container without network access (default `true`); the weights come from S3 |
-| `sagemaker.max_lifetime_hours` | The endpoint deletes itself after this long (EventBridge Scheduler, created by `endpoint up`); 0 = never |
+| `sagemaker.max_lifetime_hours` | The endpoint deletes itself after this long (EventBridge Scheduler, created by `endpoint up` before the endpoint); 0 = never. Must be a number >= 0. With > 0, `endpoint up` refuses to start an endpoint it can't schedule the deletion for (e.g. no `outputs.json` yet) |
 | `sagemaker.price_per_hour_usd` | Optional. When unset, the run looks up the deployed instance's price in the AWS Pricing API |
 | `direct_url` | Use a running vLLM server instead of SageMaker |
 
 Commands that act on one self-hosted backend take `--backend <name>` (`ocrbench endpoint up`,
 `upload-weights`; `just endpoint-up <name>`); it can be left out when the config has only one.
+`just endpoint-down` (`ocrbench endpoint down --all`) deletes every endpoint named `<p>-*`, also
+those of backends since removed from the config, and exits non-zero if any is left; `just destroy`
+refuses to continue in that case. `just weights` re-uploads a backend when its `hf_revision` differs
+from the uploaded manifest, and removes files the new snapshot doesn't have.
+
+The endpoint config is the longest name per backend (`<p>-<name>-<14-digit timestamp>`), so
+`name_prefix` and the backend name together must leave it within SageMaker's 63 characters.
 
 ### Older configs
 
@@ -162,6 +176,7 @@ records. `--config` is optional (runs only); `--help` lists the options.
 
 `tf-vars` grants the runner role `kms:Sign` on every `oauth2_kms_jwt` key,
 `bedrock:InvokeModel`/`Converse` on every Bedrock model in the config, and
-`InvokeEndpoint` on every self-hosted backend's endpoint.
+`InvokeEndpoint` on every self-hosted backend's endpoint. The scheduler role that auto-deletes
+endpoints may delete any `<p>-*` endpoint, so it still works for a backend removed from the config.
 `bearer_env` tokens are read from the environment of whoever runs the request. In Fargate
 mode that is the task, which has no such variable, so use `runner.mode: local` for those.

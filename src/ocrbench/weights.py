@@ -17,6 +17,7 @@ from pathlib import Path
 import boto3
 import httpx
 from boto3.s3.transfer import TransferConfig
+from botocore.exceptions import ClientError
 
 from .config import Config
 
@@ -65,7 +66,41 @@ def _list_tree(repo: str, rev: str) -> list[dict]:
     return out
 
 
-def upload(cfg: Config, name: str, from_dir: Path | None = None) -> None:
+def _manifest(s3, bucket: str, key: str) -> dict | None:
+    try:
+        return json.loads(s3.get_object(Bucket=bucket, Key=key)["Body"].read())
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+            return None
+        raise
+
+
+def is_current(manifest: dict | None, repo: str, rev: str, skip: tuple[str, ...]) -> bool:
+    """The uploaded snapshot is this repo at this revision (and, if recorded, with the same skipped files)."""
+    if not manifest or manifest.get("repo") != repo or manifest.get("revision") != rev:
+        return False
+    return "skip_prefixes" not in manifest or tuple(manifest["skip_prefixes"]) == skip
+
+
+def _remove_stale(s3, bucket: str, prefix: str, keep: set[str]) -> int:
+    """Delete objects under <prefix>/ that the new snapshot doesn't have (an older revision's files)."""
+    stale = [
+        o["Key"]
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=f"{prefix}/")
+        for o in page.get("Contents", [])
+        if o["Key"] not in keep
+    ]
+    for i in range(0, len(stale), 1000):
+        batch = stale[i : i + 1000]
+        r = s3.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True})
+        if r.get("Errors"):
+            raise SystemExit(f"could not delete stale weights under s3://{bucket}/{prefix}/: {r['Errors'][:3]}")
+    for k in stale:
+        print(f"  removed stale {k}")
+    return len(stale)
+
+
+def upload(cfg: Config, name: str, from_dir: Path | None = None, *, if_changed: bool = False) -> None:
     o = cfg.backend(name)
     repo, rev, prefix, bucket = o["hf_repo"], o["hf_revision"], cfg.model_prefix(name), cfg.bucket
     skip = tuple(o.get("hf_skip_prefixes") or [])
@@ -73,9 +108,18 @@ def upload(cfg: Config, name: str, from_dir: Path | None = None) -> None:
     tcfg = TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=4)
     if not re.fullmatch(r"[0-9a-f]{40}", rev):
         raise SystemExit(f"backends.{name}.hf_revision must be a full 40-character commit hash, got {rev!r}")
+    manifest_key = f"{prefix}.manifest.json"
+    old = _manifest(s3, bucket, manifest_key)
+    if if_changed and is_current(old, repo, rev, skip):
+        print(f"{name}: s3://{bucket}/{prefix}/ already has {repo}@{rev[:12]}")
+        return
+    if old:
+        print(f"{name}: replacing {old.get('repo')}@{str(old.get('revision'))[:12]} with {repo}@{rev[:12]}")
     tree = _list_tree(repo, rev)
     files = [f for f in tree if f["type"] == "file" and not f["path"].startswith(skip)]
-    manifest = {"repo": repo, "revision": rev, "files": []}
+    # No manifest while the prefix is being rewritten: an interrupted upload is never taken for a complete one.
+    s3.delete_object(Bucket=bucket, Key=manifest_key)
+    manifest = {"repo": repo, "revision": rev, "skip_prefixes": list(skip), "files": []}
     with httpx.Client(follow_redirects=True, verify=VERIFY, timeout=httpx.Timeout(60.0, read=300.0)) as http:
         for f in files:
             path, size = f["path"], f.get("lfs", {}).get("size", f["size"])
@@ -116,5 +160,6 @@ def upload(cfg: Config, name: str, from_dir: Path | None = None) -> None:
                     f"git blob hash mismatch for {path} (this includes model code run with trust_remote_code)"
                 )
             manifest["files"].append({"path": path, "size": size, "sha256": digest})
-    s3.put_object(Bucket=bucket, Key=f"{prefix}.manifest.json", Body=json.dumps(manifest, indent=1).encode())
-    print(f"done: {len(files)} files -> s3://{bucket}/{prefix}/ (manifest {prefix}.manifest.json)")
+    _remove_stale(s3, bucket, prefix, {f"{prefix}/{f['path']}" for f in files})
+    s3.put_object(Bucket=bucket, Key=manifest_key, Body=json.dumps(manifest, indent=1).encode())
+    print(f"done: {len(files)} files -> s3://{bucket}/{prefix}/ (manifest {manifest_key})")

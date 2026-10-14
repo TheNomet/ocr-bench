@@ -99,9 +99,10 @@ backends:
       inference_ami_version: al2023-ami-sagemaker-inference-gpu-4-1   # NVIDIA driver for CUDA 13 images
       container_startup_timeout_s: 1800   # health-check timeout while vLLM loads the model
       model_download_timeout_s: 1800      # time allowed to copy the weights from S3 to the host
+      wait_timeout_s: 5400                # `endpoint up/wait` give up (non-zero) if not InService by then
       network_isolation: true
       # The endpoint deletes itself after this many hours (EventBridge Scheduler), in case nobody runs
-      # `endpoint down`. 0 = never.
+      # `endpoint down`. 0 = never. With > 0, `endpoint up` refuses to start if it can't schedule that.
       max_lifetime_hours: 8
       # price_per_hour_usd: null    # default: looked up in the AWS Pricing API for the instance actually used
     # Optional: talk to an already-running vLLM server instead of SageMaker (local GPU, tunnel...).
@@ -110,7 +111,7 @@ backends:
   sonnet-4.5:
     kind: bedrock
     # temperature: 1               # optional override; some models accept only 1. null = don't send
-    # reasoning_effort: medium     # optional: low | medium | high, for models with extended thinking
+    # (reasoning_effort is openai_compatible only; on a bedrock backend the config is rejected)
     # Claude 4.5 on Bedrock is invoked through an inference profile: eu. / us. / apac. / global. + model id,
     # matching the region below. A bare foundation-model id is rejected for these models.
     model_id: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -127,6 +128,7 @@ backends:
   #   model: anthropic.claude-sonnet-4-5-20250929-v1:0
   #   ca_bundle: null            # extra PEM to trust (corporate TLS), path on the runner
   #   cache_bust: true           # add a per-request nonce: some gateways cache identical requests
+  #   reasoning_effort: medium   # optional: low | medium | high, for models with extended thinking
   #   price_per_mtok: {input: 3.0, output: 15.0}
   #   headers: {}                # extra static headers
   #   auth:
@@ -134,6 +136,7 @@ backends:
   #     # bearer_env:      env: MY_TOKEN_VAR
   #     # oauth2_kms_jwt:  client-credentials with a private_key_jwt assertion signed by AWS KMS
   #     token_url: https://idp.example.com/oauth2/token
+  #     audience: null             # JWT "aud" claim; defaults to token_url
   #     client_id: 00000000-0000-0000-0000-000000000000
   #     kms_key_id: 00000000-0000-0000-0000-000000000000    # ECC_NIST_P256 SIGN_VERIFY key
   #     kms_region: eu-west-1
@@ -207,7 +210,11 @@ runner:
   mode: fargate
   cpu: 2048
   memory: 4096
-  max_minutes: 240          # hard limit per bench task (it stops itself)
+  max_minutes: 240          # hard limit per bench task (it stops itself); > 0
+  stop_grace_seconds: 120   # after that limit (SIGTERM), time to sync partial results before SIGKILL
+  # cpu, memory, max_minutes and stop_grace_seconds are fixed in the task definition: re-run `just deploy`
+  # after changing them (`ocrbench run` refuses until then).
+  assign_public_ip: false   # Fargate task gets a public IP (only for public subnets without a NAT)
   # Bench image = this base + a layer with the ocrbench package and its wheels (built with crane).
   base_image: docker.io/library/python:3.12-slim
   # Optional PEM bundle baked into the bench image and trusted for outbound TLS.

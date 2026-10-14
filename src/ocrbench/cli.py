@@ -2,6 +2,7 @@
 
 Setup        docs | tf-vars | upload-weights [--backend B] | images <self-hosted name>|bench|all
              endpoint up|down|wait|status [--backend B]   (B: a self-hosted backend; optional if only one)
+             endpoint down --all              every endpoint of the stack (<name_prefix>-*), configured or not
 Runs         run --plan P [--stages ...]      new run folder runs/<date>-<plan>/, all stages
              run --id ID --stages a,b         resume / redo stages of an existing run
              fetch --run ID | list | report [--run ID]   (report also rebuilds site/index.html)
@@ -14,9 +15,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import json
 import os
+import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -50,13 +52,36 @@ def _pinned_images(cfg: Config) -> dict:
         "selfhosted": {
             k: {
                 "image_ref": (sh.get(k) or {}).get("image", ""),
-                "network_isolation": bool((cfg.backend(k).get("sagemaker") or {}).get("network_isolation", True)),
+                "network_isolation": bool(cfg.sagemaker(k)["network_isolation"]),
             }
             for k in cfg.selfhosted()
             if not cfg.backend(k).get("direct_url")
         },
         "bench_image_ref": refs.get("bench_image", ""),
     }
+
+
+def _models_to_create(cfg: Config, names: list[str], with_model: bool) -> list[str]:
+    """Self-hosted backends whose SageMaker model Terraform creates. --with-model: all of them (images and
+    weights are in place). Without it, the ones the previous render had, so a plain apply (the first step of
+    `just deploy`) never destroys a model, and a backend just added waits for its image and weights."""
+    if with_model:
+        return names
+    p = state_dir(cfg) / "terraform.tfvars.json"
+    prev = json.loads(p.read_text()) if p.exists() else {}
+    had = prev.get("create_selfhosted_models") or []
+    if had is True:  # rendered before this was a list: one flag for every backend
+        had = list(prev.get("selfhosted") or {})
+    return [n for n in names if isinstance(had, list) and n in had]
+
+
+# Runner settings baked into the Fargate task definition (tfvars name -> runner.<key>)
+_TASK_DEFINITION_VARS = {
+    "runner_cpu": "cpu",
+    "runner_memory": "memory",
+    "runner_max_minutes": "max_minutes",
+    "runner_stop_grace_seconds": "stop_grace_seconds",
+}
 
 
 def cmd_tf_vars(cfg: Config, _a) -> None:
@@ -71,6 +96,7 @@ def cmd_tf_vars(cfg: Config, _a) -> None:
             kms_arns.append(kid if kid.startswith("arn:") else f"arn:aws:kms:{reg}:{r['aws']['account_id']}:key/{kid}")
         if spec["kind"] == "bedrock":
             bedrock_models.append(spec["model_id"])
+    images = _pinned_images(cfg)
     tfvars = {
         "name_prefix": cfg.prefix,
         "account_id": str(r["aws"]["account_id"]),
@@ -84,11 +110,9 @@ def cmd_tf_vars(cfg: Config, _a) -> None:
         "existing_subnet_name_tag_glob": net.get("existing", {}).get("subnet_name_tag_glob"),
         "create_cidr": net.get("create", {}).get("cidr", "10.42.0.0/24"),
         "ecs_cluster": cfg["ecs"]["cluster"],
-        "runner_cpu": int(r["runner"]["cpu"]),
-        "runner_memory": int(r["runner"]["memory"]),
-        "runner_max_minutes": int(r["runner"].get("max_minutes", 240)),
-        "create_selfhosted_models": bool(_a.with_model),
-        **_pinned_images(cfg),
+        **{var: int(r["runner"][key]) for var, key in _TASK_DEFINITION_VARS.items()},
+        "create_selfhosted_models": _models_to_create(cfg, list(images["selfhosted"]), bool(_a.with_model)),
+        **images,
         "kms_sign_key_arns": sorted(set(kms_arns)),
         "bedrock_model_ids": sorted(set(bedrock_models)),
     }
@@ -121,7 +145,12 @@ def cmd_docs(cfg: Config, a) -> None:
 def cmd_upload_weights(cfg: Config, a) -> None:
     from .weights import upload
 
-    upload(cfg, cfg.one_selfhosted(a.backend), Path(a.from_dir).expanduser() if a.from_dir else None)
+    upload(
+        cfg,
+        cfg.one_selfhosted(a.backend),
+        Path(a.from_dir).expanduser() if a.from_dir else None,
+        if_changed=a.if_changed,
+    )
 
 
 def cmd_images(cfg: Config, a) -> None:
@@ -140,11 +169,16 @@ def cmd_images(cfg: Config, a) -> None:
 def cmd_endpoint(cfg: Config, a) -> None:
     from . import aws
 
+    if a.all:
+        if a.action != "down" or a.backend:
+            raise SystemExit("--all goes only with `endpoint down`, without --backend")
+        aws.endpoint_down_all(cfg)
+        return
     name = cfg.one_selfhosted(a.backend)
 
     def up(c, n):
         role = None
-        with contextlib.suppress(SystemExit):
+        if c.sagemaker(n)["max_lifetime_hours"] > 0:  # fail closed: no outputs.json, no endpoint
             role = outputs(c).get("scheduler_role_arn")
         aws.endpoint_up(c, n, role)
 
@@ -257,15 +291,24 @@ def execute_stages(cfg: Config, d: Path, stages: list[str], sync=None) -> None:
             sync()
 
 
+def _exit_on_sigterm(signum, _frame) -> None:
+    """`timeout` (runner.max_minutes) and ECS StopTask send SIGTERM; Python would die without running
+    `finally`. Exit through it instead, so the partial stage is synced; ignore repeats while that runs."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    print("\nSIGTERM: stopping and syncing what is done", flush=True)
+    raise SystemExit(128 + signum)
+
+
 def cmd_task_run(cfg: Config, a) -> None:
     """Inside Fargate: pull runs/<id>/ from S3, run the stages, push back after each stage."""
     from . import aws
 
+    signal.signal(signal.SIGTERM, _exit_on_sigterm)
     d = Path(tempfile.mkdtemp(prefix="ocrbench-")) / a.run
     print(f"pulled {aws.s3_sync_down(cfg.bucket, f'runs/{a.run}', d)} files of run {a.run}", flush=True)
 
     def sync():
-        print(f"uploaded {aws.s3_sync_up(d, cfg.bucket, f'runs/{a.run}')} changed files", flush=True)
+        print(f"uploaded {aws.s3_sync_up(d, cfg.bucket, f'runs/{a.run}', delete=True)} changed files", flush=True)
 
     try:
         execute_stages(cfg, d, _parse_stages(a.stages), sync)
@@ -273,17 +316,35 @@ def cmd_task_run(cfg: Config, a) -> None:
         sync()
 
 
+def _check_task_definition(cfg: Config) -> None:
+    """The Fargate task size and time limit are fixed when Terraform applies, but a run records the config's
+    values: refuse to run when the config changed since the last render (and so, normally, the last apply)."""
+    p = state_dir(cfg) / "terraform.tfvars.json"
+    if not p.exists():
+        raise SystemExit(
+            f"runner.mode fargate needs the deployed stack, but {p} is missing: run `just deploy` "
+            "(or set runner.mode: local)"
+        )
+    deployed = json.loads(p.read_text())
+    diff = [
+        f"runner.{key}: {cfg['runner'][key]} in the config, {deployed.get(var)} deployed"
+        for var, key in _TASK_DEFINITION_VARS.items()
+        if deployed.get(var) != cfg["runner"][key]
+    ]
+    if diff:
+        raise SystemExit(
+            "the bench task definition doesn't match the config:\n  "
+            + "\n  ".join(diff)
+            + "\napply it first (`just deploy`), so the run records what it actually ran with"
+        )
+
+
 def cmd_run(cfg: Config, a) -> None:
     from . import aws, runs
 
     stages = _parse_stages(a.stages)
-    if a.id and runs.run_dir(a.id).exists():
-        d = runs.run_dir(a.id)
-        print(f"resuming run {a.id}: stages {stages}")
-        if "summarize" in stages:
-            runs.refresh_summary_setup(cfg, d)
-            print(f"recommendation model: {runs.load(d)['summary']['agent']}")
-    else:
+    resume = bool(a.id and runs.run_dir(a.id).exists())
+    if not resume:
         if not a.plan:
             raise SystemExit("--plan is required for a new run")
         try:
@@ -293,7 +354,24 @@ def cmd_run(cfg: Config, a) -> None:
         docs = Path(a.docs)
         if not (docs / "manifest.json").exists():
             raise SystemExit(f"{docs}/manifest.json missing: run `ocrbench docs` first")
-        d = runs.create(cfg, a.plan, docs, a.id)
+    if cfg["runner"]["mode"] == "fargate":  # before anything is written to a run folder
+        _check_task_definition(cfg)
+    if resume:
+        d = runs.run_dir(a.id)
+        print(f"resuming run {a.id}: stages {stages}")
+        if cfg["runner"]["mode"] == "fargate" and not (d / "config.yaml").exists():
+            # The snapshot is gitignored, so a fresh clone has none; the task needs one.
+            if stages != ["summarize"]:
+                raise SystemExit(
+                    f"{d}/config.yaml missing (it is not committed): restore the run's config snapshot there, "
+                    "or use runner.mode: local"
+                )
+            shutil.copy2(cfg.path, d / "config.yaml")
+        if "summarize" in stages:
+            runs.refresh_summary_setup(cfg, d)
+            print(f"recommendation model: {runs.load(d)['summary']['agent']}")
+    else:
+        d = runs.create(cfg, a.plan, Path(a.docs), a.id)
         print(f"new run {d.name}: {d}")
     meta = runs.load(d)
     if "transcribe" in stages:
@@ -331,7 +409,7 @@ def cmd_fetch(cfg: Config, a) -> None:
 
 def _report(cfg: Config, ids: list[str]) -> None:
     from . import reporting, runs
-    from .report import build_experiments_index
+    from .report import build_experiments_index, newest_first
     from .score import score
 
     site = ROOT / "site"
@@ -350,7 +428,7 @@ def _report(cfg: Config, ids: list[str]) -> None:
         if (d / "scores.json").exists():
             items.append(reporting.run_card(meta, json.loads((d / "scores.json").read_text(encoding="utf-8")), d))
     cmp_md = reporting.comparison_md(reporting.comparison(items))
-    guide = reporting.guide_md(items[0].meta if items else None)
+    guide = reporting.guide_md(newest_first(items)[0].meta if items else None)
     print(f"experiments index: {build_experiments_index(items, site, comparison_md=cmp_md, guide_md=guide)}")
 
 
@@ -450,17 +528,21 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("upload-weights")
     p.add_argument("--backend", default=None, help="self-hosted backend (optional if there is only one)")
     p.add_argument("--from-dir", default=None, help="folder with browser-downloaded large files")
+    p.add_argument(
+        "--if-changed", action="store_true", help="skip if S3 already has this hf_repo/hf_revision (its manifest)"
+    )
     p = sub.add_parser("images")
     p.add_argument("which", help="all | bench | <self-hosted backend name>")
     p = sub.add_parser("endpoint")
     p.add_argument("action", choices=["up", "down", "wait", "status"])
     p.add_argument("--backend", default=None, help="self-hosted backend (optional if there is only one)")
+    p.add_argument("--all", action="store_true", help="down: every endpoint named <name_prefix>-*, configured or not")
     p = sub.add_parser("transcribe", help="low-level: one stage-1 run into an arbitrary folder")
     p.add_argument("--docs", default=str(ROOT / "docs-out"))
     p.add_argument("--out", required=True)
     p.add_argument("--backend", required=True)
     p.add_argument("--concurrency", type=int, default=1)
-    p.add_argument("--variant", default="both", choices=["clean", "degraded", "both"])
+    p.add_argument("--variant", default="both", choices=config_mod.VARIANTS)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--no-warmup", action="store_true")

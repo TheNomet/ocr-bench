@@ -102,18 +102,14 @@ images:
     {{ob}} images all
     just _apply --with-model
 
-# Weights of every self-hosted backend -> S3 (models/<name>/), skipped where the manifest is already there.
+# Weights of every self-hosted backend -> S3 (models/<name>/), skipped where S3 already has the configured
+# hf_revision; a new revision replaces the old files.
 # Proxy blocks the HF CDN? `just weights ~/Downloads` (with several self-hosted backends: `just weights ~/Downloads <name>`)
 weights from_dir="" backend="":
     #!/usr/bin/env bash
     set -euo pipefail
-    {{_env}}
-    bucket=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['bucket']['value'])" "$state/outputs.json")
     for name in {{ if backend != "" { backend } else { _backends } }}; do
-      if [ -z "{{from_dir}}" ] && aws s3 ls "s3://$bucket/models/$name.manifest.json" >/dev/null 2>&1; then
-        echo "$name: weights already in s3://$bucket/models/$name/"; continue
-      fi
-      {{ob}} upload-weights --backend "$name" {{ if from_dir != "" { "--from-dir " + from_dir } else { "" } }}
+      {{ob}} upload-weights --backend "$name" {{ if from_dir != "" { "--from-dir " + from_dir } else { "--if-changed" } }}
     done
 
 # ---- GPU endpoint ----
@@ -122,9 +118,10 @@ weights from_dir="" backend="":
 endpoint-up backend="":
     {{ob}} endpoint up {{ if backend != "" { "--backend " + backend } else { "" } }}
 
-# Without a name: every self-hosted backend
+# Without a name: every endpoint of the stack (<name_prefix>-*), also those of backends no longer in the
+# config. Keeps going past a failure and exits non-zero if any endpoint is left.
 endpoint-down backend="":
-    for b in {{ if backend != "" { backend } else { _backends } }}; do {{ob}} endpoint down --backend "$b"; done
+    {{ob}} endpoint down {{ if backend != "" { "--backend " + backend } else { "--all" } }}
 
 endpoint-status:
     for b in {{_backends}}; do {{ob}} endpoint status --backend "$b"; done
@@ -177,7 +174,8 @@ probe *args:
 destroy:
     #!/usr/bin/env bash
     set -euo pipefail
-    just endpoint-down || true
+    # refuses (non-zero) while any endpoint of the stack is left: the scheduler role must outlive it
+    just endpoint-down
     just _tfinit --with-model
     {{_env}}
     {{tf}} destroy -input=false -auto-approve -var-file="$vars"
@@ -190,7 +188,7 @@ publish:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ob}} report
-    if ! git diff --quiet -- runs/ || [ -n "$(git ls-files --others --exclude-standard -- runs/)" ]; then
+    if ! git diff --quiet HEAD -- runs/ || [ -n "$(git ls-files --others --exclude-standard -- runs/)" ]; then
       git status --short -- runs/ >&2
       echo "runs/ changed: commit first" >&2; exit 1
     fi

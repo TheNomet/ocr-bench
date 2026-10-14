@@ -10,6 +10,7 @@ import pytest
 from botocore.stub import ANY, Stubber
 
 from ocrbench import aws
+from ocrbench.config import SAGEMAKER_DEFAULTS
 
 ROLE = "arn:aws:iam::000000000000:role/sched"
 
@@ -24,6 +25,9 @@ class FakeCfg:
 
     def backend(self, name: str) -> dict:
         return self._spec
+
+    def sagemaker(self, name: str) -> dict:
+        return {**SAGEMAKER_DEFAULTS, **self._spec["sagemaker"]}
 
     def endpoint_name(self, name: str) -> str:
         return f"bench-{name}"
@@ -113,21 +117,21 @@ def test_conflict_updates_existing_schedule(scheduler, capsys):
     assert "auto-delete scheduled" in out and "WARNING" not in out
 
 
-@pytest.mark.parametrize("hours", [0, -1])
-def test_skipped_when_lifetime_not_positive(scheduler, capsys, hours):
+@pytest.mark.parametrize("hours", [0, 0.0])
+def test_zero_lifetime_cancels_any_older_schedule(scheduler, capsys, hours):
+    scheduler.add_client_error("delete_schedule", service_error_code="ResourceNotFoundException")
     aws.schedule_auto_delete(FakeCfg({"max_lifetime_hours": hours}), "ocr", ROLE)  # pyright: ignore[reportArgumentType]
+    assert "no auto-delete" in capsys.readouterr().out
+
+
+def test_refuses_without_role(scheduler):
+    """Fail closed: no role (e.g. no outputs.json) means no endpoint, not an endpoint without its safety net."""
+    with pytest.raises(SystemExit, match="no scheduler role"):
+        aws.schedule_auto_delete(FakeCfg({"max_lifetime_hours": 4}), "ocr", None)  # pyright: ignore[reportArgumentType]
     assert scheduler.made == []
-    assert "no auto-delete scheduled" in capsys.readouterr().out
 
 
-def test_skipped_without_role(scheduler, capsys):
-    aws.schedule_auto_delete(FakeCfg({"max_lifetime_hours": 4}), "ocr", None)  # pyright: ignore[reportArgumentType]
-    assert scheduler.made == []
-    assert "no auto-delete scheduled" in capsys.readouterr().out
-
-
-def test_other_errors_warn_but_do_not_raise(scheduler, capsys):
+def test_other_errors_refuse(scheduler):
     scheduler.add_client_error("create_schedule", service_error_code="AccessDeniedException", http_status_code=403)
-    aws.schedule_auto_delete(FakeCfg({"max_lifetime_hours": 1}), "ocr", ROLE)  # pyright: ignore[reportArgumentType]
-    out = capsys.readouterr().out
-    assert "WARNING" in out and "endpoint down" in out
+    with pytest.raises(SystemExit, match="could not schedule.*AccessDeniedException"):
+        aws.schedule_auto_delete(FakeCfg({"max_lifetime_hours": 1}), "ocr", ROLE)  # pyright: ignore[reportArgumentType]

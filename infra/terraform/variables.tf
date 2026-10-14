@@ -50,18 +50,16 @@ variable "ecs_cluster" {
   type        = string
   default     = "create"
 }
-variable "runner_cpu" {
-  type    = number
-  default = 2048
-}
-variable "runner_memory" {
-  type    = number
-  default = 4096
-}
+# runner_* come from runner.* in the config (defaults in ocrbench/config.py DEFAULTS), so they have none here
+variable "runner_cpu" { type = number }
+variable "runner_memory" { type = number }
 variable "runner_max_minutes" {
-  description = "Hard limit for one bench task"
+  description = "Hard limit for one bench task (GNU timeout; must be > 0)"
   type        = number
-  default     = 240
+}
+variable "runner_stop_grace_seconds" {
+  description = "After SIGTERM (time limit or StopTask), seconds the bench gets to sync its partial results"
+  type        = number
 }
 variable "bench_image_tag" {
   type    = string
@@ -78,9 +76,9 @@ variable "selfhosted" {
   default = {}
 }
 variable "create_selfhosted_models" {
-  description = "Create the SageMaker models (needs the images in ECR and weights in S3 first)"
-  type        = bool
-  default     = false
+  description = "Self-hosted backends whose SageMaker model is created (each needs its image in ECR and weights in S3 first)"
+  type        = list(string)
+  default     = []
 }
 variable "bench_image_ref" {
   description = "Pinned bench image (repo@sha256:...); empty = use bench_image_tag"
