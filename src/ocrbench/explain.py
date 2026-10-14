@@ -34,8 +34,9 @@ STAGES = [
     (
         "4. Recommend",
         "An LLM reads the computed key facts and a short description of the setup, and writes a "
-        "recommendation. It may not compute numbers; every number it writes is checked against the "
-        "facts, and any it cannot find there is flagged as unverified.",
+        "recommendation. It may not compute numbers. The numbers it writes in digits are checked against "
+        "the facts, and any not found there are flagged as unverified; the check is automatic and can miss "
+        "a claim, so the tables remain the reference.",
     ),
 ]
 
@@ -56,7 +57,12 @@ CHALLENGES = {
 }
 
 # --------------------------------------------------------------------------- model names
-_CLAUDE = re.compile(r"claude-(?P<fam>[a-z]+)-(?P<maj>\d+)(?:-(?P<min>\d))?(?:-(?P<date>\d{8}))?")
+# A minor version is one or two digits not followed by another digit, so the date in
+# `claude-sonnet-4-20250514` is not read as minor version 2. Old ids put the version first: `claude-3-5-sonnet`.
+_CLAUDE = re.compile(
+    r"claude-(?P<fam>[a-z]+)-(?P<maj>\d+)(?:[-.](?P<min>\d{1,2})(?!\d))?(?:[-@](?P<date>\d{8}))?(?!\d)"
+    r"|claude-(?P<maj2>\d+)(?:[-.](?P<min2>\d{1,2})(?!\d))?-(?P<fam2>[a-z]+)(?:[-@](?P<date2>\d{8}))?(?!\d)"
+)
 
 
 def model_label(model_id: str | None) -> str:
@@ -66,9 +72,11 @@ def model_label(model_id: str | None) -> str:
     m = _CLAUDE.search(model_id)
     if not m:
         return model_id
-    ver = m["maj"] + (f".{m['min']}" if m["min"] else "")
-    date = m["date"]
-    return f"Claude {m['fam'].capitalize()} {ver}" + (f" ({date[:4]}-{date[4:6]}-{date[6:]})" if date else "")
+    fam, maj, minor, date = (
+        (m["fam"], m["maj"], m["min"], m["date"]) if m["fam"] else m.group("fam2", "maj2", "min2", "date2")
+    )
+    ver = maj + (f".{minor}" if minor else "")
+    return f"Claude {fam.capitalize()} {ver}" + (f" ({date[:4]}-{date[4:6]}-{date[6:]})" if date else "")
 
 
 # Static description of the extraction agent; only the model is filled in from the run.

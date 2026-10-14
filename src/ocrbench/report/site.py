@@ -222,7 +222,7 @@ class RunPage:
 _REC_HEADING = re.compile(r"^(#{1,6})[ \t]+Recommendation[ \t]*$", re.M)
 
 
-def _recommendation_md(md: str) -> str:
+def recommendation_md(md: str) -> str:
     """summary.md as shown under the page's "Recommendation" heading: its own "## Recommendation"
     section (the goal -> choice table) is renamed so the page doesn't nest Recommendation in Recommendation."""
     return _REC_HEADING.sub(r"\1 Choice by goal", md)
@@ -375,7 +375,7 @@ class _Site:
             parts.append(
                 f'<p class="muted small">{e(pg.recommendation_author)}. Check the numbers against the tables below.</p>'
             )
-            parts.append(f'<div class="summary">{markdown_lite.render(_recommendation_md(pg.recommendation))}</div>')
+            parts.append(f'<div class="summary">{markdown_lite.render(recommendation_md(pg.recommendation))}</div>')
         else:
             parts.append('<p class="empty">No recommendation yet: run the summarize stage.</p>')
         parts.append(f'<section id="setup">{markdown_lite.render(pg.setup_md, shift=0)}</section>')

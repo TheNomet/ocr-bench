@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import explain, metrics, prompts, view
+from . import explain, metrics, prompts, summarize, view
 from .facts import compute, most_missed, pipeline_facts, to_md
 from .fileio import write_if_changed
-from .report import RunCard, RunPage, build_site
+from .report import RunCard, RunPage, build_site, newest_first, recommendation_md
 
 
 # --------------------------------------------------------------------------- setup + legend
@@ -153,6 +153,12 @@ def read_summary(run_dir: Path) -> tuple[str, dict]:
     return p.read_text(encoding="utf-8").strip(), info
 
 
+def unverified(meta: dict, scores: dict, text: str) -> list[str]:
+    """Numbers in `text` (LLM-written) not found in the run's current key facts and setup. Re-checked at report
+    time rather than read from summary.json, so numbers made stale by a re-score are flagged."""
+    return summarize.unverified_numbers(text, summarize.build_prompt(meta, scores)[1]) if text else []
+
+
 def author_line(info: dict) -> str:
     if not info:
         return "LLM-written"
@@ -173,13 +179,12 @@ def headline(scores: dict) -> dict:
     return {"best": best, "pipelines": pipes}
 
 
-def _report_md(meta: dict, scores: dict, facts_md: str, body: str, info: dict) -> str:
-    """report.md from the focused run.json and visible scores (view.focus)."""
-    bad = info.get("unverified_numbers") or []
+def _report_md(meta: dict, scores: dict, facts_md: str, body: str, info: dict, bad: list[str]) -> str:
+    """report.md from the focused run.json and visible scores (view.focus); `bad`: the unverified numbers."""
     recommendation = (
         ["## Recommendation", "", f"*{author_line(info)}. It interprets the key facts above.*", ""]
         + ([f"> **Unverified numbers** (not found in the key facts): {', '.join(bad)}", ""] if bad else [])
-        + [body]
+        + [recommendation_md(body)]
         if body
         else ["## Recommendation", "", "*No LLM recommendation yet. Run the `summarize` stage.*"]
     )
@@ -198,7 +203,8 @@ def _report_md(meta: dict, scores: dict, facts_md: str, body: str, info: dict) -
 def report_md(meta: dict, scores: dict, run_dir: Path) -> str:
     fm, vis = view.focus(meta, scores)
     body, info = read_summary(run_dir)
-    return _report_md(fm, vis, to_md(compute(fm, vis), view.pipeline_labels(fm)), body, info)
+    bad = unverified(meta, scores, body)
+    return _report_md(fm, vis, to_md(compute(fm, vis), view.pipeline_labels(fm)), body, info, bad)
 
 
 def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
@@ -206,13 +212,14 @@ def write(meta: dict, scores: dict, run_dir: Path, site_root: Path) -> Path:
     body, info = read_summary(run_dir)
     labels = view.pipeline_labels(fm)
     facts_md = to_md(compute(fm, vis), labels)
+    bad = unverified(meta, scores, body)
     write_if_changed(run_dir / "scores.json", json.dumps(scores, ensure_ascii=False, indent=1))
-    write_if_changed(run_dir / "report.md", _report_md(fm, vis, facts_md, body, info))
+    write_if_changed(run_dir / "report.md", _report_md(fm, vis, facts_md, body, info, bad))
     page = RunPage(
         facts_md=facts_md,
         recommendation=body,
         recommendation_author=author_line(info),
-        unverified_numbers=info.get("unverified_numbers") or [],
+        unverified_numbers=bad,
         setup_md=setup_md(fm),
         plan_description=fm.get("plan_description", ""),
         hide_backends=sorted(view.hidden_backends(fm)),
@@ -230,7 +237,15 @@ def bottom_line(run_dir: Path) -> str:
 
 def run_card(meta: dict, scores: dict, run_dir: Path) -> RunCard:
     fm, vis = view.focus(meta, scores)
-    return RunCard(meta=meta, card_meta=fm, scores=scores, headline=headline(vis), bottom_line=bottom_line(run_dir))
+    bl = bottom_line(run_dir)
+    return RunCard(
+        meta=meta,
+        card_meta=fm,
+        scores=scores,
+        headline=headline(vis),
+        bottom_line=bl,
+        unverified_numbers=unverified(meta, scores, bl),
+    )
 
 
 def comparison(items: list[RunCard]) -> dict:
@@ -239,6 +254,7 @@ def comparison(items: list[RunCard]) -> dict:
     Rows are keyed by what was actually measured (pipeline + extractor model id, or backend + model id),
     so a renamed config key never silently compares different models.
     """
+    items = newest_first(items)
     runs_ = [i.meta["id"] for i in items]
     extraction: dict[str, dict] = {}
     reading: dict[str, dict] = {}
@@ -268,6 +284,10 @@ def comparison(items: list[RunCard]) -> dict:
     return {"runs": runs_, "extraction": extraction, "reading": reading, "selfhosted_speed": speed}
 
 
+def _pct(x: float | None) -> str:
+    return "–" if x is None else f"{x:.1%}"
+
+
 def comparison_md(c: dict) -> str:
     runs_ = c["runs"]
     if len(runs_) < 2:
@@ -286,7 +306,7 @@ def comparison_md(c: dict) -> str:
         cells = []
         for r in runs_:
             x = per.get(r)
-            cells.append("–" if not x else f"{x.get('clean', 0):.1%} / {x.get('degraded', 0):.1%}")
+            cells.append("–" if not x else " / ".join(_pct(x.get(v)) for v in ("clean", "degraded")))
         out.append(f"| {label} | " + " | ".join(cells) + " |")
     out += [
         "",

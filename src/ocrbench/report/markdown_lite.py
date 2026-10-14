@@ -20,8 +20,10 @@ _BULLET = re.compile(r"^\s*[-*]\s+(.*)$")
 def inline(text: str) -> str:
     """Render inline markup (code spans, bold, italic) with everything else escaped.
 
-    Code spans are swapped for placeholders first, so bold may wrap them (**`x`**).
+    Code spans are swapped for NUL-delimited placeholders first, so bold may wrap them (**`x`**); NULs in
+    the input are dropped so they can't forge a placeholder.
     """
+    text = text.replace("\x00", "")
     codes: list[str] = []
 
     def stash(m: re.Match) -> str:

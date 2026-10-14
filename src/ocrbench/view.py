@@ -23,7 +23,10 @@ def is_selfhosted(meta: dict, name: str | None) -> bool:
 def label(meta: dict, name: str | None) -> str:
     """Human name of the model behind a backend key: `label:` from the config if set, else derived
     from the model id ('Claude Sonnet 4.5 (2025-09-29)', 'baidu/Unlimited-OCR @ 07dea832')."""
-    b = spec(meta, name)
+    return _label(spec(meta, name), name)
+
+
+def _label(b: dict, name: str | None) -> str:
     if b.get("label"):
         return b["label"]
     if b.get("kind") == "selfhosted":
@@ -53,8 +56,23 @@ def selfhosted_in_run(meta: dict) -> list[str]:
 
 
 def sampling(meta: dict) -> list[str]:
-    """Backends with temperature > 0: their results vary between runs."""
-    return [k for k, b in (meta.get("backends") or {}).items() if (b.get("temperature") or 0) > 0]
+    """Backends with temperature > 0 among those whose results a run page shows (transcribers and the
+    extractors of shown pipelines): their results vary between runs. The recommendation writer and
+    hidden or unused backends don't count."""
+    hidden = hidden_backends(meta)
+    pipes = (meta.get("extraction") or {}).get("pipelines") or []
+    shown = [t for t in meta.get("transcribers") or [] if t not in hidden]
+    shown += [extractor(meta, p) for p in pipes if not pipe_hidden(meta, p, hidden)]
+    return [k for k in dict.fromkeys(shown) if (spec(meta, k).get("temperature") or 0) > 0]
+
+
+def summary_spec(meta: dict) -> dict:
+    """The recommendation writer's backend: run.json `summary.backend` when recorded there (the writer ran
+    with other settings than the same key in stages 1-3), else `backends.<summary agent>`."""
+    sm = meta.get("summary") or {}
+    if sm.get("backend"):
+        return sm["backend"]
+    return spec(meta, sm.get("agent") or (meta.get("extraction") or {}).get("agent"))
 
 
 # --------------------------------------------------------------------------- pipelines
@@ -80,7 +98,8 @@ def same_model(meta: dict, pipe: str) -> bool:
     src = source(pipe)
     if src == "image" or is_selfhosted(meta, src):
         return False
-    return spec(meta, src).get("model") == spec(meta, extractor(meta, pipe)).get("model")
+    a, b = spec(meta, src).get("model"), spec(meta, extractor(meta, pipe)).get("model")
+    return a is not None and a == b  # an unknown model is not the same model
 
 
 def pipeline_label(meta: dict, pipe: str) -> str:
@@ -160,14 +179,13 @@ def focused_meta(meta: dict) -> dict:
     and the default agent replaced by a shown extractor if it was hidden."""
     hidden = hidden_backends(meta)
     ex = dict(meta.get("extraction") or {})
-    agents = ex.get("agents") or {}
     keep = [p for p in ex.get("pipelines", []) if not pipe_hidden(meta, p, hidden)]
     ex["pipelines"] = keep
+    ex["agents"] = {p: extractor(meta, p) for p in keep}  # resolved before the default agent is replaced
     if ex.get("agent") in hidden:
-        shown = [agents.get(p) for p in keep if agents.get(p) and agents.get(p) not in hidden]
+        shown = [ex["agents"][p] for p in keep if ex["agents"][p] not in hidden]
         ex["agent"] = shown[0] if shown else ex.get("agent")
         ex["agent_hidden"] = True  # ex["agent"] is a stand-in: don't call it the default agent
-    ex["agents"] = {p: agents.get(p) or extractor_key(ex.get("agent") or "", p) for p in keep}
     return {
         **meta,
         "extraction": ex,
@@ -234,19 +252,23 @@ def model_rows(meta: dict) -> list[ModelRow]:
         roles.setdefault(agent, []).append(ROLE_AGENT if default_agent_shown(meta) else ROLE_EXTRACTOR)
     for k in dict.fromkeys(v for v in (ex.get("agents") or {}).values() if v != agent):
         roles.setdefault(k, []).append(ROLE_EXTRACTOR)
-    writer = (meta.get("summary") or {}).get("agent") or agent
-    if writer:
+    writer: str = (meta.get("summary") or {}).get("agent") or agent or ""
+    wspec = summary_spec(meta)
+    own_row = writer in roles and wspec != spec(meta, writer)  # the writer ran with other settings than stages 1-3
+    if writer and not own_row:
         roles.setdefault(writer, []).append(ROLE_WRITER)
+    rows_of = [(k, rs, wspec if rs == [ROLE_WRITER] else spec(meta, k)) for k, rs in roles.items()]
+    if own_row:
+        rows_of.append((writer, [ROLE_WRITER], wspec))
     rows = []
-    for k, rs in roles.items():
-        b = spec(meta, k)
+    for k, rs, b in rows_of:
         sh = b.get("kind") == "selfhosted"
         rev = str(b.get("hf_revision") or "?")
         rows.append(
             ModelRow(
                 key=k,
                 roles=rs,
-                label=label(meta, k),
+                label=_label(b, k),
                 model_id=b.get("model") or "?",
                 detail=f"HF revision {rev[:8]}" if sh else (b.get("model") or ""),
                 detail_title=f"HF revision {rev}" if sh else "",

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
 
@@ -18,13 +19,29 @@ from .site import VARIANTS
 @dataclass
 class RunCard:
     """One run on the experiments index. `card_meta` is run.json as the run page describes it (hidden
-    backends removed); `headline` comes from reporting.headline; `bottom_line` from summary.md."""
+    backends removed); `headline` comes from reporting.headline; `bottom_line` from summary.md, with the
+    numbers in it that are not in the run's current key facts in `unverified_numbers`."""
 
     meta: dict
     card_meta: dict
     scores: dict
     headline: dict
     bottom_line: str = ""
+    unverified_numbers: list[str] = field(default_factory=list)
+
+
+def newest_first(runs: list[RunCard]) -> list[RunCard]:
+    """Runs ordered newest first by run.json `created`; the run id breaks ties and stands in when it is missing."""
+    return sorted(runs, key=lambda r: (str(r.meta.get("created") or ""), str(r.meta.get("id") or "")), reverse=True)
+
+
+def _bottom_line_html(r: RunCard) -> str:
+    warn = (
+        f'<p class="warn">Unverified numbers (not in the key facts): {e(", ".join(r.unverified_numbers))}</p>'
+        if r.unverified_numbers
+        else ""
+    )
+    return warn + markdown_lite.render(label_pipelines(r.bottom_line, view.pipeline_labels(r.card_meta)))
 
 
 def _card_models(m: dict) -> str:
@@ -131,11 +148,7 @@ def _latest(r: RunCard) -> str:
     )
     if not rows and not r.bottom_line:
         return ""
-    bl = (
-        f'<div class="latest-bl">{markdown_lite.render(label_pipelines(r.bottom_line, view.pipeline_labels(m)))}</div>'
-        if r.bottom_line
-        else ""
-    )
+    bl = f'<div class="latest-bl">{_bottom_line_html(r)}</div>' if r.bottom_line else ""
     return (
         '<section class="latest" aria-labelledby="latest-h">'
         f'<h2 id="latest-h">Latest result</h2><p class="muted small">Most accurate pipeline (field accuracy) in '
@@ -160,7 +173,7 @@ def _run_card(r: RunCard) -> str:
         f'<a class="open" href="{quote(m["id"])}/index.html">Open run &rarr;</a></summary>'
         + (
             '<div class="bottom-line"><div class="label">Bottom line <span class="muted">(LLM comment)</span></div>'
-            f"{markdown_lite.render(label_pipelines(r.bottom_line, view.pipeline_labels(m)))}</div>"
+            f"{_bottom_line_html(r)}</div>"
             if r.bottom_line
             else ""
         )
@@ -178,11 +191,41 @@ def _guide_sections(guide_md: str) -> tuple[str, str]:
     return head, rest if sep else ""
 
 
-def build_experiments_index(runs: list[RunCard], out_dir: Path, comparison_md: str = "", guide_md: str = "") -> Path:
+def _is_run_page(d: Path) -> bool:
+    """A folder build_site wrote (index.html + docs/ + assets/), not the site's own assets/ or anything else."""
+    return (
+        d.is_dir()
+        and d.name != "assets"
+        and (d / "index.html").is_file()
+        and (d / "docs").is_dir()
+        and (d / "assets").is_dir()
+    )
+
+
+def prune_run_pages(runs: list[RunCard], out_dir: Path) -> list[str]:
+    """Delete the run pages under `out_dir` whose run is not in `runs` (its folder was removed from runs/),
+    so a publish doesn't keep serving them. Returns the names removed."""
+    keep = {str(r.meta.get("id")) for r in runs}
+    gone = sorted(d.name for d in Path(out_dir).iterdir() if d.name not in keep and _is_run_page(d))
+    for name in gone:
+        shutil.rmtree(Path(out_dir) / name)
+    return gone
+
+
+def build_experiments_index(
+    runs: list[RunCard], out_dir: Path, comparison_md: str = "", guide_md: str = "", prune: bool = True
+) -> Path:
     """site/index.html: the newest run's headline result, the cross-run comparison, one expandable card per
-    run (models, GPU, headline results) linking to its run page, and the guide below them."""
+    run (models, GPU, headline results) linking to its run page, and the guide below them.
+
+    Runs are shown newest first by `created`, whatever order they come in. With `prune`, run pages of runs
+    that no longer exist are deleted (see prune_run_pages)."""
     out_dir = Path(out_dir)
+    runs = newest_first(runs)
     write_static(out_dir)
+    if prune:
+        for name in prune_run_pages(runs, out_dir):
+            print(f"removed stale run page: {out_dir / name}", flush=True)
     intro, guide = _guide_sections(guide_md)
     body = (
         '<section class="hero"><div class="eyebrow">Document reading benchmark</div>'
