@@ -196,8 +196,8 @@
    "seconds": 0.3
   },
   "summarize": {
-   "finished": "2026-10-13T16:15:13",
-   "seconds": 16.4
+   "finished": "2026-10-14T19:32:37",
+   "seconds": 15.9
   }
  },
  "plan_description": "First benchmark: self-hosted Unlimited-OCR (GPU) vs Claude Sonnet 4.5 and Haiku 4.5, single requests and batch load (concurrency 1-32).",
