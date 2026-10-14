@@ -6,6 +6,8 @@ them as a table, so the key comparisons are correct even if the LLM prose is not
 
 from __future__ import annotations
 
+from .score import RANKING_MIN_COVERAGE as MIN_COVERAGE  # default for scores that don't record theirs
+
 
 def _min(rows, key):
     rows = [r for r in rows if r.get(key) is not None]
@@ -21,21 +23,37 @@ def _pct(x) -> str:
     return "–" if x is None else f"{x:.1%}"
 
 
+def _coverage(a: dict) -> float:
+    c = a.get("coverage")
+    return 1.0 if c is None else float(c)  # scores from before coverage was recorded
+
+
 def _usd(x) -> str:
     return "–" if x is None else f"${x:.2f}"
 
 
 # --------------------------------------------------------------------------- compute
-def pipeline_facts(ea: list[dict]) -> dict:
-    """Per variant: most accurate, cheapest and fastest pipeline, which ones have no price, and every pipeline."""
+def pipeline_facts(ea: list[dict], min_coverage: float = MIN_COVERAGE) -> dict:
+    """Per variant: most accurate, cheapest and fastest pipeline, which ones have no cost, and every pipeline.
+
+    Cheapest and fastest only compare pipelines with coverage >= `min_coverage`: a pipeline that mostly failed
+    is cheap and quick because it did little. If none qualifies, all are compared and `coverage_fallback` says so.
+    Most accurate needs no filter: failed documents already score 0."""
     out = {}
     for v in ("clean", "degraded"):
         rows = [a for a in ea if a["variant"] == v]
         acc = _max(rows, "field_accuracy")
         if acc is None:
             continue
-        cheap, fast = _min(rows, "cost_per_1k_docs_usd"), _min(rows, "end_to_end_latency_s")
+        low = sorted(a["pipeline"] for a in rows if _coverage(a) < min_coverage)
+        ranked = [a for a in rows if a["pipeline"] not in low]
+        fallback = not ranked
+        ranked = ranked or rows
+        cheap, fast = _min(ranked, "cost_per_1k_docs_usd"), _min(ranked, "end_to_end_latency_s")
         out[v] = {
+            "ranking_min_coverage": min_coverage,
+            "low_coverage": low,
+            "coverage_fallback": fallback,
             "unpriced": sorted(a["pipeline"] for a in rows if a.get("cost_per_1k_docs_usd") is None),
             "most_accurate": {"pipeline": acc["pipeline"], "field_accuracy": acc["field_accuracy"]},
             "cheapest": cheap
@@ -61,12 +79,17 @@ def reading_facts(ta: list[dict]) -> dict:
     return out
 
 
-def throughput_facts(sp: list[dict]) -> dict:
+def throughput_facts(sp: list[dict], basis: dict | None = None) -> dict:
+    """Per backend: p50 at concurrency 1 and its top speed. For a backend whose cost basis names a run
+    (self-hosted: the sustained run), that run, so capacity and cost per page describe the same run."""
+    basis = basis or {}
     out = {}
     for b in dict.fromkeys(s["backend"] for s in sp):  # plan order, deterministic
         rows = [s for s in sp if s["backend"] == b]
         c1 = [s for s in rows if s["concurrency"] == 1]
-        best = _max(rows, "pages_per_min")
+        conc = (basis.get(b) or {}).get("concurrency")
+        best = next((s for s in rows if conc is not None and s["concurrency"] == conc), None)
+        best = best or _max(rows, "pages_per_min")
         if best is None:
             continue
         out[b] = {
@@ -74,33 +97,42 @@ def throughput_facts(sp: list[dict]) -> dict:
             "max_pages_per_min": best["pages_per_min"],
             "at_concurrency": best["concurrency"],
         }
+        if conc is not None:
+            out[b]["meets_error_threshold"] = (basis.get(b) or {}).get("meets_error_threshold", True)
     return out
 
 
 def selfhosted_facts(meta: dict, sp: list[dict], throughput: dict, basis: dict) -> dict:
     """Per self-hosted backend: GPU price, capacity, cost basis, and the volume above which it is cheaper
-    than each token-priced transcriber (its GPU is billed per hour, busy or idle)."""
+    than each token-priced transcriber (its GPU is billed per hour, busy or idle). The LLM side uses the
+    LLM's cost basis, the same figure pipeline totals use. A volume above what one GPU handled can't be
+    reached on one GPU: the self-hosted model is then not cheaper at any volume."""
     be = meta["backends"]
     out = {}
+    llms = dict.fromkeys(
+        s["backend"] for s in sp if (be.get(s["backend"]) or {}).get("kind") not in (None, "selfhosted")
+    )
     for name in sorted({s["backend"] for s in sp if (be.get(s["backend"]) or {}).get("kind") == "selfhosted"}):
         price = be[name].get("price_per_hour_usd")
         if not price:
             continue
-        break_even = {
-            s["backend"]: {
-                "llm_cost_per_1k_pages_usd": s["cost_per_1k_pages_usd"],
-                "cheaper_above_pages_per_hour": round(price / s["cost_per_1k_pages_usd"] * 1000),
-            }
-            for s in sp
-            if (be.get(s["backend"]) or {}).get("kind") != "selfhosted"
-            and s["concurrency"] == 1
-            and s.get("cost_per_1k_pages_usd")
-        }
         cap = throughput.get(name, {}).get("max_pages_per_min")
+        capacity = round(cap * 60) if cap else None
+        break_even = {}
+        for llm in llms:
+            c = (basis.get(llm) or {}).get("cost_per_1k_pages_usd")
+            if not c:
+                continue
+            above = round(price / c * 1000)
+            break_even[llm] = {
+                "llm_cost_per_1k_pages_usd": c,
+                "cheaper_above_pages_per_hour": above,
+                "reachable_on_one_gpu": capacity is None or above <= capacity,
+            }
         out[name] = {
             "gpu_price_per_hour_usd": price,
             "instance_type": be[name].get("instance_type"),
-            "capacity_pages_per_hour": round(cap * 60) if cap else None,
+            "capacity_pages_per_hour": capacity,
             "cost_basis": basis.get(name),
             "break_even": break_even,
         }
@@ -120,10 +152,13 @@ def most_missed(docs: list[dict], n: int = 4) -> dict[str, list[tuple[str, int]]
 
 def compute(meta: dict, scores: dict) -> dict:
     sp = scores["speed"]
-    throughput = throughput_facts(sp)
-    basis = (scores.get("method") or {}).get("cost_basis") or {}
+    method = scores.get("method") or {}
+    basis = method.get("cost_basis") or {}
+    throughput = throughput_facts(sp, basis)
     return {
-        "pipelines": pipeline_facts(scores["extraction"]["aggregate"]),
+        "pipelines": pipeline_facts(
+            scores["extraction"]["aggregate"], method.get("ranking_min_coverage", MIN_COVERAGE)
+        ),
         "reading": reading_facts(scores["transcription"]["aggregate"]),
         "throughput": throughput,
         "selfhosted": selfhosted_facts(meta, sp, throughput, basis),
@@ -157,10 +192,25 @@ def _md_winners(p: dict, labels: dict[str, str]) -> list[str]:
     if unpriced:
         out += [
             "",
-            "**Cost note:** no price is configured for "
+            "**Cost note:** no cost could be computed for "
             + ", ".join(f"`{x}`" for x in unpriced)
-            + ", so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those "
-            "backends to include them.",
+            + " (no price configured, or no successful request reported its token usage), so they are left out "
+            "of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.",
+        ]
+    low = sorted({x for v in p for x in p[v].get("low_coverage", [])})
+    if low:
+        thr = next(iter(p.values())).get("ranking_min_coverage", MIN_COVERAGE)
+        fell_back = [v for v in ("clean", "degraded") if (p.get(v) or {}).get("coverage_fallback")]
+        out += [
+            "",
+            f"**Coverage note:** {', '.join(f'`{x}`' for x in low)} answered fewer than {thr:.0%} of the documents"
+            + (
+                f"; no pipeline reached that on {' and '.join(fell_back)} pages, so cheapest and fastest there "
+                "compare all pipelines."
+                if fell_back
+                else ", so they are left out of the cheapest and fastest comparisons (failed documents are cheap "
+                "and quick)."
+            ),
         ]
     return out
 
@@ -202,7 +252,8 @@ def _md_readers(reading: dict, throughput: dict) -> list[str]:
     out += ["", "| reader | p50 s/page (one at a time) | max pages/min (at concurrency) |", "|---|---|---|"]
     for b, t in throughput.items():
         p50 = "–" if t["p50_s_at_concurrency_1"] is None else f"{t['p50_s_at_concurrency_1']:.1f}"
-        out.append(f"| `{b}` | {p50} | {t['max_pages_per_min']:.0f} ({t['at_concurrency']}) |")
+        flag = "" if t.get("meets_error_threshold", True) else ", no run within 1% errors"
+        out.append(f"| `{b}` | {p50} | {t['max_pages_per_min']:.0f} ({t['at_concurrency']}{flag}) |")
     return out
 
 
@@ -225,10 +276,17 @@ def _md_selfhosted(name: str, x: dict) -> list[str]:
             "",
         ]
     for b, y in x["break_even"].items():
-        out.append(
-            f"- `{name}` is cheaper than `{b}` transcription ({_usd(y['llm_cost_per_1k_pages_usd'])}/1k pages) "
-            f"above **~{y['cheaper_above_pages_per_hour']} pages/hour** sustained"
-        )
+        if y.get("reachable_on_one_gpu", True):
+            out.append(
+                f"- `{name}` is cheaper than `{b}` transcription ({_usd(y['llm_cost_per_1k_pages_usd'])}/1k pages) "
+                f"above **~{y['cheaper_above_pages_per_hour']} pages/hour** sustained"
+            )
+        else:
+            out.append(
+                f"- `{name}` is not cheaper than `{b}` transcription ({_usd(y['llm_cost_per_1k_pages_usd'])}/1k "
+                f"pages) at any volume: it would take ~{y['cheaper_above_pages_per_hour']} pages/hour, more than "
+                "one GPU handled in this run"
+            )
     return out
 
 

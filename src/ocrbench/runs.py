@@ -15,6 +15,7 @@ The same folder is mirrored to s3://<bucket>/runs/<id>/ when the runner is Farga
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import shutil
 import subprocess
@@ -75,13 +76,9 @@ def run_dir(rid: str) -> Path:
     return RUNS / rid
 
 
-def upgrade(meta: dict) -> dict:
-    """run.json written before schema 2 (`ocr` + `llm_backends` blocks) -> one `backends` map with a kind
-    per backend, plus the prompts. Earlier runs used the default prompts (unchanged since the first release)."""
-    if meta.get("schema_version", 1) >= SCHEMA_VERSION:
-        return meta
-    m = copy.deepcopy(meta)
-    backends: dict[str, dict] = {}
+def _v1_to_v2(m: dict) -> dict:
+    """`ocr` + `llm_backends` blocks -> one `backends` map with a kind per backend, plus the prompts."""
+    backends: dict[str, dict] = dict(m.get("backends") or {})
     o = m.pop("ocr", None)
     if o is not None:
         o.pop("name", None)
@@ -101,8 +98,22 @@ def upgrade(meta: dict) -> dict:
         v = dict(v)
         backends[k] = {"kind": v.pop("provider", None), **v, "postprocess": []}
     m["backends"] = backends
-    m.setdefault("prompts", prompts.DEFAULTS)
-    return {"schema_version": SCHEMA_VERSION, **m}
+    m.setdefault("prompts", copy.deepcopy(prompts.DEFAULTS))
+    return m
+
+
+def upgrade(meta: dict) -> dict:
+    """run.json of an older schema -> the current one, one step per version, then stamped. Returns `meta`
+    itself if it is current; never modifies it. Runs before schema 2 recorded no prompts: the defaults are
+    assumed (they were not always the current ones: the summarize prompt once had max_tokens 3000)."""
+    v = meta.get("schema_version", 1)
+    if v >= SCHEMA_VERSION:
+        return meta
+    m = copy.deepcopy(meta)
+    if v < 2:
+        m = _v1_to_v2(m)
+    m["schema_version"] = SCHEMA_VERSION
+    return m
 
 
 def load(rid_or_dir: str | Path) -> dict:
@@ -145,13 +156,51 @@ def documents_summary(docs: Path) -> dict:
     return {"count": len(manifest), "pages": pages, "page_images": pages * 2, "types": types}
 
 
+_PUBLIC_REGISTRIES = {
+    "docker.io",
+    "registry-1.docker.io",
+    "index.docker.io",
+    "ghcr.io",
+    "public.ecr.aws",
+    "nvcr.io",
+    "quay.io",
+}
+_PUBLIC_ARN_TYPES = {"foundation-model", "inference-profile"}  # their ids are public model ids
+
+
+def public_model_id(model: str | None) -> str | None:
+    """A model id safe to publish. An ARN carries the region and account id: foundation models and
+    system inference profiles keep their public id (`eu.anthropic.claude-...`); account resources
+    (application inference profiles, provisioned or custom models) become `<type>/<short hash>`, still
+    distinct per resource so runs can be compared."""
+    if not model or not model.startswith("arn:"):
+        return model
+    resource = model.split(":", 5)[-1]
+    rtype, _, rid = resource.partition("/")
+    if rtype in _PUBLIC_ARN_TYPES and rid:
+        return rid
+    return f"{rtype or 'arn'}/{hashlib.sha256(model.encode()).hexdigest()[:8]}"
+
+
+def public_image(image: str | None) -> str | None:
+    """A container image reference safe to publish: images on a public registry as they are; a private
+    registry's host (an ECR URI carries the account id) is replaced by `<private-registry>`."""
+    if not image:
+        return image
+    first, sep, rest = image.partition("/")
+    if not sep or not ("." in first or ":" in first or first == "localhost"):
+        return image  # Docker Hub short form
+    return image if first.lower() in _PUBLIC_REGISTRIES else f"<private-registry>/{rest}"
+
+
 def backend_summary(spec: dict) -> dict:
-    """Model identity, settings and price of one backend: no hosts, URLs, credentials or auth details."""
+    """Model identity, settings and price of one backend: no hosts, URLs, credentials, auth details or
+    account ids."""
     common = {"kind": spec["kind"], "label": spec.get("label"), "postprocess": list(spec.get("postprocess") or [])}
     if spec["kind"] != "selfhosted":
         return {
             **common,
-            "model": spec.get("model") or spec.get("model_id"),
+            "model": public_model_id(spec.get("model") or spec.get("model_id")),
             "price_per_mtok": spec.get("price_per_mtok"),
             "temperature": spec.get("temperature", 0.0),
             "reasoning_effort": spec.get("reasoning_effort"),
@@ -164,7 +213,7 @@ def backend_summary(spec: dict) -> dict:
         "model": spec["served_model_name"],
         "hf_repo": spec.get("hf_repo"),
         "hf_revision": spec.get("hf_revision"),
-        "source_image": spec.get("source_image"),
+        "source_image": public_image(spec.get("source_image")),
         "serve_args": spec.get("serve_args"),
         "serving": serving,
         "via": f"vLLM on {serving}",
@@ -181,6 +230,20 @@ def backend_summary(spec: dict) -> dict:
 
 def backends_summary(cfg: Config, names: list[str] | None = None) -> dict:
     return {k: backend_summary(cfg.backend(k)) for k in (names if names is not None else cfg.backends)}
+
+
+def used_backends(items: list[dict], agent: str, agents: dict[str, str], summary_agent: str | None) -> list[str]:
+    """Backends a run uses, in stage order: the plan's transcribers, the extractors, the summary writer."""
+    keys = [it["backend"] for it in items] + [agent, *agents.values()]
+    return list(dict.fromkeys(keys + ([summary_agent] if summary_agent else [])))
+
+
+def stage_backends(meta: dict) -> set[str]:
+    """Backends whose settings shaped stages 1-3 (transcribers and extractors), as recorded in run.json."""
+    ex = meta.get("extraction") or {}
+    out = {it["backend"] for it in meta.get("plan_items") or []} | set(meta.get("transcribers") or [])
+    out |= {view.extractor(meta, p) for p in ex.get("pipelines") or []}
+    return out | ({ex["agent"]} if ex.get("agent") else set())
 
 
 def plan_pipelines(cfg: Config, plan: str) -> list[str]:
@@ -206,6 +269,7 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
     shutil.copy2(cfg.path, d / "config.yaml")
     ex = dict(cfg["bench"]["extraction"])
     ex["pipelines"] = plan_pipelines(cfg, plan)
+    agents = {p: view.extractor_key(ex["agent"], p) for p in ex["pipelines"]}
     meta = {
         "schema_version": SCHEMA_VERSION,
         "id": rid,
@@ -221,13 +285,13 @@ def create(cfg: Config, plan: str, docs: Path, rid: str | None = None) -> Path:
             **documents_summary(d / "docs"),
             **{k: cfg["bench"]["docs"][k] for k in ("seed", "per_type")},
         },
-        "backends": backends_summary(cfg),
+        "backends": backends_summary(cfg, used_backends(items, ex["agent"], agents, cfg.summary_agent)),
         "prompts": prompts.resolve(cfg["bench"]),
         "transcribers": list(dict.fromkeys(it["backend"] for it in items)),
         "extraction": {
             "agent": ex["agent"],
             "pipelines": ex["pipelines"],
-            "agents": {p: view.extractor_key(ex["agent"], p) for p in ex["pipelines"]},
+            "agents": agents,
         },
         "summary": {"agent": cfg.summary_agent},
         "stages": {},
@@ -274,35 +338,62 @@ def stage(d: Path, name: str, **info) -> None:
 
 
 def all_runs() -> list[dict]:
+    """Every run, newest first: by `created` (an id sorts "-10" before "-9"), the id when it is missing."""
     if not RUNS.exists():
         return []
-    out = []
-    for p in sorted(RUNS.iterdir(), reverse=True):
-        if (p / "run.json").exists():
-            out.append(load(p))
-    return out
+    out = [load(p) for p in RUNS.iterdir() if (p / "run.json").exists()]
+    return sorted(out, key=lambda m: (m.get("created") or m.get("id") or "", m.get("id") or ""), reverse=True)
 
 
 def refresh_summary_setup(cfg: Config, d: Path) -> None:
     """Re-summarising an old run uses the *current* config's recommendation model (and plan description).
 
-    The run's config.yaml snapshot is patched so the Fargate task, which reads it, sees the same thing.
-    Nothing that affected stages 1-3 is changed.
+    Nothing that affected stages 1-3 is changed. If the summary agent wasn't used in stages 1-3, its entry in
+    run.json `backends` is (re)written. If it was, that entry keeps the settings stages 1-3 used, and the
+    writer's current settings go to `summary.backend` when they differ.
+
+    The run's config.yaml snapshot (gitignored, so absent on a fresh clone: then skipped) is patched so the
+    Fargate task, which reads it, uses the same writer; a backend used in stages 1-3 is never redefined there:
+    the writer is added under its own key (`summary.config_key`) instead.
     """
-    import yaml
-
-    from .config import upgrade as upgrade_config
-
     meta = load(d)
     key = cfg.summary_agent
-    snap = upgrade_config(yaml.safe_load((d / "config.yaml").read_text(encoding="utf-8")))
-    snap.setdefault("backends", {})[key] = cfg.backend(key)
-    snap.setdefault("bench", {})["summary"] = {"agent": key}
-    (d / "config.yaml").write_text(yaml.safe_dump(snap, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    meta["summary"] = {"agent": key}
-    meta["backends"][key] = backend_summary(cfg.backend(key))
+    spec = cfg.backend(key)
+    entry = backend_summary(spec)
+    used = stage_backends(meta)
+    summary: dict = {"agent": key}
+    meta["summary"] = summary
+    if key not in used:
+        meta["backends"][key] = entry
+    elif meta["backends"].get(key) != entry:
+        summary["backend"] = entry
+    snap_key = _patch_snapshot(d, key, spec, key in used)
+    if snap_key and snap_key != key:
+        summary["config_key"] = snap_key
     meta.setdefault("prompts", {})["summarize"] = prompts.resolve(cfg["bench"])["summarize"]
     desc = cfg.plan_description(meta["plan"])
     if desc:
         meta["plan_description"] = desc
     save(d, meta)
+
+
+def _patch_snapshot(d: Path, key: str, spec: dict, used_in_stages: bool) -> str | None:
+    """Point the snapshot's bench.summary.agent at the writer; returns the snapshot key used (None: no snapshot)."""
+    import yaml
+
+    from .config import upgrade as upgrade_config
+
+    p = d / "config.yaml"
+    if not p.exists():
+        return None
+    snap = upgrade_config(yaml.safe_load(p.read_text(encoding="utf-8")) or {})
+    backends = snap.setdefault("backends", {})
+    target = key
+    if used_in_stages and backends.get(key) not in (None, spec):
+        target, n = f"{key}-summary", 2
+        while target in backends and backends[target] != spec:
+            target, n = f"{key}-summary-{n}", n + 1
+    backends[target] = spec
+    snap.setdefault("bench", {})["summary"] = {"agent": target}
+    p.write_text(yaml.safe_dump(snap, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return target

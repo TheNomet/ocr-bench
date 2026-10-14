@@ -80,7 +80,8 @@ _ALL = [
         glossary=(
             "$/1k",
             "LLMs: list price x tokens used. Self-hosted models: GPU hourly price / best sustained throughput "
-            "(GPU kept busy); the cost one request at a time is shown next to it",
+            "(fastest run with at most 1% errors, GPU kept busy; if none, the run with the fewest errors, flagged); "
+            "the cost one request at a time is shown next to it. Unknown token usage = no cost, never $0",
         ),
     ),
     # transcription quality
@@ -93,7 +94,8 @@ _ALL = [
         glossary=(
             "coverage",
             "share of pages or documents that got an answer. Failures count against the backend: "
-            "CER 1 and no numbers found for a page, every field wrong for a document",
+            "CER 1 and no numbers found for a page, every field wrong for a document. Cheapest and fastest "
+            "pipeline only compare pipelines with at least 99% coverage",
         ),
     ),
     Metric(
@@ -104,7 +106,8 @@ _ALL = [
         "Character error rate, mean over pages",
         glossary=(
             "CER",
-            "character error rate after removing Markdown/HTML formatting; 0 = perfect. Sensitive to reading order.",
+            "character error rate after removing Markdown/HTML formatting; 0 = perfect, capped at 1 per page "
+            "(a failed or runaway page). Sensitive to reading order.",
         ),
     ),
     Metric(
@@ -113,7 +116,7 @@ _ALL = [
         "rate",
         "low",
         "Character error rate of the typical page",
-        glossary=("CER median", "the typical page; the mean can be dominated by a single runaway page"),
+        glossary=("CER median", "the typical page; the mean also counts each failed or runaway page as 1"),
     ),
     Metric(
         "runaway",
@@ -177,7 +180,8 @@ _ALL = [
         "Transcription + extraction latency per document",
         glossary=(
             "end-to-end",
-            "per document: transcription time of all its pages (concurrency-1 runs) plus the extraction call",
+            "per document: transcription time of all its pages (each page's lowest-concurrency transcript) plus "
+            "the extraction call",
         ),
     ),
     Metric("cost_per_1k_docs_usd", "$/1k docs", "usd", "low"),

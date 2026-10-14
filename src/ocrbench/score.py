@@ -7,15 +7,21 @@ the same on any machine, today or later.
 Choices that affect comparisons, all reported in scores["method"]:
 - Failed requests count. A page with no successful transcript scores CER=1 and recall 0; an extraction
   that failed (or had no transcript to read) scores 0 on every field. `coverage` shows how many succeeded.
+  Pages a plan item selected but never attempted (a killed task) count as failed too.
 - One transcript per (backend, page, variant) is scored: the successful one from the lowest-concurrency run,
-  the latest if there are several (so a deliberate re-run replaces it).
+  the latest if there are several (so a deliberate re-run replaces it). End-to-end latency uses that same one.
+- Per-page CER and WER are capped at 1 (a failed page): a runaway page can't score worse than no answer.
 - Per-page cost of a self-hosted model = GPU price per hour / pages per hour at its best *sustained*
   throughput (the fastest run with <=1% errors), i.e. assuming the GPU is kept busy. The cost at
-  concurrency 1 is reported next to it.
+  concurrency 1 is reported next to it. If no run stays under 1% errors, the run with the fewest errors is
+  used and flagged.
+- Unknown is not zero: a run with no token usage (or no successful request) has no cost, and is left out
+  of the mean rather than counted as free.
 """
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import statistics as st
@@ -34,13 +40,15 @@ _TAGS = re.compile(r"</?[a-zA-Z][^>]*>")
 _TOK = re.compile(r"\d+(?:[.,:/\-]\d+)*")
 RUNAWAY_RATIO = 3.0  # output more than 3x the page length = repetition loop
 SUSTAINED_MAX_ERROR_RATE = 0.01
+RANKING_MIN_COVERAGE = 0.99  # facts.py: only pipelines this complete compete for cheapest / fastest
 
 
 # --------------------------------------------------------------------------- text metrics
 def normalise(text: str) -> str:
-    """Compare content, not formatting: drop markdown/HTML syntax, unify whitespace and checkbox glyphs."""
+    """Compare content, not formatting: drop markdown/HTML syntax and entities, unify whitespace and
+    checkbox glyphs."""
     t = unicodedata.normalize("NFC", text or "")
-    t = _TAGS.sub(" ", t).replace("\u00a0", " ").replace("\u202f", " ")
+    t = html.unescape(_TAGS.sub(" ", t)).replace("\u00a0", " ").replace("\u202f", " ")
     t = t.replace("□", "☐").replace("✓", "☑").replace("✔", "☑")
     t = re.sub(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$", " ", t, flags=re.M)
     t = re.sub(r"[#*_`|>]+", " ", t)
@@ -71,6 +79,14 @@ def number_found(number: str, text: str, toks: list[tuple[str, int, int]] | None
     return False
 
 
+def _error_rate(dist: int, n_ref: int, n_hyp: int) -> float:
+    """Edit distance per reference unit, capped at 1 (a failed page). An empty reference scores 0 if the
+    output is empty too, else 1."""
+    if n_ref == 0:
+        return 0.0 if n_hyp == 0 else 1.0
+    return min(1.0, dist / n_ref)
+
+
 def page_metrics(gt_text: str, gt_numbers: list[str], hyp: str) -> dict:
     g, h = normalise(gt_text), normalise(hyp)
     gw, hw = g.split(), h.split()
@@ -81,11 +97,12 @@ def page_metrics(gt_text: str, gt_numbers: list[str], hyp: str) -> dict:
     gc, hc = Counter(w.casefold() for w in gw), Counter(w.casefold() for w in hw)
     overlap = sum((gc & hc).values())
     return {
-        "cer": levenshtein(g, h) / max(1, len(g)),
-        "wer": levenshtein(gw, hw) / max(1, len(gw)),
-        "word_recall": overlap / max(1, sum(gc.values())),
+        "cer": _error_rate(levenshtein(g, h), len(g), len(h)),
+        "wer": _error_rate(levenshtein(gw, hw), len(gw), len(hw)),
+        # nothing on the page to find = nothing missed
+        "word_recall": overlap / sum(gc.values()) if gc else 1.0,
         "word_precision": overlap / max(1, sum(hc.values())),
-        "num_recall": (len(gt_numbers) - len(missing)) / max(1, len(gt_numbers)),
+        "num_recall": (len(gt_numbers) - len(missing)) / len(gt_numbers) if gt_numbers else 1.0,
         "num_missing": len(missing),
         "missing_examples": missing[:5],
         "num_hallucinated": len(halluc),
@@ -142,10 +159,17 @@ def _pct(xs: list[float], p: float) -> float | None:
     return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
 
 
-def _token_cost(price: dict | None, pt: float, ct: float) -> float | None:
-    if not price:
+def _token_cost(price: dict | None, pt: float | None, ct: float | None) -> float | None:
+    """USD per call; None if there is no price or the token usage is unknown (never $0 for "unknown")."""
+    if not price or pt is None or ct is None:
         return None
     return (pt * price.get("input", 0) + ct * price.get("output", 0)) / 1e6
+
+
+def _mean_known(xs) -> float | None:
+    """Mean of the reported values; missing (None) or zero usage means "not reported" and is left out."""
+    known = [x for x in xs if x]
+    return st.mean(known) if known else None
 
 
 # --------------------------------------------------------------------------- score
@@ -157,8 +181,8 @@ def speed_rows(meta: dict, runs: list[dict], transcripts: list[dict]) -> list[di
         rs = [r for r in transcripts if r["run_id"] == run["run_id"] and r["backend"] == run["backend"]]
         ok = [r for r in rs if r["ok"]]
         lats = [r["latency_s"] for r in ok]
-        pt = st.mean([r["prompt_tokens"] for r in ok if r.get("prompt_tokens")] or [0])
-        ct = st.mean([r["completion_tokens"] for r in ok if r.get("completion_tokens")] or [0])
+        pt = _mean_known(r.get("prompt_tokens") for r in ok)
+        ct = _mean_known(r.get("completion_tokens") for r in ok)
         ppm = len(ok) / run["wall_s"] * 60 if run["wall_s"] else 0
         per_page = _token_cost(prices.get(run["backend"]), pt, ct)
         gpu_hour = (be.get(run["backend"]) or {}).get("price_per_hour_usd")  # self-hosted: billed per hour
@@ -186,27 +210,49 @@ def speed_rows(meta: dict, runs: list[dict], transcripts: list[dict]) -> list[di
     return rows
 
 
-def cost_basis(speed: list[dict], hourly: set[str]) -> dict[str, dict]:
+def cost_basis(speed: list[dict], hourly: set[str], priced: set[str] | None = None) -> dict[str, dict]:
     """Per backend: the per-page cost used for pipeline totals, and why. `hourly`: backends billed per hour
-    (self-hosted), whose cost per page falls with throughput."""
+    (self-hosted), whose cost per page falls with throughput. `priced`: backends with a price configured
+    (to tell "no price" from "price, but no usable run")."""
     out: dict[str, dict] = {}
     for be in sorted({s["backend"] for s in speed}):
         rows = [s for s in speed if s["backend"] == be and s["cost_per_1k_pages_usd"] is not None]
         if not rows:
-            out[be] = {"cost_per_1k_pages_usd": None, "basis": "no price configured"}
+            if priced is None or be not in priced:
+                why = "no price configured"
+            elif be in hourly:
+                why = "unknown: no run had successful pages"
+            else:
+                why = "unknown: no run had successful pages with token usage"
+            out[be] = {"cost_per_1k_pages_usd": None, "basis": why}
             continue
         c1 = next((s for s in rows if s["concurrency"] == 1), None)
         if be in hourly:
-            ok = [s for s in rows if s["pages"] and s["errors"] / s["pages"] <= SUSTAINED_MAX_ERROR_RATE]
-            best = max(ok or rows, key=lambda s: s["pages_per_min"])
+            rate = [s["errors"] / s["pages"] if s["pages"] else 1.0 for s in rows]
+            ok = [s for s, r in zip(rows, rate, strict=True) if r <= SUSTAINED_MAX_ERROR_RATE]
+            if ok:
+                best = max(ok, key=lambda s: s["pages_per_min"])
+                why = (
+                    f"best sustained throughput: {best['pages_per_min']:.1f} pages/min at concurrency "
+                    f"{best['concurrency']} (GPU kept busy)"
+                )
+            else:  # nothing sustained: the most reliable run, not the fastest error-prone one
+                i = min(range(len(rows)), key=lambda j: (rate[j], -rows[j]["pages_per_min"]))
+                best = rows[i]
+                why = (
+                    f"no run stayed within {SUSTAINED_MAX_ERROR_RATE:.0%} errors, so the most reliable one: "
+                    f"{best['pages_per_min']:.1f} pages/min at concurrency {best['concurrency']} "
+                    f"({rate[i]:.0%} errors, GPU kept busy)"
+                )
             out[be] = {
                 "cost_per_1k_pages_usd": best["cost_per_1k_pages_usd"],
-                "basis": f"best sustained throughput: {best['pages_per_min']:.1f} pages/min at concurrency "
-                f"{best['concurrency']} (GPU kept busy)",
+                "basis": why,
                 "concurrency": best["concurrency"],
+                "pages_per_min": best["pages_per_min"],
+                "meets_error_threshold": bool(ok),
                 "cost_at_concurrency_1": c1["cost_per_1k_pages_usd"] if c1 else None,
             }
-        else:  # token-priced: cost per page doesn't depend on concurrency; average all runs
+        else:  # token-priced: cost per page doesn't depend on concurrency; average the runs with a known cost
             out[be] = {
                 "cost_per_1k_pages_usd": st.mean(s["cost_per_1k_pages_usd"] for s in rows),
                 "basis": "list price x tokens used (mean over runs)",
@@ -224,14 +270,45 @@ def pick_transcript(current: dict | None, new: dict) -> dict | None:
     return current
 
 
-def transcription(meta: dict, docs: Path, run_dir: Path, transcripts: list[dict], manifest: dict) -> tuple[list, list]:
+def chosen_transcripts(transcripts: list[dict], manifest: dict) -> dict[tuple, dict | None]:
+    """(backend, doc, page, variant) -> the transcript scored (pick_transcript), None if every attempt failed."""
+    out: dict[tuple, dict | None] = {}
+    for r in transcripts:
+        if r["doc_id"] in manifest:
+            k = (r["backend"], r["doc_id"], r["page"], r["variant"])
+            out[k] = pick_transcript(out.get(k), r)
+    return out
+
+
+def expected_pages(meta: dict, docs: Path) -> dict[str, set[tuple]] | None:
+    """Backend -> (doc, page, variant) its plan items selected (the selection transcribe.pages makes), so
+    pages never attempted still count. None if run.json has no plan items (then: attempted pages only)."""
+    from .transcribe import pages as select
+
+    items = meta.get("plan_items")
+    if not items:
+        return None
+    out: dict[str, set[tuple]] = {}
+    for it in items:
+        refs = select(docs, it.get("variant", "both"), int(it.get("limit", 0)))
+        out.setdefault(it["backend"], set()).update((r.doc_id, r.page, r.variant) for r in refs)
+    return out
+
+
+def transcription(
+    meta: dict,
+    docs: Path,
+    run_dir: Path,
+    transcripts: list[dict],
+    manifest: dict,
+    expected: dict[str, set[tuple]] | None = None,
+) -> tuple[list, list]:
     steps = {k: b.get("postprocess") or [] for k, b in meta["backends"].items()}
-    attempted: dict[tuple, dict | None] = {}
-    for r in transcripts:  # see pick_transcript; failed attempts still mark the page as expected
-        k = (r["backend"], r["doc_id"], r["page"], r["variant"])
-        if r["doc_id"] not in manifest:
-            continue
-        attempted[k] = pick_transcript(attempted.get(k), r)
+    attempted = chosen_transcripts(transcripts, manifest)  # failed attempts still mark the page as expected
+    for be, keys in (expected or {}).items():
+        for doc_id, page, variant in keys:
+            if doc_id in manifest:
+                attempted.setdefault((be, doc_id, page, variant), None)  # selected, never attempted
     pages = []
     for (be, doc_id, page, variant), r in sorted(attempted.items()):
         pg = next((p for p in manifest[doc_id]["pages"] if p["n"] == page), None)
@@ -323,31 +400,37 @@ def score_extraction(e: dict, truth: dict, run_dir: Path) -> dict:
     }
 
 
-def source_latency(transcripts: list[dict]) -> dict[tuple[str, str, str], float]:
-    """(backend, doc, variant) -> transcription seconds for the whole document: the sum over its pages,
-    from the backend's lowest-concurrency run (the same basis as the latency figures)."""
-    lowest: dict[str, int] = {}
-    for r in transcripts:
-        if r["ok"]:
-            lowest[r["backend"]] = min(lowest.get(r["backend"], 10**9), r["concurrency"])
-    out: dict[tuple[str, str, str], float] = {}
-    counted = set()
-    for r in transcripts:
-        k = (r["backend"], r["doc_id"], r["page"], r["variant"])
-        if r["ok"] and r["concurrency"] == lowest[r["backend"]] and k not in counted:
-            counted.add(k)
-            dk = (r["backend"], r["doc_id"], r["variant"])
-            out[dk] = out.get(dk, 0.0) + r["latency_s"]
+def source_latency(transcripts: list[dict], manifest: dict) -> dict[tuple[str, str, str], float | None]:
+    """(backend, doc, variant) -> transcription seconds for the whole document: the sum over its pages of the
+    transcript each page is scored on (pick_transcript: lowest concurrency available for that page, latest
+    if several). None if some page has no successful transcript: unknown, not undercounted."""
+    chosen = chosen_transcripts(transcripts, manifest)
+    out: dict[tuple[str, str, str], float | None] = {}
+    for be, doc_id, variant in sorted({(b, d, v) for b, d, _, v in chosen}):
+        lats = [(chosen.get((be, doc_id, p["n"], variant)) or {}).get("latency_s") for p in manifest[doc_id]["pages"]]
+        known = [float(x) for x in lats if x is not None]
+        out[(be, doc_id, variant)] = float(sum(known)) if len(known) == len(lats) else None
     return out
+
+
+def _end_to_end(okd: list[dict], src: str, variant: str, src_lat: dict) -> float | None:
+    """Mean per-document latency: the extraction call plus, for a transcript source, its transcription.
+    Documents whose transcription time is unknown are left out; None if none is known."""
+    if not okd:
+        return None
+    if src == "image":
+        return st.mean(d["latency_s"] for d in okd)
+    known = [d["latency_s"] + t for d in okd if (t := src_lat.get((src, d["doc_id"], variant))) is not None]
+    return st.mean(known) if known else None
 
 
 def _pipeline_cost(s: list[dict], okd: list[dict], price: dict | None, src_cost: float | None, manifest: dict):
     """USD per 1k documents: extractor tokens, plus the source's per-page cost x pages per document.
-    None when either part has no price."""
+    None when either part has no price, or no successful extraction reported its token usage."""
     per_call = _token_cost(
         price,
-        st.mean([d["prompt_tokens"] or 0 for d in okd] or [0]),
-        st.mean([d["completion_tokens"] or 0 for d in okd] or [0]),
+        _mean_known(d["prompt_tokens"] for d in okd),
+        _mean_known(d["completion_tokens"] for d in okd),
     )
     if per_call is None or not okd:
         return None
@@ -373,7 +456,7 @@ def extraction(
     for (_, doc_id, _), e in sorted(latest_extractions(records, manifest).items()):
         truth = json.loads(read_text(docs / manifest[doc_id]["fields"]) or '{"fields": {}}')["fields"]
         docs_out.append(score_extraction(e, truth, run_dir))
-    src_lat = source_latency(transcripts)
+    src_lat = source_latency(transcripts, manifest)
 
     agg = []
     for pipe in sorted({d["pipeline"] for d in docs_out}):
@@ -383,11 +466,7 @@ def extraction(
                 continue
             src, okd = s[0]["source"], [d for d in s if d["ok"]]
             lat = st.mean(d["latency_s"] for d in okd) if okd else None
-            e2e = (
-                st.mean(d["latency_s"] + src_lat.get((src, d["doc_id"], v), 0.0) for d in okd)
-                if okd and src != "image"
-                else lat
-            )
+            e2e = _end_to_end(okd, src, v, src_lat)
             src_cost = (basis.get(src) or {}).get("cost_per_1k_pages_usd")
             tot, cor = sum(d["fields_total"] for d in s), sum(d["fields_correct"] for d in s)
             agg.append(
@@ -417,8 +496,12 @@ def score(meta: dict, run_dir: Path) -> dict:
     manifest = {d["id"]: d for d in json.loads((docs / "manifest.json").read_text(encoding="utf-8"))}
     transcripts = read_jsonl(run_dir / "transcripts.jsonl")
     speed = speed_rows(meta, read_jsonl(run_dir / "runs.jsonl"), transcripts)
-    basis = cost_basis(speed, {k for k, b in meta["backends"].items() if b["kind"] == "selfhosted"})
-    tagg, tpages = transcription(meta, docs, run_dir, transcripts, manifest)
+    be = meta["backends"]
+    hourly = {k for k, b in be.items() if b["kind"] == "selfhosted"}
+    priced = {k for k, b in be.items() if b.get("price_per_hour_usd" if k in hourly else "price_per_mtok")}
+    basis = cost_basis(speed, hourly, priced)
+    expected = expected_pages(meta, docs)
+    tagg, tpages = transcription(meta, docs, run_dir, transcripts, manifest, expected)
     eagg, edocs = extraction(
         meta, docs, run_dir, read_jsonl(run_dir / "extractions.jsonl"), manifest, transcripts, basis
     )
@@ -426,8 +509,19 @@ def score(meta: dict, run_dir: Path) -> dict:
         "run_id": meta["id"],
         "method": {
             "failures": "counted: failed pages score CER=1/recall 0, failed extractions score 0 (see coverage)",
+            "expected_pages": "every page a plan item selected; one never attempted counts as failed"
+            if expected is not None
+            else "pages with a record (run.json has no plan items)",
             "transcript_per_page": "successful one from the lowest-concurrency run (latest if several)",
+            "text_normalisation": "Markdown/HTML tags removed, HTML entities decoded, whitespace unified",
+            "error_rate_cap": "per-page CER and WER capped at 1; empty ground truth: 0 if output empty, else 1",
+            "empty_ground_truth_recall": "a page with no words / numbers has word / number recall 1",
+            "end_to_end_latency": "extraction call + transcription of every page of the document (the "
+            "transcript scored); documents with an unknown transcription time are left out of the mean",
+            "unknown_cost": "runs/extractions without token usage are left out of cost means; none known = no cost",
             "runaway_ratio": RUNAWAY_RATIO,
+            "sustained_max_error_rate": SUSTAINED_MAX_ERROR_RATE,
+            "ranking_min_coverage": RANKING_MIN_COVERAGE,
             "cost_basis": basis,
         },
         "speed": speed,
