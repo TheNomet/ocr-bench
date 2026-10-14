@@ -55,7 +55,8 @@ just destroy            # remove everything
 
 Other recipes: `just runs` (list runs), `just fetch <id>` (pull a Fargate run from S3),
 `just report [<id>]` (re-score, rebuild reports and site), `just endpoint-status`, `just endpoint-logs [<name>]`, `just probe`
-(which model ids a gateway accepts), `just lint`; `just --list` shows all of them.
+(which model ids a gateway accepts; `--temperature 0 --temperature 1` also tries those temperatures), `just lint`;
+`just --list` shows all of them.
 
 ### Without a GPU: Bedrock only, nothing to deploy
 

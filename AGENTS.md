@@ -151,7 +151,9 @@ formatting-sensitive:
 
 - **Edit with care after `ruff format`.** Several string-replace edits silently missed because the
   formatter had re-wrapped the target code. After a scripted edit, grep that it landed.
-- Newer Claude models (5.5) accept only temperature 1 through the gateway; set `temperature: 1`
+- Newer Claude models (5.5) accept only temperature 1 through the gateway (its LiteLLM layer rejects
+  0 with `UnsupportedParamsError`; re-checked 2026-10-14 with
+  `just probe --backend <name> --temperature 0 --temperature 1`); set `temperature: 1`
   on that backend. It is recorded in the run and shown in the report, because results then vary
   slightly between runs.
 

@@ -485,6 +485,7 @@ def cmd_probe_models(cfg: Config, a) -> None:
     import httpx
 
     from .backends import Request
+    from .backends.base import _UNSET
     from .backends.openai_compat import OpenAICompatBackend
 
     async def go():
@@ -504,11 +505,15 @@ def cmd_probe_models(cfg: Config, a) -> None:
                 print(f"  /v1/models failed: {e}")
             for mid in a.model or [spec["model"]]:
                 be.model = mid
-                try:
-                    resp = await be.complete(Request("Reply with OK.", "Say OK.", max_tokens=5))
-                    print(f"  call {mid}: OK ({resp.text.strip()[:20]!r})", flush=True)
-                except Exception as e:  # noqa: BLE001
-                    print(f"  call {mid}: FAILED {str(e)[:200]}", flush=True)
+                for t in a.temperature or [_UNSET]:
+                    if t is not _UNSET:
+                        be.temperature_override = t
+                    at = "" if t is _UNSET else f" @ temperature {'omitted' if t is None else t}"
+                    try:
+                        resp = await be.complete(Request("Reply with OK.", "Say OK.", max_tokens=5))
+                        print(f"  call {mid}{at}: OK ({resp.text.strip()[:20]!r})", flush=True)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"  call {mid}{at}: FAILED {str(e)[:200]}", flush=True)
 
     asyncio.run(go())
 
@@ -525,6 +530,8 @@ def cmd_probe_task(cfg: Config, a) -> None:
         args += ["--model", m]
     for b in a.backend or []:
         args += ["--backend", b]
+    for t in a.temperature or []:
+        args += ["--temperature", "none" if t is None else str(t)]
     if a.filter:
         args += ["--filter", a.filter]
     _, code = aws.run_task(cfg, outputs(cfg), args)
@@ -599,6 +606,13 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--model", action="append", help="model id to try (repeatable); default: the configured one")
         p.add_argument("--backend", action="append", help="limit to these backends")
         p.add_argument("--filter", default=None, help="only list /v1/models ids containing this")
+        p.add_argument(
+            "--temperature",
+            action="append",
+            type=lambda s: None if s.lower() in ("none", "null") else float(s),
+            help="also try each model at this temperature (repeatable; `none` = don't send it); "
+            "default: the backend's configured temperature",
+        )
 
     a = ap.parse_args(argv)
     cfg = _resolve_config(a.config)
