@@ -11,10 +11,30 @@ import asyncio
 import json
 
 import httpx
-from botocore.exceptions import ConnectionClosedError, EndpointConnectionError, ReadTimeoutError
+from botocore.exceptions import ClientError, ConnectionClosedError, EndpointConnectionError, ReadTimeoutError
 
 from ..config import Config
 from .base import Backend, HTTPError, Request, Response, data_url
+
+# sagemaker-runtime error codes worth retrying, as the status the runners retry on (base.RETRYABLE).
+# ModelError is handled separately: its status 0 is the 60 s endpoint timeout, which is not retried.
+_RETRY_CODES = {
+    "ThrottlingException": 429,
+    "Throttling": 429,
+    "ModelNotReadyException": 503,
+    "ServiceUnavailable": 429,
+    "ServiceUnavailableException": 429,
+    "InternalFailure": 500,
+    "InternalServerError": 500,
+    "InternalDependencyException": 503,
+}
+
+
+def _retry_status(e: Exception) -> int | None:
+    if isinstance(e, ClientError) and (code := e.response.get("Error", {}).get("Code")) in _RETRY_CODES:
+        return _RETRY_CODES[code]
+    msg = str(e)
+    return next((s for c, s in _RETRY_CODES.items() if c in msg), 429 if "Throttl" in msg else None)
 
 
 class _Vllm(Backend):
@@ -50,7 +70,7 @@ class DirectVllm(_Vllm):
         base = spec["direct_url"].rstrip("/")
         self.url = base + "/v1/chat/completions"
         self.health = base + "/health"
-        self.model = f"{self.served}@{base}"
+        self.model = f"{self.served}@direct"  # the URL (host/IP) stays out of records
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(900.0), limits=httpx.Limits(max_connections=256))
 
     async def warmup(self) -> None:
@@ -104,9 +124,8 @@ class SageMakerVllm(_Vllm):
             except (EndpointConnectionError, ReadTimeoutError, ConnectionClosedError) as e:
                 raise HTTPError(503, f"{type(e).__name__}: {e}") from e
             except Exception as e:
-                msg = str(e)
-                if "Throttl" in msg or "ServiceUnavailable" in msg:
-                    raise HTTPError(429, msg) from e
+                if (status := _retry_status(e)) is not None:
+                    raise HTTPError(status, str(e)) from e
                 raise
             return json.loads(r["Body"].read())
 

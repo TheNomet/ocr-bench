@@ -1,12 +1,18 @@
 # Local configs hold account IDs, endpoints and credentials references — never commit them.
-config/*.yaml
-!config/example.yaml
+# Anything under config/ (files, sub-folders, CA bundles) except the example.
+/config/*
+!/config/example.yaml
 .public-denylist
 
 # Generated data. Runs ARE committed (neutral backend names), but each run's config snapshot
 # holds deployment details (account, endpoints, client ids) and never leaves this machine.
 docs-out/
 runs/*/config.yaml
+runs/*/config.yml
+runs/*/config.yaml.*
+runs/*/config.yml.*
+# written during an extract pass; left behind only if the pass crashes
+runs/*/extractions.partial.jsonl
 results/
 site/
 *.tfplan
@@ -31,11 +37,21 @@ infra/terraform/.terraform/
 infra/terraform/backend.hcl
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
+infra/terraform/crash*.log
+**/.terraform/
+*.tfvars
+*.tfvars.json
+.terraformrc
+terraform.rc
 
 # Extra CA bundles / secrets
 *.pem
 *.key
+*.p12
+*.pfx
 .env
+.env.*
+.envrc
 .DS_Store
 infra/terraform/backend.tf
 .state/

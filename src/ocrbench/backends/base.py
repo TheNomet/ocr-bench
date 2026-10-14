@@ -4,6 +4,8 @@ import base64
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..redact import redact
+
 
 @dataclass
 class Request:
@@ -26,7 +28,7 @@ class HTTPError(Exception):
     """Provider error with an HTTP-like status, so runners can decide whether to retry."""
 
     def __init__(self, status: int, message: str):
-        super().__init__(f"HTTP {status}: {message[:300]}")
+        super().__init__(f"HTTP {status}: {redact(message, limit=300)}")  # redact first, then truncate
         self.status = status
 
 
