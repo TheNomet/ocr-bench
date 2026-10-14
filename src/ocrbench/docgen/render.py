@@ -5,8 +5,10 @@ from __future__ import annotations
 import random
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
+from functools import cache
 from pathlib import Path
 
 from PIL import Image, ImageFilter
@@ -37,16 +39,57 @@ def html_to_pdf(chrome: str, html_path: Path, pdf_path: Path, timeout: int = 90,
         try:
             _chrome_print(chrome, html_path, pdf_path, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            err = (getattr(e, "stderr", b"") or b"").decode("utf-8", "replace")[-2000:]
+            # Chrome can crash or hang while shutting down after the PDF is fully written
+            # ("Teardown watchdog expired", exit 2), notably on macOS: keep a complete PDF.
+            if _complete_pdf(pdf_path):
+                return
+            status = f"exit code {e.returncode}" if isinstance(e, subprocess.CalledProcessError) else "timed out"
+            err = f"{status}\n{_stderr_tail(getattr(e, 'stderr', None))}"
             continue
-        if pdf_path.exists() and pdf_path.stat().st_size > 0:
+        if _complete_pdf(pdf_path):
             return
-    raise RuntimeError(f"Chrome failed to print {html_path} after {attempts} attempts:\n{err}")
+    raise RuntimeError(f"Chrome failed to print {html_path} after {attempts} attempts: {err}")
+
+
+def _complete_pdf(pdf_path: Path) -> bool:
+    try:
+        with pdf_path.open("rb") as f:
+            if f.read(5) != b"%PDF-":
+                return False
+            f.seek(max(0, pdf_path.stat().st_size - 1024))
+            return b"%%EOF" in f.read()
+    except OSError:
+        return False
+
+
+_STDERR_NOISE = ("thread_get_state", "CVDisplayLink", "task_policy_set", "exception_ports")
+
+
+def _stderr_tail(stderr: bytes | str | None, limit: int = 2000) -> str:
+    text = stderr.decode("utf-8", "replace") if isinstance(stderr, bytes) else (stderr or "")
+    lines = [ln for ln in text.splitlines() if not any(n in ln for n in _STDERR_NOISE)]
+    return "\n".join(lines)[-limit:]
+
+
+@cache
+def _native_launcher() -> tuple[str, ...]:
+    """On Apple Silicon, a Python running under Rosetta (an x86_64 interpreter) would start Chrome's
+    x86_64 slice too, which is slow and often dies at shutdown. `arch` prefers the native slice."""
+    if sys.platform != "darwin" or not shutil.which("arch"):
+        return ()
+    try:
+        translated = subprocess.run(
+            ["sysctl", "-n", "sysctl.proc_translated"], capture_output=True, text=True, timeout=10
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    return ("arch", "-arm64", "-x86_64") if translated == "1" else ()
 
 
 def _chrome_print(chrome: str, html_path: Path, pdf_path: Path, timeout: int) -> None:
     with tempfile.TemporaryDirectory(prefix="ocrbench-chrome-") as profile:
         cmd = [
+            *_native_launcher(),
             chrome,
             "--headless=new",
             "--disable-gpu",

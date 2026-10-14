@@ -1,10 +1,11 @@
 import codecs
 import json
 import re
+import subprocess
 
 import pytest
 
-from ocrbench.docgen import SCHEMAS, TYPES, build_doc, generate
+from ocrbench.docgen import SCHEMAS, TYPES, build_doc, generate, render
 from ocrbench.docgen.render import find_chrome
 
 # Words that must never appear in this public repo's generated documents, stored rot13-encoded so
@@ -124,3 +125,63 @@ def test_generate_end_to_end(tmp_path):
                 assert (tmp_path / p[k]).stat().st_size > 0
             assert p["width"] > 0 and p["height"] > 0
             assert json.loads((tmp_path / p["gt_meta"]).read_text(encoding="utf-8"))["numbers"]
+
+
+def _fake_chrome(monkeypatch, outcomes):
+    """Replace the Chrome call: each outcome is (pdf bytes or None, exception or None)."""
+    calls = []
+
+    def fake(chrome, html_path, pdf_path, timeout):
+        content, exc = outcomes[len(calls)]
+        calls.append(pdf_path)
+        if content is not None:
+            pdf_path.write_bytes(content)
+        if exc is not None:
+            raise exc
+
+    monkeypatch.setattr(render, "_chrome_print", fake)
+    return calls
+
+
+PDF = b"%PDF-1.4\n...\n%%EOF\n"
+
+
+def test_html_to_pdf_keeps_pdf_when_chrome_dies_at_shutdown(tmp_path, monkeypatch):
+    # Chrome writes the whole PDF, then its teardown watchdog kills it (exit 2): no retry needed.
+    crash = subprocess.CalledProcessError(2, ["chrome"], stderr=b"Teardown watchdog expired")
+    calls = _fake_chrome(monkeypatch, [(PDF, crash)])
+    render.html_to_pdf("chrome", tmp_path / "doc.html", tmp_path / "doc.pdf")
+    assert len(calls) == 1 and (tmp_path / "doc.pdf").read_bytes() == PDF
+
+
+def test_html_to_pdf_retries_truncated_pdf_and_reports_stderr(tmp_path, monkeypatch):
+    noisy = b"[1:2:ERROR:process_reader_mac.cc:310] thread_get_state(4)\nreal problem\n"
+    crash = subprocess.CalledProcessError(2, ["chrome"], stderr=noisy)
+    calls = _fake_chrome(monkeypatch, [(b"%PDF-1.4 trunc", crash), (None, crash), (PDF, None)])
+    render.html_to_pdf("chrome", tmp_path / "doc.html", tmp_path / "doc.pdf")
+    assert len(calls) == 3
+
+    _fake_chrome(monkeypatch, [(b"%PDF-1.4 trunc", crash)] * 2)
+    with pytest.raises(RuntimeError, match="exit code 2") as e:
+        render.html_to_pdf("chrome", tmp_path / "doc.html", tmp_path / "doc.pdf", attempts=2)
+    assert "real problem" in str(e.value) and "thread_get_state" not in str(e.value)
+
+
+@pytest.mark.parametrize(
+    ("platform", "translated", "expected"),
+    [
+        ("darwin", "1\n", ("arch", "-arm64", "-x86_64")),
+        ("darwin", "0\n", ()),
+        ("darwin", "", ()),  # Intel Mac: the sysctl doesn't exist
+        ("linux", "1\n", ()),
+    ],
+)
+def test_native_launcher(monkeypatch, platform, translated, expected):
+    monkeypatch.setattr(render.sys, "platform", platform)
+    monkeypatch.setattr(render.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(render.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=translated))
+    render._native_launcher.cache_clear()
+    try:
+        assert render._native_launcher() == expected
+    finally:
+        render._native_launcher.cache_clear()
