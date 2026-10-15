@@ -282,7 +282,7 @@ resource "aws_iam_role_policy" "task" {
         Condition = { StringLike = { "s3:prefix" = ["runs/*"] } } },
         { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = "${aws_s3_bucket.artifacts.arn}/runs/*" },
       ],
-      length(local.endpoint_arns) > 0 ? [{ Effect = "Allow", Action = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"],
+      length(local.endpoint_arns) > 0 ? [{ Effect = "Allow", Action = ["sagemaker:InvokeEndpoint", "sagemaker:InvokeEndpointWithResponseStream", "sagemaker:DescribeEndpoint"],
       Resource = local.endpoint_arns }] : [],
       length(var.kms_sign_key_arns) > 0 ? [{ Effect = "Allow", Action = ["kms:Sign"], Resource = var.kms_sign_key_arns }] : [],
       length(var.bedrock_model_ids) > 0 ? [{

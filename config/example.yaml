@@ -101,6 +101,7 @@ backends:
       model_download_timeout_s: 1800      # time allowed to copy the weights from S3 to the host
       wait_timeout_s: 5400                # `endpoint up/wait` give up (non-zero) if not InService by then
       network_isolation: true
+      response_stream: false              # true: stream answers (8 min limit instead of 60 s per request)
       # The endpoint deletes itself after this many hours (EventBridge Scheduler), in case nobody runs
       # `endpoint down`. 0 = never. With > 0, `endpoint up` refuses to start if it can't schedule that.
       max_lifetime_hours: 8

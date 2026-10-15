@@ -169,7 +169,9 @@ formatting-sensitive:
   60 ms. Set `cache_bust: true` on `openai_compatible` backends; it adds a nonce to the
   system prompt.
 - SageMaker real-time `InvokeEndpoint` has a **60 s per-request limit**. At high concurrency
-  a single GPU queues requests until they time out. The plans stop at concurrency 32.
+  a single GPU queues requests until they time out. The plans stop at concurrency 32. A slow model
+  writing a long page hits it even one at a time (Dolphin-v2 on an A10G, ~66 tokens/s):
+  `sagemaker.response_stream: true` streams the answer, which SageMaker allows up to 8 min.
 - vLLM OCR images for recent models need a recent NVIDIA driver. The default
   `inference_ami_version` (`al2023-ami-sagemaker-inference-gpu-4-1`) ships CUDA 13
   drivers.

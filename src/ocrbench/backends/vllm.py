@@ -27,6 +27,7 @@ _RETRY_CODES = {
     "InternalFailure": 500,
     "InternalServerError": 500,
     "InternalDependencyException": 503,
+    "InternalStreamFailure": 500,
 }
 
 
@@ -64,6 +65,33 @@ class _Vllm(Backend):
             ch["message"]["content"] or "", u.get("prompt_tokens"), u.get("completion_tokens"), ch.get("finish_reason")
         )
 
+    @staticmethod
+    def parse_stream(chunks) -> Response:
+        """vLLM's server-sent events (`"stream": true`), in byte chunks that may split an event anywhere."""
+        text, finish, usage, buf = [], None, {}, b""
+
+        def event(ev: bytes) -> None:
+            nonlocal finish, usage
+            for line in ev.splitlines():
+                data = line[5:].strip() if line.startswith(b"data:") else b""
+                if not data or data == b"[DONE]":
+                    continue
+                d = json.loads(data)
+                if err := d.get("error"):
+                    raise HTTPError(int(err.get("code") or 500), str(err.get("message") or err))
+                usage = d.get("usage") or usage
+                for ch in d.get("choices") or []:
+                    text.append((ch.get("delta") or {}).get("content") or "")
+                    finish = ch.get("finish_reason") or finish
+
+        for c in chunks:
+            buf += c
+            while b"\n\n" in buf:
+                ev, buf = buf.split(b"\n\n", 1)
+                event(ev)
+        event(buf)
+        return Response("".join(text), usage.get("prompt_tokens"), usage.get("completion_tokens"), finish)
+
 
 class DirectVllm(_Vllm):
     def __init__(self, cfg: Config, name: str, spec: dict):
@@ -88,7 +116,10 @@ class DirectVllm(_Vllm):
 
 
 class SageMakerVllm(_Vllm):
-    """vLLM's /invocations accepts chat-completion bodies. Real-time endpoints cap a request at 60 s."""
+    """vLLM's /invocations accepts chat-completion bodies. Real-time endpoints cap a request at 60 s; with
+    `sagemaker.response_stream: true` the answer is streamed instead, which SageMaker allows up to 8 min."""
+
+    stream = False
 
     def __init__(self, cfg: Config, name: str, spec: dict):
         import boto3
@@ -98,6 +129,7 @@ class SageMakerVllm(_Vllm):
         self.boto3, self.region, self.instance_type = boto3, cfg.region, None
         self.endpoint = cfg.endpoint_name(name)
         self.model = f"{self.served}@sagemaker"  # endpoint name stays out of records
+        self.stream = bool((spec.get("sagemaker") or {}).get("response_stream"))
         self.rt = boto3.client(
             "sagemaker-runtime",
             region_name=cfg.region,
@@ -113,10 +145,26 @@ class SageMakerVllm(_Vllm):
         self.instance_type = (live or [v.get("CurrentInstanceType")])[0]
 
     async def complete(self, req: Request) -> Response:
-        body = json.dumps(self.body(req))
+        payload = self.body(req)
+        if self.stream:
+            payload |= {"stream": True, "stream_options": {"include_usage": True}}
+        body = json.dumps(payload)
+
+        def chunks(r):
+            for ev in r["Body"]:  # botocore raises EventStreamError for ModelStreamError / InternalStreamFailure
+                if "PayloadPart" in ev:
+                    yield ev["PayloadPart"]["Bytes"]
 
         def call():
             try:
+                if self.stream:
+                    r = self.rt.invoke_endpoint_with_response_stream(
+                        EndpointName=self.endpoint,
+                        ContentType="application/json",
+                        Accept="text/event-stream",
+                        Body=body,
+                    )
+                    return self.parse_stream(chunks(r))
                 r = self.rt.invoke_endpoint(
                     EndpointName=self.endpoint, ContentType="application/json", Accept="application/json", Body=body
                 )
@@ -124,13 +172,17 @@ class SageMakerVllm(_Vllm):
                 raise HTTPError(int(e.response.get("OriginalStatusCode", 500)), str(e)) from e
             except (EndpointConnectionError, ReadTimeoutError, ConnectionClosedError) as e:
                 raise HTTPError(503, f"{type(e).__name__}: {e}") from e
+            except HTTPError:
+                raise
             except Exception as e:
                 if (status := _retry_status(e)) is not None:
                     raise HTTPError(status, str(e)) from e
+                if isinstance(e, ClientError) and e.response.get("Error", {}).get("Code") == "ModelStreamError":
+                    raise HTTPError(0, str(e)) from e  # the 8 min streaming limit: not retried either
                 raise
-            return json.loads(r["Body"].read())
+            return self.parse(json.loads(r["Body"].read()))
 
-        return self.parse(await asyncio.to_thread(call))
+        return await asyncio.to_thread(call)
 
 
 def make(cfg: Config, name: str, spec: dict) -> Backend:

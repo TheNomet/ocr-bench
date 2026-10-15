@@ -212,6 +212,8 @@ def backend_summary(spec: dict) -> dict:
         }
     sm, req = spec.get("sagemaker") or {}, spec.get("request") or {}
     serving = "direct vLLM URL" if spec.get("direct_url") else "SageMaker real-time endpoint"
+    if sm.get("response_stream") and not spec.get("direct_url"):
+        serving += " (streamed)"
     return {
         **common,
         "model": spec["served_model_name"],
@@ -223,7 +225,8 @@ def backend_summary(spec: dict) -> dict:
         "via": f"vLLM on {serving}",
         "inference_ami_version": sm.get("inference_ami_version"),
         "instance_pools": sm.get("instance_pools"),
-        "request": {k: req.get(k) for k in ("prompt", "max_tokens", "temperature", "extra_body")},
+        "response_stream": bool(sm.get("response_stream")),
+        "request": {k: req.get(k) for k in ("prompt", "max_tokens", "temperature", "extra_body", "image_first")},
         "temperature": req.get("temperature", 0.0),
         "price_per_mtok": None,
         "instance_type": None,

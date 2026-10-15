@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from botocore.stub import Stubber
@@ -102,3 +103,70 @@ def test_image_first_puts_the_page_before_the_prompt(tmp_path):
         "image_url",
         "text",
     ]
+
+
+def _sse(*events: dict) -> bytes:
+    return b"".join(b"data: " + json.dumps(e).encode() + b"\n\n" for e in events) + b"data: [DONE]\n\n"
+
+
+def test_parse_stream_joins_deltas_across_split_chunks():
+    raw = _sse(
+        {"choices": [{"delta": {"role": "assistant"}}]},
+        {"choices": [{"delta": {"content": "Kontout"}}]},
+        {"choices": [{"delta": {"content": "skrift"}, "finish_reason": "stop"}]},
+        {"choices": [], "usage": {"prompt_tokens": 2307, "completion_tokens": 1355}},
+    )
+    chunks = [raw[i : i + 7] for i in range(0, len(raw), 7)]  # events cut at arbitrary bytes
+    r = SageMakerVllm.parse_stream(chunks)
+    assert (r.text, r.prompt_tokens, r.completion_tokens, r.finish_reason) == ("Kontoutskrift", 2307, 1355, "stop")
+
+
+def test_parse_stream_raises_on_an_error_event():
+    with pytest.raises(HTTPError) as e:
+        SageMakerVllm.parse_stream([_sse({"error": {"code": 400, "message": "too many tokens"}})])
+    assert e.value.status == 400
+
+
+class _FakeRt:
+    """invoke_endpoint_with_response_stream only; records the request body."""
+
+    class exceptions:  # noqa: N801 - mirrors the boto3 client attribute
+        class ModelError(Exception):
+            pass
+
+    def __init__(self, events=None, error=None):
+        self.events, self.error, self.body = events or [], error, None
+
+    def invoke_endpoint_with_response_stream(self, **kw):
+        self.body = json.loads(kw["Body"])
+        if self.error:
+            raise self.error
+        return {"Body": iter(self.events)}
+
+
+def _streaming(rt) -> SageMakerVllm:
+    be = SageMakerVllm.__new__(SageMakerVllm)
+    be.served, be.endpoint, be.stream, be.rt = "m", "bench-m", True, rt
+    be.req_cfg = {"prompt": "Read text in the image.", "max_tokens": 8192}
+    return be
+
+
+def test_streaming_request_and_response():
+    raw = _sse({"choices": [{"delta": {"content": "Hei"}, "finish_reason": "length"}]})
+    rt = _FakeRt(events=[{"PayloadPart": {"Bytes": raw[:9]}}, {"PayloadPart": {"Bytes": raw[9:]}}])
+    r = asyncio.run(_streaming(rt).complete(Request("", "")))
+    assert r.text == "Hei" and r.finish_reason == "length"
+    assert rt.body["stream"] is True and rt.body["stream_options"] == {"include_usage": True}
+
+
+def test_streaming_time_limit_is_not_retried():
+    from botocore.exceptions import EventStreamError
+
+    err = EventStreamError({"Error": {"Code": "ModelStreamError", "Message": "did not complete in time"}}, "Invoke")
+    with pytest.raises(HTTPError) as e:
+        asyncio.run(_streaming(_FakeRt(error=err)).complete(Request("", "")))
+    assert e.value.status == 0 and e.value.status not in RETRYABLE
+    err = EventStreamError({"Error": {"Code": "InternalStreamFailure", "Message": "x"}}, "Invoke")
+    with pytest.raises(HTTPError) as e:
+        asyncio.run(_streaming(_FakeRt(error=err)).complete(Request("", "")))
+    assert e.value.status in RETRYABLE

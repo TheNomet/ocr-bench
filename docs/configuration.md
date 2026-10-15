@@ -181,6 +181,7 @@ prefix (`s3://<p>-artifacts/models/<name>/`), SageMaker model and endpoint. The 
 | `sagemaker.model_download_timeout_s` | How long SageMaker allows for copying the weights from S3 to the host (default 1800) |
 | `sagemaker.wait_timeout_s` | How long `endpoint up` / `endpoint wait` wait for InService before failing (default 5400). A failed or rolled-back update also fails them |
 | `sagemaker.network_isolation` | Run the container without network access (default `true`); the weights come from S3 |
+| `sagemaker.response_stream` | Stream the answer (`InvokeEndpointWithResponseStream`, vLLM `"stream": true`) instead of one response (default `false`). A real-time endpoint cuts a normal request off after 60 s, a streamed one after 8 min: turn this on for models that write long pages slowly |
 | `sagemaker.max_lifetime_hours` | The endpoint deletes itself after this long (EventBridge Scheduler, created by `endpoint up` before the endpoint); 0 = never. Must be a number >= 0. With > 0, `endpoint up` refuses to start an endpoint it can't schedule the deletion for (e.g. no `outputs.json` yet) |
 | `sagemaker.price_per_hour_usd` | Optional. When unset, the run looks up the deployed instance's price in the AWS Pricing API |
 | `direct_url` | Use a running vLLM server instead of SageMaker |
