@@ -482,3 +482,16 @@ def test_sigterm_still_syncs_the_partial_run(cfg, monkeypatch):
     finally:
         signal.signal(signal.SIGTERM, prev)
     assert e.value.code == 128 + signal.SIGTERM and synced == ["up"]
+
+
+def test_weights_trust_the_runner_extra_ca():
+    """Behind a TLS-inspecting proxy the HF CDN only verifies with the proxy's CA (runner.extra_ca_pem)."""
+    import ssl
+
+    import certifi
+
+    from ocrbench import weights
+
+    assert weights._verify({"runner": {"extra_ca_pem": None}}) is weights.VERIFY  # type: ignore[arg-type]
+    ctx = weights._verify({"runner": {"extra_ca_pem": certifi.where()}})  # type: ignore[arg-type]
+    assert isinstance(ctx, ssl.SSLContext) and ctx.verify_mode == ssl.CERT_REQUIRED

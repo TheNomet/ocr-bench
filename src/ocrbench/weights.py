@@ -29,6 +29,19 @@ except ImportError:
     VERIFY = True
 
 
+def _verify(cfg: Config) -> ssl.SSLContext | bool:
+    """VERIFY, plus `runner.extra_ca_pem` (the CA a TLS-inspecting proxy signs with), which the bench image
+    trusts too: without it the Hugging Face CDN fails certificate checks behind such a proxy."""
+    pem = cfg["runner"].get("extra_ca_pem")
+    if not pem:
+        return VERIFY
+    import certifi
+
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    ctx.load_verify_locations(cafile=str(Path(pem).expanduser()))
+    return ctx
+
+
 class _HashingReader:
     """Streams bytes to S3 while hashing them: SHA-256 (LFS files) and git's blob SHA-1 (all other files)."""
 
@@ -53,13 +66,13 @@ class _HashingReader:
         return out
 
 
-def _list_tree(repo: str, rev: str) -> list[dict]:
+def _list_tree(repo: str, rev: str, verify: ssl.SSLContext | bool = VERIFY) -> list[dict]:
     """All files at `rev`, following the API's pagination (Link: rel="next")."""
     url = f"https://huggingface.co/api/models/{repo}/tree/{rev}"
     params: dict | None = {"recursive": "1"}
     out: list[dict] = []
     while url:
-        r = httpx.get(url, params=params, timeout=30, verify=VERIFY)
+        r = httpx.get(url, params=params, timeout=30, verify=verify)
         r.raise_for_status()
         out += r.json()
         url, params = r.links.get("next", {}).get("url"), None
@@ -115,12 +128,13 @@ def upload(cfg: Config, name: str, from_dir: Path | None = None, *, if_changed: 
         return
     if old:
         print(f"{name}: replacing {old.get('repo')}@{str(old.get('revision'))[:12]} with {repo}@{rev[:12]}")
-    tree = _list_tree(repo, rev)
+    verify = _verify(cfg)
+    tree = _list_tree(repo, rev, verify)
     files = [f for f in tree if f["type"] == "file" and not f["path"].startswith(skip)]
     # No manifest while the prefix is being rewritten: an interrupted upload is never taken for a complete one.
     s3.delete_object(Bucket=bucket, Key=manifest_key)
     manifest = {"repo": repo, "revision": rev, "skip_prefixes": list(skip), "files": []}
-    with httpx.Client(follow_redirects=True, verify=VERIFY, timeout=httpx.Timeout(60.0, read=300.0)) as http:
+    with httpx.Client(follow_redirects=True, verify=verify, timeout=httpx.Timeout(60.0, read=300.0)) as http:
         for f in files:
             path, size = f["path"], f.get("lfs", {}).get("size", f["size"])
             expected = f.get("lfs", {}).get("oid")  # sha256 for LFS files; otherwise f["oid"] is the git blob sha1
