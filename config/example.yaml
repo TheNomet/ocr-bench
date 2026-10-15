@@ -56,7 +56,7 @@ ecs:
 # Optional on every backend:
 #   label: "My Model 1.0"    display name (default: derived from the model id)
 #   postprocess: [..]        steps applied to its output before scoring/extraction:
-#                            strip_grounding | strip_think | unwrap_code_fence
+#                            strip_grounding | strip_think | unwrap_code_fence | doctags_to_text
 # ---------------------------------------------------------------------------
 backends:
   unlimited-ocr:
@@ -107,6 +107,25 @@ backends:
       # price_per_hour_usd: null    # default: looked up in the AWS Pricing API for the instance actually used
     # Optional: talk to an already-running vLLM server instead of SageMaker (local GPU, tunnel...).
     direct_url: null            # e.g. http://localhost:8000
+
+  # A second self-hosted model: IBM's Granite-Docling (Apache 2.0, 258M), the VLM of the Docling library.
+  # It answers in DocTags; `doctags_to_text` turns that into plain text. Uncomment to use it.
+  # granite-docling:
+  #   kind: selfhosted
+  #   hf_repo: ibm-granite/granite-docling-258M
+  #   hf_revision: 55d41aa24c0be047c7e4ed89b51058ea586b0428   # the `untied` branch, which vLLM needs
+  #   hf_skip_prefixes: ["granite_docling.png", ".gitattributes"]
+  #   source_image: docker.io/vllm/vllm-openai:latest         # pin by digest
+  #   served_model_name: ibm-granite/granite-docling-258M
+  #   serve_args: [--max-model-len, "8192", --max-num-seqs, "64", --gpu-memory-utilization, "0.90"]
+  #   request:
+  #     prompt: "Convert this page to docling."
+  #     image_first: true          # page image before the prompt, as Docling sends it
+  #     max_tokens: 7000           # 8192 context minus ~1k image tokens
+  #     temperature: 0.0
+  #     extra_body: {skip_special_tokens: false}   # keep the DocTags
+  #   postprocess: [doctags_to_text]
+  #   sagemaker: {instance_pools: [ml.g6.xlarge, ml.g5.xlarge], max_lifetime_hours: 6}
 
   sonnet-4.5:
     kind: bedrock

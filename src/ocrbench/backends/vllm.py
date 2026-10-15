@@ -46,7 +46,8 @@ class _Vllm(Backend):
     def body(self, req: Request) -> dict:
         rc = self.req_cfg
         content = [{"type": "text", "text": rc["prompt"]}]
-        content += [{"type": "image_url", "image_url": {"url": data_url(p)}} for p in req.images]
+        images = [{"type": "image_url", "image_url": {"url": data_url(p)}} for p in req.images]
+        content = images + content if rc.get("image_first") else content + images
         return {
             "model": self.served,
             "messages": [{"role": "user", "content": content}],

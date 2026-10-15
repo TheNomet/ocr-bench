@@ -30,7 +30,7 @@ Terms:
 | `backends.<name>` | Every model the benchmark uses, keyed by the name that appears in records, tables and pipelines (see [Backends](#backends)). Use neutral model names (`sonnet-4.5`, `unlimited-ocr`) |
 | `backends.<name>.kind` | `selfhosted`, `bedrock` or `openai_compatible` |
 | `backends.<name>.label` | Optional display name; default derived from the model id |
-| `backends.<name>.postprocess` | Steps applied to the backend's output before scoring and extraction: `strip_grounding` (DeepSeek-OCR `<\|det\|>`/`<\|ref\|>` tokens), `strip_think`, `unwrap_code_fence`. Recorded in the run; the raw output is kept |
+| `backends.<name>.postprocess` | Steps applied to the backend's output before scoring and extraction: `strip_grounding` (DeepSeek-OCR `<\|det\|>`/`<\|ref\|>` tokens), `strip_think`, `unwrap_code_fence`, `doctags_to_text` (Docling DocTags from Granite-Docling: location tags dropped, tables as `\|` rows, checkboxes as ☑/☐). Recorded in the run; the raw output is kept |
 | `backends.<name>.temperature` | LLMs: overrides the request temperature (default 0). Some models accept only 1; `null` omits it. Recorded in the run and shown in the report |
 | `backends.<name>.reasoning_effort` | `openai_compatible` only: `low` / `medium` / `high` for models with extended thinking (sent as `reasoning_effort`). A `bedrock` backend with it is rejected |
 | `backends.<name>.price_per_mtok` | LLMs: `{input, output}` USD per million tokens, for cost figures. Without it the backend's cost is unknown and it is left out of "cheapest" |
@@ -174,7 +174,7 @@ prefix (`s3://<p>-artifacts/models/<name>/`), SageMaker model and endpoint. The 
 | `source_image` | vLLM image that can serve the model. Prefer `name@sha256:...`; with a tag the build prints the digest to pin. It is mirrored by digest, and the deployed model always references the built image by digest |
 | `image_platform` | Platform crane resolves and mirrors from `source_image` (default `linux/amd64`, what SageMaker GPU hosts run) |
 | `serve_args` | Arguments to `vllm serve` (model path, host and port are added). Baked into `/opt/serve.sh` by `ocrbench images <name>` |
-| `request` | Request body: `prompt`, `max_tokens`, `temperature`, `extra_body` (merged as-is, e.g. `vllm_xargs`) |
+| `request` | Request body: `prompt`, `max_tokens`, `temperature`, `extra_body` (merged as-is, e.g. `vllm_xargs`), `image_first` (send the page image before the prompt text, as Docling's models expect; default `false`) |
 | `sagemaker.instance_pools` | GPU types in priority order |
 | `sagemaker.inference_ami_version` | Host image, which sets the NVIDIA driver |
 | `sagemaker.container_startup_timeout_s` | How long SageMaker waits for the container's health check (vLLM loading the model) before failing the endpoint (default 1800) |

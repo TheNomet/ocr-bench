@@ -84,3 +84,21 @@ def test_direct_url_stays_out_of_model_name():
     )
     assert be.model == "ocr-model@direct" and "10.1.2.3" not in be.model
     assert be.url == "http://10.1.2.3:8000/v1/chat/completions"
+
+
+def test_image_first_puts_the_page_before_the_prompt(tmp_path):
+    from PIL import Image
+
+    img = tmp_path / "p.png"
+    Image.new("RGB", (2, 2), "white").save(img)
+    be = SageMakerVllm.__new__(SageMakerVllm)
+    be.served, be.req_cfg = "m", {"prompt": "Convert this page to docling."}
+    assert [c["type"] for c in be.body(Request("", "", images=[img]))["messages"][0]["content"]] == [
+        "text",
+        "image_url",
+    ]
+    be.req_cfg = {**be.req_cfg, "image_first": True}
+    assert [c["type"] for c in be.body(Request("", "", images=[img]))["messages"][0]["content"]] == [
+        "image_url",
+        "text",
+    ]

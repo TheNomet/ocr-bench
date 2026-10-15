@@ -50,6 +50,21 @@ def test_postprocess_registry():
     assert postprocess.apply([], "<|ref|>x<|/ref|>") == "<|ref|>x<|/ref|>"  # nothing configured: raw output
 
 
+def test_doctags_to_text():
+    from ocrbench import postprocess, score
+
+    raw = (
+        "<doctag><section_header_level_1><loc_40><loc_30><loc_200><loc_45>Faktura</section_header_level_1>"
+        "<text><loc_40><loc_50><loc_300><loc_60>Forfall: 15.03.2026</text>"
+        "<otsl><loc_40><loc_70><loc_400><loc_120><ched>Vare<ched>Beløp<nl><fcel>Strøm<fcel>1 250,00<nl>"
+        "<fcel>Sum<ecel><nl></otsl>"
+        "<text><loc_1><loc_2><loc_3><loc_4><checkbox_selected>Ja <checkbox_unselected>Nei</text></doctag>"
+    )
+    out = postprocess.apply(["doctags_to_text"], raw)
+    assert out == "Faktura\n\nForfall: 15.03.2026\n\nVare | Beløp\nStrøm | 1 250,00\nSum |\n\n☑ Ja ☐ Nei"
+    assert "loc_" not in out and score.number_found("1 250,00", out)
+
+
 def _write(tmp_path, text):
     p = tmp_path / "c.yaml"
     p.write_text("name_prefix: abc\naws: {account_id: '1', region: r}\n" + text)

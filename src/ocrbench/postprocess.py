@@ -34,10 +34,29 @@ def unwrap_code_fence(text: str) -> str:
     return m.group(1) if m else (text or "")
 
 
+_LOC = re.compile(r"<loc_\d+>")
+_CELL = re.compile(r"<(?:fcel|ecel|lcel|ucel|xcel|ched|rhed|srow)>")
+_CHECKED = re.compile(r"<checkbox_selected>")
+_UNCHECKED = re.compile(r"<checkbox_unselected>")
+_DOCTAG = re.compile(r"</?[a-z_]+(?:_\d+)?>")
+
+
+def doctags_to_text(text: str) -> str:
+    """Docling DocTags (Granite-Docling, SmolDocling): drop <loc_N> boxes, table cells -> `|` rows, <nl> ->
+    line break, checkboxes -> ☑/☐, every other element tag -> line break."""
+    t = _LOC.sub("", text or "")
+    t = _CHECKED.sub("☑ ", _UNCHECKED.sub("☐ ", t))
+    t = _CELL.sub(" | ", t).replace("<nl>", "\n")
+    t = _DOCTAG.sub("\n", t)
+    lines = (re.sub(r"[ \t]+", " ", ln).strip(" ") for ln in t.splitlines())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(ln.removeprefix("| ").strip() for ln in lines)).strip()
+
+
 REGISTRY: dict[str, Callable[[str], str]] = {
     "strip_grounding": strip_grounding,
     "strip_think": strip_think,
     "unwrap_code_fence": unwrap_code_fence,
+    "doctags_to_text": doctags_to_text,
 }
 
 
