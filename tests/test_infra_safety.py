@@ -495,3 +495,21 @@ def test_weights_trust_the_runner_extra_ca():
     assert weights._verify({"runner": {"extra_ca_pem": None}}) is weights.VERIFY  # type: ignore[arg-type]
     ctx = weights._verify({"runner": {"extra_ca_pem": certifi.where()}})  # type: ignore[arg-type]
     assert isinstance(ctx, ssl.SSLContext) and ctx.verify_mode == ssl.CERT_REQUIRED
+
+
+def test_bench_image_refuses_stale_code(tmp_path):
+    """A cached build of an older working tree must not be pushed as the bench image."""
+    from ocrbench import images
+
+    src, inst = tmp_path / "src" / "ocrbench", tmp_path / "app" / "ocrbench"
+    for d in (src, inst):
+        (d / "backends").mkdir(parents=True)
+        (d / "__init__.py").write_text("")
+    (src / "backends" / "vllm.py").write_text("stream = True\n")
+    (inst / "backends" / "vllm.py").write_text("stream = True\n")
+    (inst / "__pycache__").mkdir()
+    (inst / "__pycache__" / "x.pyc").write_bytes(b"\0")  # build artefacts don't count
+    images._check_app_matches_source(inst, src)
+    (inst / "backends" / "vllm.py").write_text("# old\n")
+    with pytest.raises(SystemExit, match="stale code"):
+        images._check_app_matches_source(inst, src)

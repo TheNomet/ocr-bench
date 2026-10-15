@@ -162,6 +162,24 @@ def build_selfhosted(cfg: Config, name: str) -> None:
     print(f"pushed {repo}@{built}")
 
 
+def _check_app_matches_source(installed: Path, source: Path) -> None:
+    """Every module of the package as installed for the image is byte-identical to the working tree: the bench
+    task must run the code that was just tested, not a cached build of an older state."""
+    src = {
+        p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file() and "__pycache__" not in p.parts
+    }
+    got = {
+        p.relative_to(installed): p.read_bytes()
+        for p in installed.rglob("*")
+        if p.is_file() and "__pycache__" not in p.parts
+    }
+    stale = sorted(str(k) for k in src if got.get(k) != src[k])
+    if stale:
+        raise SystemExit(
+            f"bench image would carry stale code ({len(stale)} files differ, e.g. {stale[:3]}); not pushed"
+        )
+
+
 def build_bench(cfg: Config) -> None:
     c, r = _crane(), cfg["runner"]
     repo = f"{cfg.registry}/{cfg.bench_repo}"
@@ -175,7 +193,9 @@ def build_bench(cfg: Config) -> None:
     # Two layers: the dependencies (change only with uv.lock) and ocrbench itself, so a code change
     # pushes a small layer and the reproducible deps layer keeps its digest.
     _sh("uv", "pip", "install", "--target", str(deps_dir), *target, "--require-hashes", "-r", str(req))
-    _sh("uv", "pip", "install", "--target", str(app_dir), *target, "--no-deps", str(ROOT))
+    # --no-cache: uv otherwise reuses an earlier build of this local package, and the image would run old code.
+    _sh("uv", "pip", "install", "--target", str(app_dir), *target, "--no-deps", "--no-cache", str(ROOT))
+    _check_app_matches_source(app_dir / "ocrbench", ROOT / "src" / "ocrbench")
     deps = _tree(deps_dir, "opt/ocrbench")
     app = _tree(app_dir, "opt/ocrbench")
     env = ["PYTHONPATH=/opt/ocrbench"]
