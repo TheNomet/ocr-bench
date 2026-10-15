@@ -1,0 +1,165 @@
+<doctag><section_header_level_1><loc_41><loc_32><loc_160><loc_43>Snekker Ovrebe AS</section_header_level_1>
+<text><loc_41><loc_46><loc_123><loc_73>Kivievien 41 60002 Aasund Org. 988 665 717 MVA 11.941 39 472</text>
+<text><loc_41><loc_86><loc_126><loc_120>Fakulta 10 Aurora Kowalski Bjernstjerne Bjomors gate 48 A 4610 Kristiansand</text>
+<text><loc_255><loc_91><loc_307><loc_98>05.08.2026</text>
+<text><loc_255><loc_100><loc_307><loc_107>19.08.2026</text>
+<text><loc_255><loc_108><loc_294><loc_115>Fortallsdato</text>
+<text><loc_255><loc_117><loc_294><loc_123>3045</text>
+<text><loc_255><loc_125><loc_294><loc_131>717689737980031</text>
+<text><loc_255><loc_133><loc_294><loc_139>Konton.</text>
+<text><loc_255><loc_166><loc_294><loc_173>Spesifikasjon</text>
+<otsl><loc_46><loc_174><loc_453><loc_219><fcel>Beskrivelse<fcel>Antall<fcel>Enhetspris<fcel>Belop<nl><fcel>Montering av rekverk<fcel>30 lm<fcel>560.00<fcel>16 800.00<nl><fcel>Impregnert trelast<fcel>39 lm<fcel>64.00<fcel>2 496.00<nl><fcel>Kjering<fcel>3 stk<fcel>814.00<fcel>2 442.00<nl></otsl>
+<otsl><loc_255><loc_218><loc_453><loc_259><fcel>Sum eks. mva<fcel>21 736.00<nl><fcel>MVA 25 %<fcel>5 434.50<nl><fcel>A betale<fcel>27 172,50<nl></otsl>
+<text><loc_48><loc_265><loc_444><loc_279>Betingsbetingser: 14 dagere netto. ved for sen betaling plaper fornsellesenerte efter givende sats. Husk i opgi KID ved betaling</text>
+<text><loc_48><loc_283><loc_266><loc_291>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296></text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc_296>Vi g arani pa utort arbeid i herhoid til artalen. Task for opdrager</text>
+<text><loc_48><loc_289><loc_266><loc

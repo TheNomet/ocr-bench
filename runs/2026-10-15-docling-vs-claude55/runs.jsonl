@@ -1,0 +1,3 @@
+{"run_id": "20261015-112344-206ede", "backend": "granite-docling", "model": "ibm-granite/granite-docling-258M@sagemaker", "concurrency": 1, "pages": 108, "wall_s": 463.084788379, "started": 1792063427.5016744, "instance_type": "ml.g6.xlarge"}
+{"run_id": "20261015-113130-f049a5", "backend": "granite-docling", "model": "ibm-granite/granite-docling-258M@sagemaker", "concurrency": 4, "pages": 108, "wall_s": 188.42500377199997, "started": 1792063893.8779278, "instance_type": "ml.g6.xlarge"}
+{"run_id": "20261015-113442-a6cc16", "backend": "granite-docling", "model": "ibm-granite/granite-docling-258M@sagemaker", "concurrency": 16, "pages": 108, "wall_s": 102.79814462699994, "started": 1792064085.4920108, "instance_type": "ml.g6.xlarge"}

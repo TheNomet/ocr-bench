@@ -1,0 +1,16 @@
+<doctag><section_header_level_1><loc_42><loc_34><loc_132><loc_46>Kontoutskrift</section_header_level_1>
+<text><loc_42><loc_55><loc_112><loc_80>Jonas Ali Bekkestien 123 A 6002 Alesund</text>
+<text><loc_52><loc_90><loc_121><loc_120>Kontonummer Kontotype Periode</text>
+<text><loc_52><loc_121><loc_120><loc_128>Inngaende saldo</text>
+<otsl><loc_42><loc_130><loc_456><loc_255><ched>Dato<ched>Forklaring<ched>Inn<ched>Ut<ched>Saldo<nl><fcel>01.08.2026<fcel>Varekjop Sportihuset<ecel><fcel>1 023.07<fcel>33 269.32<nl><fcel>02.08.2026<fcel>Husie<fcel>6 430.00<fcel>24 859.32<ecel><nl><fcel>02.08.2026<fcel>Mobilabonnerent Prat<ecel><fcel>433.06<fcel>24 426.36<nl><fcel>04.08.2026<fcel>Strommetjeneste Kino+<ecel><fcel>12.12<fcel>24 304.14<nl><fcel>05.08.2026<fcel>Varekjop Bokhandelen<ecel><fcel>596.48<fcel>23 707.66<nl><fcel>07.08.2026<fcel>Treningsaenter Puls<ecel><fcel>657.47<fcel>23 090.19<nl><fcel>08.08.2026<fcel>Varekjop Matkroken<ecel><fcel>680.29<fcel>22 369.90<nl><fcel>10.08.2026<fcel>Varekjop Apotek Sentrum<ecel><fcel>737.76<fcel>21 632.14<nl><fcel>12.08.2026<fcel>Vips "Mohammed<ecel><fcel>489.00<fcel>21 143.14<nl><fcel>12.08.2026<fcel>Vips fra Ingrid<ecel><fcel>932.00<fcel>22 075.14<nl><fcel>13.08.2026<fcel>Lann Solberg Barnehage<ecel><fcel>32 051.81<fcel>54 126.75<nl><fcel>14.08.2026<fcel>Vips fra Mirela<ecel><fcel>918.00<fcel>55 044.75<nl><fcel>17.08.2026<fcel>Varekjop Bokhandelen<ecel><fcel>1 691.84<fcel>53 352.91<nl><fcel>18.08.2026<fcel>Busn nedkort<ecel><fcel>780.64<fcel>52 572.27<nl><fcel>18.08.2026<fcel>Varekjop Sportihuset<ecel><fcel>55.52<fcel>52 516.75<nl><fcel>18.08.2026<fcel>Varekjop Jermare Sorlandet<ecel><fcel>838.04<fcel>51 678.71<nl><fcel>18.08.2026<fcel>Varekjop Matkroken<ecel><fcel>104.82<fcel>51 573.89<nl><fcel>19.08.2026<fcel>Varekjop Bakkeret<ecel><fcel>1 509.83<fcel>50 064.06<nl><fcel>21.08.2026<fcel>Minibank uttak<ecel><fcel>959.11<fcel>49 104.95<nl><fcel>22.08.2026<fcel>Varekjop Nartutikken<ecel><fcel>881.99<fcel>48 222.96<nl><fcel>25.08.2026<fcel>Strom Lysglimt Energi<ecel><fcel>2 511.85<fcel>45 711.11<nl><fcel>26.08.2026<fcel>Varekjop Bakkeret<ecel><fcel>1 499.15<fcel>44 211.96<nl><fcel>28.08.2026<fcel>Varekjop Jermare Sorlandet<ecel><fcel>229.27<fcel>43 982.69<nl><fcel>30.08.2026<fcel>Vips "Linnea<ecel><fcel>430.76<fcel>43 551.93<nl></otsl>
+<text><loc_52><loc_376><loc_127><loc_383>Antail transaksjoner</text>
+<text><loc_52><loc_385><loc_81><loc_392>Sum inn</text>
+<text><loc_52><loc_395><loc_81><loc_402>Sum ut</text>
+<text><loc_52><loc_405><loc_130><loc_412>Utgående saldo</text>
+<text><loc_52><loc_422><loc_383><loc_428>Kontoutskriften er lagt 01.09.2026. Ta kontakt med oss innen rimmelig tid dersom du linner tell i overkäten.</text>
+<text><loc_372><loc_27><loc_445><loc_51>Kystbanken Nord Kundeservice Tlf. 948 23 130</text>
+<text><loc_377><loc_85><loc_436><loc_92>4403.85.87544</text>
+<text><loc_375><loc_94><loc_436><loc_101>Brukskonto</text>
+<text><loc_341><loc_104><loc_436><loc_111>01.08.2026 - 31.08.2026</text>
+<text><loc_397><loc_114><loc_436><loc_121>34 312.39</text>
+</doctag>
