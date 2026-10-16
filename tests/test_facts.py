@@ -91,3 +91,25 @@ def test_unsustained_throughput_is_flagged():
     tp = facts.throughput_facts(sp, {"gpu": {"concurrency": 4, "meets_error_threshold": False}})
     assert tp["gpu"]["meets_error_threshold"] is False
     assert "no run within 1% errors" in "\n".join(facts._md_readers({}, tp))
+
+
+def test_extraction_only_run_has_no_reader_tables():
+    """A run with only image->X pipelines transcribed nothing: no empty reader tables for the summary to read."""
+    from ocrbench import facts
+
+    assert facts._md_readers({}, {}) == []
+    out = facts._md_readers(
+        {
+            "b": {
+                "clean": {
+                    "cer_median": 0.01,
+                    "number_recall": 0.99,
+                    "invented_numbers_excl_runaway": 1,
+                    "runaway_pages": 0,
+                    "token_limit_pages": 0,
+                }
+            }
+        },
+        {},
+    )
+    assert out[1].startswith("| reader | variant") and not any("p50 s/page" in x for x in out)

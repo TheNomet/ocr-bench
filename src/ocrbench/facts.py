@@ -291,19 +291,23 @@ def _md_every_pipeline(p: dict, labels: dict[str, str]) -> list[str]:
 
 
 def _md_readers(reading: dict, throughput: dict) -> list[str]:
-    out = [
-        "",
-        "| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages "
-        "| pages at token limit |",
-        "|---|---|---|---|---|---|---|",
-    ]
+    """Reader tables; none for a run without a transcription stage (only `image->X` pipelines)."""
+    out = []
+    if reading:
+        out += [
+            "",
+            "| reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages "
+            "| pages at token limit |",
+            "|---|---|---|---|---|---|---|",
+        ]
     for b, vs in reading.items():
         for v, r in vs.items():
             out.append(
                 f"| `{b}` | {v} | {r['cer_median']:.3f} | {_pct(r['number_recall'])} | "
                 f"{r['invented_numbers_excl_runaway']} | {r['runaway_pages']} | {r.get('token_limit_pages', 0)} |"
             )
-    out += ["", "| reader | p50 s/page (one at a time) | max pages/min (at concurrency) |", "|---|---|---|"]
+    if throughput:
+        out += ["", "| reader | p50 s/page (one at a time) | max pages/min (at concurrency) |", "|---|---|---|"]
     for b, t in throughput.items():
         p50 = "–" if t["p50_s_at_concurrency_1"] is None else f"{t['p50_s_at_concurrency_1']:.1f}"
         flag = "" if t.get("meets_error_threshold", True) else ", no run within 1% errors"

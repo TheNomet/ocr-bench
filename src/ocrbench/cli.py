@@ -459,8 +459,8 @@ def _report(cfg: Config, ids: list[str]) -> None:
     for rid in ids:
         d = runs.run_dir(rid)
         meta = runs.load(d)
-        if not (d / "transcripts.jsonl").exists():
-            print(f"{rid}: no transcripts yet, skipped")
+        if not any((d / f).exists() for f in ("transcripts.jsonl", "extractions.jsonl")):
+            print(f"{rid}: no records yet, skipped")
             continue
         s = score(meta, d)
         idx = reporting.write(meta, s, d, site)
