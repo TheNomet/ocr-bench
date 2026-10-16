@@ -1,0 +1,31 @@
+Elektro-Lie AS
+Lavløren 107 B
+0150 Gøle
+Org nr. 918 993 154 MVA
+Till. 963 54 237
+
+Faktura nr. 74878
+
+Fakturadate
+
+Forfallsdate
+
+Kunten
+
+Kontor:
+
+25.09.2026
+
+5517
+
+51894247684
+
+Spelesifikasjon
+
+<table><tr><td>Antall</td><td>Enhetspris</td><td>Belop</td></tr><tr><td>Samsvarserklaering og dokumentasjon</td><td>3 stk</td><td>1 033,00</td></tr><tr><td>Downlights LED</td><td>3 stk</td><td>513,00</td></tr><tr><td>Stikkontakt dobbel jordet</td><td>3 stk</td><td>267,00</td></tr><tr><td>Elektrikerarbeid</td><td>16 timer</td><td>930,00</td></tr></table>
+
+<table><tr><td>Sum eks. mva</td><td>22 179,00</td></tr><tr><td>MVA 25 %</td><td>5 544,75</td></tr><tr><td>Å betale</td><td>27 723,75</td></tr></table>
+
+Bettalingsbetalinger: 14 dager netto. Ved for seg betaling ørtalingsrente etter gjildende stats. Husk å oppgi KID ved betaling.
+
+Vi gir garanti på utfert arbeid i henhold til avtalen. Talk for oppdraget!

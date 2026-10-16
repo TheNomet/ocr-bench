@@ -1,0 +1,11 @@
+{
+  "type": "bank_statement",
+  "fields": {
+    "account_number": "4403.65.87544",
+    "period_start": "01.08.2026",
+    "period_end": "31.08.2026",
+    "opening_balance": "34 312,39",
+    "closing_balance": "43 551,93",
+    "transaction_count": "24"
+  }
+}

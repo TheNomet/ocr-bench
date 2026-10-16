@@ -1,0 +1,13 @@
+{
+  "type": "letter",
+  "fields": {
+    "recipient": "Fjellbygda Idrettslag",
+    "sender_name": "Åse Strøm",
+    "date": "26.08.2026",
+    "amounts": [
+      "2 100,00",
+      "250,00"
+    ],
+    "phone": "404 22 723"
+  }
+}

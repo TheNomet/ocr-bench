@@ -1,0 +1,27 @@
+Hansen Rør & Bad AS
+
+Fjordvejen 31
+
+0008 Trondheim
+
+05-06-2019 04:04
+
+Faktura nr. 46789
+
+Folkura til
+
+Linnea Sørensen
+
+Kongens gate 115 B
+
+4610 Kristiansand
+
+Fakturadat
+
+Forkfalsdate
+
+Kunden:
+
+2044738450
+
+<table><tr><td>Beckersele</td><td></td><td></td><td></td></tr><tr><td>Rafeggerarbeid</td><td>21 timer</td><td>1 136,00</td><td>23 856,00</td></tr><tr><td>Fislegging vege og gulv</td><td>14 m²</td><td>1 024,00</td><td>14 336,00</td></tr><tr><td>Membrän og smaerenembran</td><td>6 m²</td><td>413,00</td><td>2 478,00</td></tr><tr><td>Berkjøring av avfatt</td><td>2 tass</td><td>2 078,00</td><td>4 156,00</td></tr><tr><td>Riving av eksisterende baderom</td><td>24 timer</td><td>822,00</td><td>19 728,00</td></tr><tr><td>Montering av servant og tolett</td><td>1 stk</td><td>2 341,00</td><td>2 341,00</td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td></tr><tr><td colspan="4">Faktura nr. 46789</td></tr></table>

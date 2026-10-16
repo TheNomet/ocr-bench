@@ -1,0 +1,18 @@
+{
+ "name": "Åse Popescu",
+ "destination": "Gran Canaria",
+ "date_from": "15.09.2026",
+ "date_to": "22.09.2026",
+ "travellers": "5",
+ "budget_per_person": "8 000,00",
+ "activities": [
+  "Sykkeltur",
+  "Cruise"
+ ],
+ "accommodation": [
+  "Hotell",
+  "Bobil"
+ ],
+ "pets": "Ja",
+ "signed_date": "05.06.2026"
+}

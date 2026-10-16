@@ -1,0 +1,44 @@
+Husleiekontrakt
+
+for leie av bollg: kontrakt nr. 4292
+
+§ 1 Partene
+
+<table><tr><td>Uttlerer Adresse Leitetaker Nävaarende adresse Telefon leitetaker</td><td>Bergheim Elendom AS Granstuben 97 B, 5003 Bergen Pål Fletten Åsveien 55, 1606 Fredrikstad 960 62 960</td></tr></table>
+
+§ 2 Leieobjektet
+
+Kontakten gilder leie av bolgen Fjordveien 90, 6002 Ålesund, leilighet H202. Boligen er på ca. 34 m2 og betår av kombinert stue och kajakken, bad og ett soverom. Ilegg folger det med en kjellerbod och rett til bruk av folges av som sykkelbod, terkerom og uteområder etter de til enhver tid gjeldende ordensreglene.
+
+Boligen leies ut mobiert med hvitaiverar som komfyr, kjoleskap och oppvaskmaskin. En egen liste over inventar og bogens tilstand ved hvftityting skal fylles ut og signeres ar begge parter.
+
+§ 3 Leitetid
+
+Leieforholdet starter 01.08.2026 og leper på ubestæmt tid blir sagt opp av en av partene samsvar med
+§ 6. Nekler utleveres på overtakelsesdagen etter avtale, og leietaker kvitterer for antall nøkler fatt mottak.
+
+§ 4 Husleie
+
+Mændig husleie er kr 16 500,00. Leien betales forsduddvis inn den 20. hver måned til utleiers konto
+9184.66.07582. Strøm, internett og eventuelle andre abornementer betales av leietaker direkte til utleiers
+og ikke inkludert leien.
+
+Leien kan justeres én gang per år tråd med endringen konsumprisindelsen, med minst én månds skrittig
+varsel. Ved forsinket betaling kan utleier kreve forsinkelsesrente og purnegebyr etter gjeldende regler.
+
+§ 5 Depositum
+
+Leletaker stiller et depositum på kr 49 500,00. Beleopet settes inn pri en egen depositumskonto leietakers navn
+innen innflytting. Depositumet kan bare utbetales etter skiftig avtale mellom partene, eller når det foreligger
+rettskräftig dom eller avgjelse om dette.
+
+§ 6 Oppsigelse
+
+Gjensidig oppsigelsestid er 3 måneden, regnet fra den første dagen måneden etter at oppsigelsen ble mottatt.
+Oppsigelsen skal være skiftlig. Oppsigelse fra utleier må begrunnes og opplyse om at leietaker kan protestere
+skiftlig innen fristen som folger av husleiloven.
+
+Wed oppsigelse plikter leitetaker å gi utleier og interesserte leietakere adgang til boligen for visning på rimelige
+tidpunkter, etter avtale og med minst ett dagns varesel.
+
+Side i av 2
