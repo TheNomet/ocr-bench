@@ -23,6 +23,11 @@ from ocrbench.report.markdown_lite import inline, render
         ),
         ("claude-3-5-sonnet-20240620", "Claude Sonnet 3.5 (2024-06-20)"),
         ("gpt-4o", "gpt-4o"),
+        ("openai/gpt-6.1-sol", "GPT-6.1 Sol"),
+        ("openai/gpt-6-luna", "GPT-6 Luna"),
+        ("gpt-5.6-terra", "GPT-5.6 Terra"),
+        ("openai/gpt-5.4", "GPT-5.4"),
+        ("openai/gpt-oss-120b", "openai/gpt-oss-120b"),  # not a GPT-<version> id: passes through
     ],
 )
 def test_model_label(model_id, want):

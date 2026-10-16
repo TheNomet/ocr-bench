@@ -78,10 +78,17 @@ _CLAUDE = re.compile(
 )
 
 
+_GPT = re.compile(r"(?:^|[/.])gpt-(?P<ver>\d+(?:\.\d+)?)(?:-(?P<tier>[a-z]+))?(?:-(?P<date>\d{4}-\d{2}-\d{2}))?$")
+
+
 def model_label(model_id: str | None) -> str:
-    """'anthropic.claude-sonnet-4-5-20250929-v1:0' -> 'Claude Sonnet 4.5 (2025-09-29)'. Unknown ids pass through."""
+    """'anthropic.claude-sonnet-4-5-20250929-v1:0' -> 'Claude Sonnet 4.5 (2025-09-29)',
+    'openai/gpt-6.1-sol' -> 'GPT-6.1 Sol'. Unknown ids pass through."""
     if not model_id:
         return "?"
+    if g := _GPT.search(model_id):
+        tier = f" {g['tier'].capitalize()}" if g["tier"] else ""
+        return f"GPT-{g['ver']}{tier}" + (f" ({g['date']})" if g["date"] else "")
     m = _CLAUDE.search(model_id)
     if not m:
         return model_id
