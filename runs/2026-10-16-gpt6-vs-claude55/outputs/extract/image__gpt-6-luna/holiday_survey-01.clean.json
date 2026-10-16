@@ -1,0 +1,20 @@
+{
+ "name": "Erik Nordmann",
+ "destination": "Kreta",
+ "date_from": "29.08.2026",
+ "date_to": "05.09.2026",
+ "travellers": "4",
+ "budget_per_person": "17 000,00",
+ "activities": [
+  "Bading",
+  "Skiferie",
+  "Fjelltur",
+  "Dykking"
+ ],
+ "accommodation": [
+  "Bed & Breakfast",
+  "Bobil"
+ ],
+ "pets": "Ja",
+ "signed_date": "28.06.2026"
+}

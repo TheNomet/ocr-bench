@@ -1,0 +1,263 @@
+{
+  "letter": {
+    "description": "Personal letter written by a private person",
+    "fields": {
+      "sender_name": {
+        "type": "string",
+        "description": "Full name of the person who wrote the letter"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date the letter was written (dd.mm.yyyy)"
+      },
+      "recipient": {
+        "type": "string",
+        "description": "Name of the addressee in the recipient block",
+        "optional": true
+      },
+      "amounts": {
+        "type": "list",
+        "description": "All money amounts mentioned in the letter, as printed"
+      },
+      "phone": {
+        "type": "string",
+        "description": "Sender's phone number"
+      }
+    }
+  },
+  "receipt": {
+    "description": "Shop receipt (kvittering) from a store",
+    "fields": {
+      "merchant": {
+        "type": "string",
+        "description": "Shop name at the top of the receipt"
+      },
+      "date": {
+        "type": "string",
+        "description": "Purchase date (dd.mm.yyyy)"
+      },
+      "time": {
+        "type": "string",
+        "description": "Purchase time (hh:mm)"
+      },
+      "total": {
+        "type": "string",
+        "description": "Total amount paid (TOTALT)"
+      },
+      "vat": {
+        "type": "string",
+        "description": "VAT amount included in the total"
+      },
+      "card_last4": {
+        "type": "string",
+        "description": "Last four digits of the payment card"
+      },
+      "item_count": {
+        "type": "string",
+        "description": "Number of items purchased, as printed"
+      }
+    }
+  },
+  "bank_statement": {
+    "description": "Monthly bank account statement for a private customer",
+    "fields": {
+      "account_number": {
+        "type": "string",
+        "description": "Account number (format 1234.56.78903)"
+      },
+      "period_start": {
+        "type": "string",
+        "description": "First day of the statement period (dd.mm.yyyy)"
+      },
+      "period_end": {
+        "type": "string",
+        "description": "Last day of the statement period (dd.mm.yyyy)"
+      },
+      "opening_balance": {
+        "type": "string",
+        "description": "Opening balance (inngående saldo)"
+      },
+      "closing_balance": {
+        "type": "string",
+        "description": "Closing balance (utgående saldo)"
+      },
+      "transaction_count": {
+        "type": "string",
+        "description": "Number of transactions listed"
+      }
+    }
+  },
+  "holiday_survey": {
+    "description": "Filled-in holiday preferences questionnaire (ferieundersøkelse)",
+    "fields": {
+      "name": {
+        "type": "string",
+        "description": "Name of the person filling in the form"
+      },
+      "destination": {
+        "type": "string",
+        "description": "Preferred destination"
+      },
+      "date_from": {
+        "type": "string",
+        "description": "Desired travel start date (dd.mm.yyyy)"
+      },
+      "date_to": {
+        "type": "string",
+        "description": "Desired travel end date (dd.mm.yyyy)"
+      },
+      "travellers": {
+        "type": "string",
+        "description": "Number of travellers"
+      },
+      "budget_per_person": {
+        "type": "string",
+        "description": "Budget per person in NOK, as printed"
+      },
+      "activities": {
+        "type": "list",
+        "description": "Activities whose checkbox is checked (☑)"
+      },
+      "accommodation": {
+        "type": "list",
+        "description": "Accommodation types whose checkbox is checked (☑)"
+      },
+      "pets": {
+        "type": "string",
+        "description": "Answer to 'Reiser du med kjæledyr?': 'Ja' or 'Nei'"
+      },
+      "signed_date": {
+        "type": "string",
+        "description": "Date next to the signature (dd.mm.yyyy)"
+      }
+    }
+  },
+  "invoice": {
+    "description": "Invoice from a company to a private customer",
+    "fields": {
+      "invoice_number": {
+        "type": "string",
+        "description": "Invoice number"
+      },
+      "invoice_date": {
+        "type": "string",
+        "description": "Invoice date (dd.mm.yyyy)"
+      },
+      "due_date": {
+        "type": "string",
+        "description": "Due date (dd.mm.yyyy)"
+      },
+      "kid": {
+        "type": "string",
+        "description": "KID payment reference number"
+      },
+      "account_number": {
+        "type": "string",
+        "description": "Account number to pay to (1234.56.78903)"
+      },
+      "subtotal": {
+        "type": "string",
+        "description": "Sum excluding VAT"
+      },
+      "vat": {
+        "type": "string",
+        "description": "VAT amount (25 %)"
+      },
+      "total_due": {
+        "type": "string",
+        "description": "Total amount to pay including VAT"
+      }
+    }
+  },
+  "payslip": {
+    "description": "Monthly payslip from an employer to an employee",
+    "fields": {
+      "employer": {
+        "type": "string",
+        "description": "Employer company name"
+      },
+      "employee": {
+        "type": "string",
+        "description": "Employee full name"
+      },
+      "period": {
+        "type": "string",
+        "description": "Pay period, as printed (dd.mm.yyyy - dd.mm.yyyy)"
+      },
+      "gross_pay": {
+        "type": "string",
+        "description": "Gross pay for the period (brutto lønn)"
+      },
+      "tax_withheld": {
+        "type": "string",
+        "description": "Tax withheld (forskuddstrekk)"
+      },
+      "net_pay": {
+        "type": "string",
+        "description": "Net amount paid out"
+      },
+      "payment_date": {
+        "type": "string",
+        "description": "Payment date (dd.mm.yyyy)"
+      },
+      "account_number": {
+        "type": "string",
+        "description": "Employee bank account the pay is sent to"
+      }
+    }
+  },
+  "rental_contract": {
+    "description": "Residential tenancy agreement between a landlord and a tenant (2 pages)",
+    "fields": {
+      "landlord": {
+        "type": "string",
+        "description": "Name of the landlord (utleier)"
+      },
+      "tenant": {
+        "type": "string",
+        "description": "Name of the tenant (leietaker)"
+      },
+      "property_address": {
+        "type": "string",
+        "description": "Address of the rented home including the flat number, as printed"
+      },
+      "start_date": {
+        "type": "string",
+        "description": "Start date of the tenancy (dd.mm.yyyy)"
+      },
+      "monthly_rent": {
+        "type": "string",
+        "description": "Monthly rent in NOK"
+      },
+      "deposit": {
+        "type": "string",
+        "description": "Deposit amount in NOK"
+      },
+      "notice_period": {
+        "type": "string",
+        "description": "Notice period, as printed (e.g. '3 måneder')"
+      }
+    }
+  },
+  "newsletter": {
+    "description": "Newsletter from a housing co-op board to residents",
+    "fields": {
+      "issue_date": {
+        "type": "string",
+        "description": "Publication date of this issue (dd.mm.yyyy)"
+      },
+      "meeting_date": {
+        "type": "string",
+        "description": "Date of the annual residents meeting (årsmøte) (dd.mm.yyyy)"
+      },
+      "new_fee": {
+        "type": "string",
+        "description": "New monthly common cost for the example flat, in NOK"
+      },
+      "dugnad_date": {
+        "type": "string",
+        "description": "Date of the spring/autumn dugnad (dd.mm.yyyy)"
+      }
+    }
+  }
+}

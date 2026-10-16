@@ -1,0 +1,22 @@
+{
+  "type": "holiday_survey",
+  "fields": {
+    "name": "Linnea Sørensen",
+    "destination": "København",
+    "date_from": "02.10.2026",
+    "date_to": "07.10.2026",
+    "travellers": "5",
+    "budget_per_person": "23 500,00",
+    "activities": [
+      "Fjelltur",
+      "Cruise",
+      "Fisketur"
+    ],
+    "accommodation": [
+      "Camping",
+      "Bobil"
+    ],
+    "pets": "Ja",
+    "signed_date": "14.06.2026"
+  }
+}

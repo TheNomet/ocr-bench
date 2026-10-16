@@ -1,0 +1,10 @@
+{
+ "invoice_number": "46789",
+ "invoice_date": "26.05.2026",
+ "due_date": "15.06.2026",
+ "kid": "1644738450",
+ "account_number": "1204.85.26625",
+ "subtotal": "66 895,00",
+ "vat": "16 723,75",
+ "total_due": "83 618,75"
+}
