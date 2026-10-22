@@ -33,7 +33,7 @@ Terms:
 | `backends.<name>.postprocess` | Steps applied to the backend's output before scoring and extraction: `strip_grounding` (DeepSeek-OCR `<\|det\|>`/`<\|ref\|>` tokens), `strip_think`, `unwrap_code_fence`, `doctags_to_text` (Docling DocTags from Granite-Docling: location tags dropped, tables as `\|` rows, checkboxes as ☑/☐). Recorded in the run; the raw output is kept |
 | `backends.<name>.temperature` | LLMs: overrides the request temperature (default 0). Some models accept only 1; `null` omits it. Recorded in the run and shown in the report |
 | `backends.<name>.reasoning_effort` | `openai_compatible` only: `low` / `medium` / `high` for models with extended thinking (sent as `reasoning_effort`). A `bedrock` backend with it is rejected |
-| `backends.<name>.price_per_mtok` | LLMs: `{input, output}` USD per million tokens, for cost figures. Without it the backend's cost is unknown and it is left out of "cheapest" |
+| `backends.<name>.price_per_mtok` | LLMs: `{input, output}` USD per million tokens, for cost figures. Without it the backend's cost is unknown and it is left out of "cheapest"; `ocrbench fill-prices` adds it later to runs that recorded none for the same model |
 | `bench.docs.per_type/seed/scale` | Document generation |
 | `bench.extraction.agent` | Backend that extracts the fields in stage 2 (the `agent` in `<input>->agent`) |
 | `bench.extraction.pipelines` | `"<transcriber>->agent"` and/or `"image->agent"`; `"<input>-><backend>"` uses that backend as the extractor. A plan skips pipelines whose transcriber it doesn't run |

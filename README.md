@@ -101,7 +101,9 @@ results. From a run page you drill down to each document: page image (clean and 
 ground truth, every transcript with a word diff, and the extracted fields marked ✓/✗.
 
 Redo any stage of an old run without starting over, e.g. `just rerun <id> summarize` or
-`just rerun <id> extract,score,summarize`. How pages, fields, latency and cost are scored:
+`just rerun <id> extract,score,summarize`. A price that wasn't known when a run was made can be
+added later: set `price_per_mtok` in the config, then `just fill-prices [<id>]` (only fills prices the
+run left empty, for the same model) and `just report`. How pages, fields, latency and cost are scored:
 [AGENTS.md](AGENTS.md#how-results-are-scored-dont-change-silently).
 
 ## Documentation

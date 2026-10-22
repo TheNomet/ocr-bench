@@ -399,6 +399,28 @@ def refresh_summary_setup(cfg: Config, d: Path) -> None:
     save(d, meta)
 
 
+def fill_prices(cfg: Config, d: Path) -> dict[str, dict]:
+    """Add list prices that were not known when the run was made: a backend the run recorded without
+    `price_per_mtok` takes the current config's price if the config names the same model. A recorded price
+    is never changed. Each filled entry is marked `price_added` (date). Returns {backend: price} filled."""
+    from .explain import model_label
+
+    meta = load(d)
+    filled = {}
+    for key, b in meta["backends"].items():
+        spec = cfg["backends"].get(key)
+        if b["kind"] == "selfhosted" or b.get("price_per_mtok") is not None or not spec:
+            continue
+        price = spec.get("price_per_mtok")
+        if price is None or model_label(b.get("model")) != model_label(spec.get("model") or spec.get("model_id")):
+            continue
+        b["price_per_mtok"], b["price_added"] = price, datetime.now().strftime("%Y-%m-%d")
+        filled[key] = price
+    if filled:
+        save(d, meta)
+    return filled
+
+
 def _patch_snapshot(d: Path, key: str, spec: dict, used_in_stages: bool) -> str | None:
     """Point the snapshot's bench.summary.agent at the writer; returns the snapshot key used (None: no snapshot)."""
     import yaml

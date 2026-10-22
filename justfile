@@ -160,6 +160,10 @@ fetch id:
 report id="":
     {{ob}} report {{ if id != "" { "--run " + id } else { "" } }}
 
+# Add config prices to runs that recorded none for the same model (never changes a recorded price); then `just report`
+fill-prices id="":
+    {{ob}} fill-prices {{ if id != "" { "--run " + id } else { "" } }}
+
 # Open the experiments index (or one run)
 open id="":
     open "site/{{ if id != "" { id + "/" } else { "" } }}index.html" 2>/dev/null || xdg-open "site/{{ if id != "" { id + "/" } else { "" } }}index.html"

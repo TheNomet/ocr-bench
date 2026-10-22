@@ -481,6 +481,14 @@ def cmd_report(cfg: Config, a) -> None:
     _report(cfg, [a.run] if a.run else [m["id"] for m in runs.all_runs()])
 
 
+def cmd_fill_prices(cfg: Config, a) -> None:
+    from . import runs
+
+    for rid in [a.run] if a.run else [m["id"] for m in runs.all_runs()]:
+        filled = runs.fill_prices(cfg, runs.run_dir(rid))
+        print(f"{rid}: " + (", ".join(f"{k} {p}" for k, p in filled.items()) or "nothing to fill"))
+
+
 def cmd_list(cfg: Config, a) -> None:
     from . import runs
 
@@ -608,6 +616,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--run", required=True)
     p = sub.add_parser("report", help="re-score + report.md + site for one run (or all) + experiments index")
     p.add_argument("--run", default=None)
+    p = sub.add_parser(
+        "fill-prices",
+        help="add config prices to runs (one or all) that recorded none for the same model; then `report`",
+    )
+    p.add_argument("--run", default=None)
     sub.add_parser("list", help="list runs")
     for name in ("probe-models", "probe-task"):
         p = sub.add_parser(
@@ -637,6 +650,7 @@ def main(argv: list[str] | None = None) -> None:
         "task-run": cmd_task_run,
         "fetch": cmd_fetch,
         "report": cmd_report,
+        "fill-prices": cmd_fill_prices,
         "list": cmd_list,
         "probe-models": cmd_probe_models,
         "probe-task": cmd_probe_task,

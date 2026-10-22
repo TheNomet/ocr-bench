@@ -77,6 +77,27 @@ def test_only_used_backends_are_recorded(fake_docs, tmp_path, monkeypatch):
     assert set(meta["backends"]) == {"unlimited-ocr", "sonnet-4.5"}
 
 
+def test_fill_prices_only_adds_missing_prices_for_the_same_model(fake_docs, tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path, monkeypatch)
+    d = runs.create(cfg, "smoke", fake_docs)
+    meta = runs.load(d)
+    recorded = meta["backends"]["sonnet-4.5"]["price_per_mtok"]
+    assert recorded is not None
+    cfg.raw["backends"]["sonnet-4.5"]["price_per_mtok"] = {"input": 9.0, "output": 99.0}
+    assert runs.fill_prices(cfg, d) == {}  # a recorded price is never changed
+    assert runs.load(d)["backends"]["sonnet-4.5"]["price_per_mtok"] == recorded
+
+    meta["backends"]["sonnet-4.5"]["price_per_mtok"] = None
+    runs.save(d, meta)
+    cfg.raw["backends"]["sonnet-4.5"]["model_id"] = "anthropic.claude-haiku-4-5"  # the key now names another model
+    assert runs.fill_prices(cfg, d) == {}
+
+    cfg.raw["backends"]["sonnet-4.5"]["model_id"] = meta["backends"]["sonnet-4.5"]["model"]
+    assert runs.fill_prices(cfg, d) == {"sonnet-4.5": {"input": 9.0, "output": 99.0}}
+    b = runs.load(d)["backends"]["sonnet-4.5"]
+    assert b["price_per_mtok"] == {"input": 9.0, "output": 99.0} and b["price_added"]
+
+
 def test_refresh_summary_without_snapshot_and_without_touching_stage_backends(fake_docs, tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, monkeypatch)
     d = runs.create(cfg, "smoke", fake_docs)
