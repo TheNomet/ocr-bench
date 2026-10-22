@@ -220,9 +220,14 @@ def prune_run_pages(runs: list[RunCard], out_dir: Path) -> list[str]:
 
 
 def build_experiments_index(
-    runs: list[RunCard], out_dir: Path, comparison_md: str = "", guide_md: str = "", prune: bool = True
+    runs: list[RunCard],
+    out_dir: Path,
+    comparison_md: str = "",
+    guide_md: str = "",
+    prune: bool = True,
+    prices_md: str = "",
 ) -> Path:
-    """site/index.html: the newest run's headline result, the cross-run comparison, one expandable card per
+    """site/index.html: the newest run's headline result, the price summary, the cross-run comparison, one expandable card per
     run (models, GPU, headline results) linking to its run page, and the guide below them.
 
     Runs are shown newest first by `created`, whatever order they come in. With `prune`, run pages of runs
@@ -241,10 +246,17 @@ def build_experiments_index(
         + (f'<div class="intro">{markdown_lite.render(intro)}</div>' if intro else "")
         + "</section>"
         + '<nav class="toc small">Jump to: '
+        + ('<a href="#prices">What it costs</a> &middot; ' if prices_md else "")
         + ('<a href="#compare">Compare runs</a> &middot; ' if comparison_md else "")
         + '<a href="#runs">Experiments</a>'
         + (' &middot; <a href="#guide">How the benchmark works</a>' if guide else "")
         + "</nav>"
+        + (
+            '<section id="prices" class="compare"><h2>What it costs</h2>'
+            f"{markdown_lite.render(prices_md.replace('## What it costs', '', 1), shift=0)}</section>"
+            if prices_md
+            else ""
+        )
         + (
             '<section id="compare" class="compare"><h2>Compare runs</h2>'
             f"{markdown_lite.render(comparison_md.replace('## Compare runs', '', 1), shift=0)}</section>"

@@ -368,6 +368,77 @@ def comparison_md(c: dict) -> str:
     return "\n".join(out)
 
 
+# --------------------------------------------------------------------------- price summary (main page)
+def _list_price(b: dict) -> str:
+    if b.get("kind") == "selfhosted":
+        p = b.get("price_per_hour_usd")
+        return f"GPU ${p:.2f}/h" if p else "–"
+    p = b.get("price_per_mtok") or {}
+    return f"${p['input']:.2f} / ${p['output']:.2f}" if p.get("input") is not None else "–"
+
+
+def prices(items: list[RunCard]) -> dict:
+    """One row per pipeline (matched on the models used, as in `comparison`), from the newest run that
+    measured its cost; pipelines no run could price are listed apart. Rows are sorted by clean-page cost."""
+    rows: dict[str, dict] = {}
+    unpriced: set[str] = set()
+    for it in newest_first(items):
+        m, rid = it.meta, it.meta["id"]
+        s = view.visible(m, it.scores, focus=False)
+        min_cov = (it.scores.get("method") or {}).get("ranking_min_coverage", 0.99)
+        per: dict[str, dict] = {}
+        for a in s["extraction"]["aggregate"]:
+            per.setdefault(a["pipeline"], {})[a["variant"]] = a
+        for pipe, vs in per.items():
+            lbl = view.pipeline_label(m, pipe)
+            if lbl in rows:
+                continue
+            if all(v.get("cost_per_1k_docs_usd") is None for v in vs.values()):
+                unpriced.add(lbl)
+                continue
+            src = view.source(pipe)
+            parts = [] if src == "image" else [_list_price(view.spec(m, src))]
+            rows[lbl] = {
+                "run": rid,
+                "list_price": " + ".join([*parts, _list_price(view.spec(m, view.extractor(m, pipe)))]),
+                "cost": {v: x.get("cost_per_1k_docs_usd") for v, x in vs.items()},
+                "acc": {v: x.get("field_accuracy") for v, x in vs.items()},
+                "low_coverage": any((x.get("coverage") or 0) < min_cov for x in vs.values()),
+            }
+    order = sorted(rows, key=lambda k: (rows[k]["cost"].get("clean") is None, rows[k]["cost"].get("clean") or 0, k))
+    return {"rows": {k: rows[k] for k in order}, "unpriced": sorted(unpriced - set(rows))}
+
+
+def prices_md(p: dict) -> str:
+    if not p["rows"]:
+        return ""
+    usd = lambda x: metrics.fmt(x, "usd")  # noqa: E731
+    out = [
+        "## What it costs",
+        "",
+        "Cost per 1,000 documents at list prices, cheapest first, each from the newest run that measured it.",
+        "",
+        "| input → extractor | list price | $ / 1k docs (clean / degraded) | field accuracy (clean / degraded) | run |",
+        "|---|---|---|---|---|",
+    ]
+    for lbl, r in p["rows"].items():
+        cost = " / ".join(usd(r["cost"].get(v)) for v in ("clean", "degraded"))
+        acc = " / ".join(_pct(r["acc"].get(v)) for v in ("clean", "degraded"))
+        flag = " (below 99% coverage)" if r["low_coverage"] else ""
+        out.append(f"| {lbl} | {r['list_price']} | {cost} | {acc}{flag} | `{r['run']}` |")
+    out += [
+        "",
+        "List prices are USD per million input / output tokens; a self-hosted model is priced by its GPU's "
+        "on-demand hourly rate, at its best sustained throughput. Token counts are the ones each model reported, "
+        "so a model that reads an image with more tokens, or reasons before answering, costs more. Degraded pages "
+        "cost less only because the simulated photos are smaller (60–75% of the clean page's width and height, "
+        "so about half the image tokens); a real phone photo is larger, so budget with the clean-page figures.",
+    ]
+    if p["unpriced"]:
+        out += ["", "No known price: " + ", ".join(p["unpriced"]) + "."]
+    return "\n".join(out)
+
+
 # --------------------------------------------------------------------------- shared guide (main page)
 def guide_md(latest: dict | None) -> str:
     out = [explain.INTRO, "", "## How the benchmark works", ""]

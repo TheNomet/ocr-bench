@@ -217,3 +217,36 @@ def test_index_prunes_stale_run_pages_only(tmp_path):
 def test_markdown_lite_strips_nul():
     assert inline("a\x000\x00b `c`") == "a0b <code>c</code>"
     assert render("x \x005\x00 y") == "<p>x 5 y</p>"
+
+
+def test_price_summary_uses_newest_priced_run_and_lists_unpriced():
+    def run(rid, created, rows, price):
+        meta = {
+            "id": rid,
+            "created": created,
+            "backends": {
+                "s": {"kind": "bedrock", "model": "anthropic.claude-sonnet-5-5", "price_per_mtok": price},
+                "h": {"kind": "bedrock", "model": "anthropic.claude-haiku-5-5", "price_per_mtok": None},
+            },
+            "extraction": {"agent": "s", "agents": {"image->s": "s", "image->h": "h"}},
+        }
+        agg = [
+            {"pipeline": p, "variant": v, "field_accuracy": 0.9, "coverage": 1.0, "cost_per_1k_docs_usd": c}
+            for p, c in rows
+            for v in ("clean", "degraded")
+        ]
+        scores = {"extraction": {"aggregate": agg}, "transcription": {"aggregate": []}, "speed": []}
+        return RunCard(meta=meta, card_meta=meta, scores=scores, headline={})
+
+    old = run("old", "2026-01-01", [("image->s", 7.0)], {"input": 2.0, "output": 10.0})
+    new = run("new", "2026-02-01", [("image->s", None), ("image->h", None)], None)  # newer, but unpriced
+    cheap = run("cheap", "2026-01-15", [("image->s", 1.0)], {"input": 0.5, "output": 1.0})
+    cheap.meta["backends"]["s"]["model"] = cheap.card_meta["backends"]["s"]["model"] = "anthropic.claude-opus-5-5"
+    p = reporting.prices([old, new, cheap])
+    assert list(p["rows"]) == ["page images → Claude Opus 5.5", "page images → Claude Sonnet 5.5"]  # cheapest first
+    assert p["rows"]["page images → Claude Sonnet 5.5"]["run"] == "old"  # the newest run that measured a cost
+    assert p["unpriced"] == ["page images → Claude Haiku 5.5"]
+    md = reporting.prices_md(p)
+    assert "| page images → Claude Sonnet 5.5 | $2.00 / $10.00 | $7.00 / $7.00 | 90.0% / 90.0% | `old` |" in md
+    assert "No known price: page images → Claude Haiku 5.5." in md
+    assert reporting.prices_md(reporting.prices([new])) == ""

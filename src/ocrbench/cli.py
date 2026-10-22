@@ -472,7 +472,9 @@ def _report(cfg: Config, ids: list[str]) -> None:
             items.append(reporting.run_card(meta, json.loads((d / "scores.json").read_text(encoding="utf-8")), d))
     cmp_md = reporting.comparison_md(reporting.comparison(items))
     guide = reporting.guide_md(newest_first(items)[0].meta if items else None)
-    print(f"experiments index: {build_experiments_index(items, site, comparison_md=cmp_md, guide_md=guide)}")
+    price_md = reporting.prices_md(reporting.prices(items))
+    idx = build_experiments_index(items, site, comparison_md=cmp_md, guide_md=guide, prices_md=price_md)
+    print(f"experiments index: {idx}")
 
 
 def cmd_report(cfg: Config, a) -> None:
