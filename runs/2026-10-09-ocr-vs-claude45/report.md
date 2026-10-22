@@ -82,7 +82,7 @@ Choose `image->agent` for production extraction: it is the most accurate pipelin
 | transcriber (self-hosted) | `unlimited-ocr` | baidu/Unlimited-OCR @ 07dea832 | `baidu/Unlimited-OCR` | vLLM on SageMaker real-time endpoint | 0 | $1.49/hour (on-demand) |
 | transcriber, extraction agent (default) | `sonnet-4.5` | Claude Sonnet 4.5 (2025-09-29) | `anthropic.claude-sonnet-4-5-20250929-v1:0` | OpenAI-compatible gateway | 0 | $3.0 in / $15.0 out per 1M tokens |
 | transcriber | `haiku-4.5` | Claude Haiku 4.5 (2025-10-01) | `anthropic.claude-haiku-4-5-20251001-v1:0` | OpenAI-compatible gateway | 0 | $1.0 in / $5.0 out per 1M tokens |
-| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
+| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | $4.0 in / $20.0 out per 1M tokens |
 
 ### The extraction agent
 

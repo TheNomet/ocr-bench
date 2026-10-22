@@ -16,12 +16,12 @@
   "ranking_min_coverage": 0.99,
   "cost_basis": {
    "haiku-5.5": {
-    "cost_per_1k_pages_usd": null,
-    "basis": "no price configured"
+    "cost_per_1k_pages_usd": 0.7782302469135802,
+    "basis": "list price x tokens used (mean over runs)"
    },
    "sonnet-5.5": {
-    "cost_per_1k_pages_usd": null,
-    "basis": "no price configured"
+    "cost_per_1k_pages_usd": 11.283969135802467,
+    "basis": "list price x tokens used (mean over runs)"
    }
   },
   "variation": {
@@ -53,7 +53,7 @@
    "mean_prompt_tokens": 1891.3672839506173,
    "mean_completion_tokens": 750.1234567901234,
    "retries": 0,
-   "cost_per_1k_pages_usd": null
+   "cost_per_1k_pages_usd": 11.283969135802467
   },
   {
    "backend": "haiku-5.5",
@@ -70,7 +70,7 @@
    "mean_prompt_tokens": 1891.608024691358,
    "mean_completion_tokens": 1178.138888888889,
    "retries": 0,
-   "cost_per_1k_pages_usd": null
+   "cost_per_1k_pages_usd": 0.7782302469135802
   }
  ],
  "transcription": {
@@ -4545,7 +4545,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.456395246541651,
     "end_to_end_latency_s": 1.456395246541651,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.3708104166666667
    },
    {
     "pipeline": "image->haiku-5.5",
@@ -4557,7 +4557,7 @@
     "fields_correct": 322,
     "mean_latency_s": 1.7586877466874853,
     "end_to_end_latency_s": 1.7586877466874853,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.268425
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -4569,7 +4569,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.535297315791657,
     "end_to_end_latency_s": 1.535297315791657,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 7.066041666666667
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -4581,7 +4581,7 @@
     "fields_correct": 328,
     "mean_latency_s": 1.2966812311250255,
     "end_to_end_latency_s": 1.2966812311250255,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.1432916666666655
    }
   ],
   "docs": [

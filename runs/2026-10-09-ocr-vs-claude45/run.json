@@ -1,5 +1,5 @@
 {
- "schema_version": 2,
+ "schema_version": 3,
  "id": "2026-10-09-ocr-vs-claude45",
  "plan": "ocr-vs-claude45",
  "plan_items": [
@@ -179,7 +179,8 @@
    "unlimited-ocr->agent",
    "sonnet-4.5->agent",
    "image->agent"
-  ]
+  ],
+  "repeat": 1
  },
  "summary": {
   "agent": "opus-5.5"
@@ -283,10 +284,14 @@
    "label": null,
    "postprocess": [],
    "model": "anthropic.claude-opus-5-5",
-   "price_per_mtok": null,
+   "price_per_mtok": {
+    "input": 4.0,
+    "output": 20.0
+   },
    "temperature": 1,
    "reasoning_effort": "medium",
-   "via": "OpenAI-compatible gateway"
+   "via": "OpenAI-compatible gateway",
+   "price_added": "2026-10-22"
   }
  },
  "prompts": {

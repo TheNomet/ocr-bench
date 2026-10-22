@@ -1,5 +1,5 @@
 {
- "schema_version": 2,
+ "schema_version": 3,
  "id": "2026-10-09-repeat-plus-claude55",
  "plan": "repeat-plus-claude55",
  "plan_items": [
@@ -204,10 +204,12 @@
    "image->sonnet-5.5": "sonnet-5.5",
    "image->haiku-4.5": "haiku-4.5",
    "image->haiku-5.5": "haiku-5.5"
-  }
+  },
+  "repeat": 1
  },
  "summary": {
-  "agent": "opus-5.5"
+  "agent": "opus-5.5",
+  "temperature": 1
  },
  "stages": {
   "transcribe": {
@@ -223,8 +225,8 @@
    "seconds": 0.8
   },
   "summarize": {
-   "finished": "2026-10-13T16:15:56",
-   "seconds": 15.5
+   "finished": "2026-10-22T07:28:55",
+   "seconds": 13.3
   }
  },
  "plan_description": "Re-check of the OCR model on the same GPU, and the new Claude Sonnet 5.5 and Haiku 5.5. The Claude 4.5 models were also re-run as a reproducibility check; that comparison is in Compare runs.",
@@ -316,27 +318,38 @@
   "sonnet-5.5": {
    "kind": "openai_compatible",
    "model": "anthropic.claude-sonnet-5-5",
-   "price_per_mtok": null,
+   "price_per_mtok": {
+    "input": 2.0,
+    "output": 10.0
+   },
    "temperature": 1,
    "via": "OpenAI-compatible gateway",
    "postprocess": [],
-   "label": null
+   "label": null,
+   "price_added": "2026-10-22"
   },
   "haiku-5.5": {
    "kind": "openai_compatible",
    "model": "anthropic.claude-haiku-5-5",
-   "price_per_mtok": null,
+   "price_per_mtok": {
+    "input": 0.1,
+    "output": 0.5
+   },
    "temperature": 1,
    "via": "OpenAI-compatible gateway",
    "postprocess": [],
-   "label": null
+   "label": null,
+   "price_added": "2026-10-22"
   },
   "opus-5.5": {
    "kind": "openai_compatible",
    "label": null,
    "postprocess": [],
-   "model": "anthropic.claude-opus-5-5",
-   "price_per_mtok": null,
+   "model": "anthropic/claude-opus-5-5",
+   "price_per_mtok": {
+    "input": 4.0,
+    "output": 20.0
+   },
    "temperature": 1,
    "reasoning_effort": "medium",
    "via": "OpenAI-compatible gateway"

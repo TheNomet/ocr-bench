@@ -7,19 +7,17 @@
 | question | clean pages | degraded pages |
 |---|---|---|
 | most accurate pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 100.0% | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 99.1% |
-| cheapest pipeline (among priced, see note) | – | – |
+| cheapest pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): $0.38/1k docs | page images → Claude Haiku 5.5 (`image->haiku-5.5`): $0.28/1k docs |
 | fastest pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 1.8 s/doc | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 1.6 s/doc |
-
-**Cost note:** no cost could be computed for `image->gpt-6-luna`, `image->gpt-6.1-sol`, `image->haiku-5.5`, `image->sonnet-5.5` (no price configured, or no successful request reported its token usage), so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
 
 Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 | pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
 |---|---|---|---|---|
-| page images → GPT-6 Luna (`image->gpt-6-luna`) | 91.8% | 87.5% | 3.3 | – |
-| page images → GPT-6.1 Sol (`image->gpt-6.1-sol`) | 99.7% | 95.4% | 3.7 | – |
-| page images → Claude Haiku 5.5 (`image->haiku-5.5`) | 100.0% | 98.8% | 1.8 | – |
-| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 100.0% | 99.1% | 1.8 | – |
+| page images → GPT-6 Luna (`image->gpt-6-luna`) | 91.8% | 87.5% | 3.3 | $0.41 |
+| page images → GPT-6.1 Sol (`image->gpt-6.1-sol`) | 99.7% | 95.4% | 3.7 | $6.45 |
+| page images → Claude Haiku 5.5 (`image->haiku-5.5`) | 100.0% | 98.8% | 1.8 | $0.38 |
+| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 100.0% | 99.1% | 1.8 | $7.07 |
 
 Fields missed most often (count over clean + degraded documents):
 
@@ -33,31 +31,30 @@ Fields missed most often (count over clean + degraded documents):
 *LLM comment by opus-5.5 (anthropic/claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->sonnet-5.5`. It is the most accurate pipeline on degraded pages (99.1%), ties for most accurate on clean pages (100.0%), and is the fastest on degraded pages (1.6 s/doc). Real-world inputs look like phone photos, so robustness on degraded pages is the deciding factor.
+Choose `image->haiku-5.5` as the default. It is the cheapest pipeline on both clean ($0.38/1k docs) and degraded pages ($0.28/1k docs). It ties for most accurate on clean pages (100.0%) and is close behind the leader on degraded pages (98.8% vs 99.1%). You do not need to trade accuracy for cost here.
 
 ## What the facts say
-- All 4 pipelines read page images directly, so the differences come only from the extractor model. No OCR stage was involved.
-- Clean pages do not separate the Claude models: `image->haiku-5.5` and `image->sonnet-5.5` both reach 100.0%. Degraded pages are where they diverge, and `image->gpt-6-luna` and `image->gpt-6.1-sol` lose more accuracy there than the Claude models.
-- The most-missed fields differ by model:
-  - `image->gpt-6-luna` misses mostly identifiers and dates, led by `invoice.kid` (10) and `holiday_survey.signed_date` (7). This points to a systematic weakness with reference numbers rather than random noise.
-  - The Claude models' few misses are scattered amounts, such as `newsletter.new_fee` and `rental_contract.monthly_rent`. These look like isolated errors.
-- The key facts report no runaway pages and no per-page degradation breakdown beyond the accuracy columns.
-- No self-hosted models appear in the key facts, so there is no evidence on where self-hosting helps.
+- **Differences come from the extractor.** All 4 pipelines read page images directly with no OCR step, so the extracting model alone explains the gaps. The 2 Claude models lead on both clean and degraded pages.
+- **Degraded pages hurt every pipeline, but unevenly.** `image->haiku-5.5` and `image->sonnet-5.5` lose little. `image->gpt-6.1-sol` drops to 95.4% and `image->gpt-6-luna` drops to 87.5%. Robustness to phone-photo noise is the clearest separator between models.
+- **GPT models miss structured identifiers.** `image->gpt-6-luna` misses `invoice.kid` (10) and `receipt.card_last4` (4). `image->gpt-6.1-sol` misses `invoice.account_number` (4). Errors on payment-critical digit strings are costly in practice.
+- **Claude misses are few and scattered.** They fall mostly on amount fields such as `newsletter.new_fee` and `rental_contract.monthly_rent`, which suggests ambiguity in the documents rather than reading failure.
+- **Price does not track accuracy.** `image->sonnet-5.5` and `image->gpt-6.1-sol` cost far more per 1k docs than `image->haiku-5.5` without a matching accuracy gain.
+- **No runaway-page or self-hosted data.** None of the listed pipelines is self-hosted, so these facts say nothing about where self-hosting helps.
 
 ## Choice by goal
 | goal | choice | why |
 |---|---|---|
-| highest accuracy | `image->sonnet-5.5` | Most accurate on degraded pages and tied for most accurate on clean pages |
-| lowest latency | `image->haiku-5.5` (clean) / `image->sonnet-5.5` (degraded) | Named fastest for clean pages (1.8 s/doc) and degraded pages (1.6 s/doc) respectively |
-| lowest cost | unknown | No pipeline has a configured price, so there is no cheapest pipeline. Set `price_per_mtok` before ranking. |
-| checking / second opinion | `image->haiku-5.5` alongside `image->sonnet-5.5` | Close in accuracy, and their missed fields only partly overlap |
-| self-host | no evidence yet | No self-hosted backend was benchmarked |
+| highest accuracy | `image->sonnet-5.5` (degraded); `image->haiku-5.5` or `image->sonnet-5.5` (clean) | Best degraded accuracy at 99.1%; both reach 100.0% on clean pages |
+| lowest latency | `image->haiku-5.5` (clean, 1.8 s/doc); `image->sonnet-5.5` (degraded, 1.6 s/doc) | Fastest pipeline per the key facts |
+| lowest cost | `image->haiku-5.5` | Cheapest on both clean and degraded pages |
+| checking/second opinion | `image->sonnet-5.5` | Different model with strong accuracy; its misses barely overlap with Haiku's |
+| self-hosting | Not supported by this data | No self-hosted pipeline is in the key facts; test one before deciding |
 
 ## Caveats
-- The benchmark uses 48 synthetic Norwegian documents across 8 types. Real layouts, handwriting and other languages may behave differently.
-- "Degraded" means a simulated phone photo. Real capture problems, such as glare, folds or multi-page scans, may be harsher.
-- At the top, the miss counts are very small (1–2 per field). Differences between `image->haiku-5.5` and `image->sonnet-5.5` may not hold on a larger set.
-- Cost is entirely unmeasured. A cost-driven decision could change once prices are configured.
+- The benchmark uses 48 synthetic Norwegian documents. Real scans, other languages, and longer documents may behave differently.
+- Degradation is simulated phone photos. Real damage such as stamps, handwriting, or folds is not covered.
+- Miss counts are small, so the field-level patterns are suggestive rather than conclusive.
+- Prices and latencies reflect current API conditions and can change.
 
 ## Setup
 
@@ -66,11 +63,11 @@ Choose `image->sonnet-5.5`. It is the most accurate pipeline on degraded pages (
 | role | name in tables | model | model id | served by | temperature | price |
 |---|---|---|---|---|---|---|
 | extraction agent (default) | `sonnet-4.5` | Claude Sonnet 4.5 (2025-09-29) | `anthropic.claude-sonnet-4-5-20250929-v1:0` | OpenAI-compatible gateway | 0 | $3.0 in / $15.0 out per 1M tokens |
-| extractor | `gpt-6.1-sol` | GPT-6.1 Sol | `openai/gpt-6.1-sol` | OpenAI-compatible gateway | default | – |
-| extractor | `gpt-6-luna` | GPT-6 Luna | `openai/gpt-6-luna` | OpenAI-compatible gateway | default | – |
-| extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic/claude-sonnet-5-5` | OpenAI-compatible gateway | 0 | – |
-| extractor | `haiku-5.5` | Claude Haiku 5.5 | `anthropic/claude-haiku-5-5` | OpenAI-compatible gateway | 0 | – |
-| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic/claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
+| extractor | `gpt-6.1-sol` | GPT-6.1 Sol | `openai/gpt-6.1-sol` | OpenAI-compatible gateway | default | $2.0 in / $10.0 out per 1M tokens |
+| extractor | `gpt-6-luna` | GPT-6 Luna | `openai/gpt-6-luna` | OpenAI-compatible gateway | default | $0.1 in / $0.5 out per 1M tokens |
+| extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic/claude-sonnet-5-5` | OpenAI-compatible gateway | 0 | $2.0 in / $10.0 out per 1M tokens |
+| extractor | `haiku-5.5` | Claude Haiku 5.5 | `anthropic/claude-haiku-5-5` | OpenAI-compatible gateway | 0 | $0.1 in / $0.5 out per 1M tokens |
+| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic/claude-opus-5-5` | OpenAI-compatible gateway | 1 | $4.0 in / $20.0 out per 1M tokens |
 
 ### The extraction agent
 
@@ -150,14 +147,14 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 
 | Pipeline id | Variant | Docs | Coverage | Field accuracy | Extractor latency (s) | End-to-end (s) | $/1k docs |
 |---|---|---|---|---|---|---|---|
-| image->gpt-6-luna | clean | 48 | 100.0% | 91.8% | 3.28 | 3.28 | – |
-| image->gpt-6-luna | degraded | 48 | 100.0% | 87.5% | 4.67 | 4.67 | – |
-| image->gpt-6.1-sol | clean | 48 | 100.0% | 99.7% | 3.70 | 3.70 | – |
-| image->gpt-6.1-sol | degraded | 48 | 100.0% | 95.4% | 6.32 | 6.32 | – |
-| image->haiku-5.5 | clean | 48 | 100.0% | 100.0% | 1.78 | 1.78 | – |
-| image->haiku-5.5 | degraded | 48 | 100.0% | 98.8% | 1.93 | 1.93 | – |
-| image->sonnet-5.5 | clean | 48 | 100.0% | 100.0% | 1.81 | 1.81 | – |
-| image->sonnet-5.5 | degraded | 48 | 100.0% | 99.1% | 1.63 | 1.63 | – |
+| image->gpt-6-luna | clean | 48 | 100.0% | 91.8% | 3.28 | 3.28 | $0.41 |
+| image->gpt-6-luna | degraded | 48 | 100.0% | 87.5% | 4.67 | 4.67 | $0.35 |
+| image->gpt-6.1-sol | clean | 48 | 100.0% | 99.7% | 3.70 | 3.70 | $6.45 |
+| image->gpt-6.1-sol | degraded | 48 | 100.0% | 95.4% | 6.32 | 6.32 | $4.82 |
+| image->haiku-5.5 | clean | 48 | 100.0% | 100.0% | 1.78 | 1.78 | $0.38 |
+| image->haiku-5.5 | degraded | 48 | 100.0% | 98.8% | 1.93 | 1.93 | $0.28 |
+| image->sonnet-5.5 | clean | 48 | 100.0% | 100.0% | 1.81 | 1.81 | $7.07 |
+| image->sonnet-5.5 | degraded | 48 | 100.0% | 99.1% | 1.63 | 1.63 | $4.15 |
 
 Most-missed fields (count over clean + degraded):
 

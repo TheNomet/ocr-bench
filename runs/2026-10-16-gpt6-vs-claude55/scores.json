@@ -33,7 +33,7 @@
     "fields_correct": 302,
     "mean_latency_s": 3.2839677143541244,
     "end_to_end_latency_s": 3.2839677143541244,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.41020000000000006
    },
    {
     "pipeline": "image->gpt-6-luna",
@@ -45,7 +45,7 @@
     "fields_correct": 288,
     "mean_latency_s": 4.670395678046286,
     "end_to_end_latency_s": 4.670395678046286,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.3508
    },
    {
     "pipeline": "image->gpt-6.1-sol",
@@ -57,7 +57,7 @@
     "fields_correct": 328,
     "mean_latency_s": 3.7032213237750207,
     "end_to_end_latency_s": 3.7032213237750207,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 6.445916666666665
    },
    {
     "pipeline": "image->gpt-6.1-sol",
@@ -69,7 +69,7 @@
     "fields_correct": 314,
     "mean_latency_s": 6.322143155330802,
     "end_to_end_latency_s": 6.322143155330802,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.815708333333333
    },
    {
     "pipeline": "image->haiku-5.5",
@@ -81,7 +81,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.7756714843829589,
     "end_to_end_latency_s": 1.7756714843829589,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.3795666666666667
    },
    {
     "pipeline": "image->haiku-5.5",
@@ -93,7 +93,7 @@
     "fields_correct": 325,
     "mean_latency_s": 1.9257129496096848,
     "end_to_end_latency_s": 1.9257129496096848,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.27829583333333335
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -105,7 +105,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.8060638507461892,
     "end_to_end_latency_s": 1.8060638507461892,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 7.066083333333334
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -117,7 +117,7 @@
     "fields_correct": 326,
     "mean_latency_s": 1.6344546388936578,
     "end_to_end_latency_s": 1.6344546388936578,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.147833333333333
    }
   ],
   "docs": [

@@ -20,16 +20,16 @@
     "basis": "list price x tokens used (mean over runs)"
    },
    "haiku-5.5": {
-    "cost_per_1k_pages_usd": null,
-    "basis": "no price configured"
+    "cost_per_1k_pages_usd": 0.787200462962963,
+    "basis": "list price x tokens used (mean over runs)"
    },
    "sonnet-4.5": {
     "cost_per_1k_pages_usd": 16.261402777777775,
     "basis": "list price x tokens used (mean over runs)"
    },
    "sonnet-5.5": {
-    "cost_per_1k_pages_usd": null,
-    "basis": "no price configured"
+    "cost_per_1k_pages_usd": 11.366805555555556,
+    "basis": "list price x tokens used (mean over runs)"
    },
    "unlimited-ocr": {
     "cost_per_1k_pages_usd": 0.8641252330389289,
@@ -142,7 +142,7 @@
    "mean_prompt_tokens": 1891.4074074074074,
    "mean_completion_tokens": 752.5648148148148,
    "retries": 0,
-   "cost_per_1k_pages_usd": null
+   "cost_per_1k_pages_usd": 11.308462962962963
   },
   {
    "backend": "haiku-5.5",
@@ -159,7 +159,7 @@
    "mean_prompt_tokens": 1891.4166666666667,
    "mean_completion_tokens": 1175.5555555555557,
    "retries": 0,
-   "cost_per_1k_pages_usd": null
+   "cost_per_1k_pages_usd": 0.7769194444444445
   },
   {
    "backend": "sonnet-4.5",
@@ -210,7 +210,7 @@
    "mean_prompt_tokens": 1891.4166666666667,
    "mean_completion_tokens": 764.2314814814815,
    "retries": 0,
-   "cost_per_1k_pages_usd": null
+   "cost_per_1k_pages_usd": 11.42514814814815
   },
   {
    "backend": "haiku-5.5",
@@ -227,7 +227,7 @@
    "mean_prompt_tokens": 1891.3425925925926,
    "mean_completion_tokens": 1216.6944444444443,
    "retries": 0,
-   "cost_per_1k_pages_usd": null
+   "cost_per_1k_pages_usd": 0.7974814814814813
   }
  ],
  "transcription": {
@@ -12068,7 +12068,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.4985618323958836,
     "end_to_end_latency_s": 1.4985618323958836,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.37346666666666667
    },
    {
     "pipeline": "image->haiku-5.5",
@@ -12080,7 +12080,7 @@
     "fields_correct": 323,
     "mean_latency_s": 1.8780350897499527,
     "end_to_end_latency_s": 1.8780350897499527,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 0.2760916666666667
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -12092,7 +12092,7 @@
     "fields_correct": 328,
     "mean_latency_s": 2.067677830666753,
     "end_to_end_latency_s": 2.067677830666753,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 7.068291666666666
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -12104,7 +12104,7 @@
     "fields_correct": 326,
     "mean_latency_s": 1.7298048511667048,
     "end_to_end_latency_s": 1.7298048511667048,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.184666666666668
    },
    {
     "pipeline": "sonnet-4.5->agent",
@@ -12140,7 +12140,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.3546215514375224,
     "end_to_end_latency_s": 7.05127948675,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 16.163197916666668
    },
    {
     "pipeline": "sonnet-5.5->sonnet-5.5",
@@ -12152,7 +12152,7 @@
     "fields_correct": 327,
     "mean_latency_s": 1.3819832132083434,
     "end_to_end_latency_s": 7.330887026562522,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 16.150739583333333
    },
    {
     "pipeline": "unlimited-ocr->agent",
@@ -12188,7 +12188,7 @@
     "fields_correct": 313,
     "mean_latency_s": 1.4504933670207645,
     "end_to_end_latency_s": 8.059962938895772,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.550182553835461
    },
    {
     "pipeline": "unlimited-ocr->sonnet-5.5",
@@ -12200,7 +12200,7 @@
     "fields_correct": 259,
     "mean_latency_s": 2.119387806645913,
     "end_to_end_latency_s": 9.39862854818758,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 5.638807553835461
    }
   ],
   "docs": [

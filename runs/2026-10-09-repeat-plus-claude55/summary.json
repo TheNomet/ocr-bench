@@ -1,8 +1,8 @@
 {
  "backend": "opus-5.5",
- "model": "anthropic.claude-opus-5-5",
+ "model": "anthropic/claude-opus-5-5",
  "input": "computed key facts + setup description",
- "prompt_tokens": 2866,
- "completion_tokens": 1628,
+ "prompt_tokens": 3297,
+ "completion_tokens": 1162,
  "unverified_numbers": []
 }

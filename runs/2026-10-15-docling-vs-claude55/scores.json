@@ -2840,7 +2840,7 @@
     "fields_correct": 259,
     "mean_latency_s": 2.0787088579583375,
     "end_to_end_latency_s": 5.787944229750009,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.730117427168012
    },
    {
     "pipeline": "granite-docling->sonnet-5.5",
@@ -2852,7 +2852,7 @@
     "fields_correct": 173,
     "mean_latency_s": 2.580475090520833,
     "end_to_end_latency_s": 8.517978487375,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 6.649242427168012
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -2864,7 +2864,7 @@
     "fields_correct": 329,
     "mean_latency_s": 1.717840502541674,
     "end_to_end_latency_s": 1.717840502541674,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 7.06475
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -2876,7 +2876,7 @@
     "fields_correct": 328,
     "mean_latency_s": 1.369341493124999,
     "end_to_end_latency_s": 1.369341493124999,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.145375
    }
   ],
   "docs": [

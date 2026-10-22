@@ -2741,7 +2741,7 @@
     "fields_correct": 260,
     "mean_latency_s": 1.7012062596666813,
     "end_to_end_latency_s": 22.953444125895874,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 6.446365949409324
    },
    {
     "pipeline": "dolphin-v2->sonnet-5.5",
@@ -2753,7 +2753,7 @@
     "fields_correct": 230,
     "mean_latency_s": 1.898582943375004,
     "end_to_end_latency_s": 27.721183183000008,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 7.658865949409325
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -2765,7 +2765,7 @@
     "fields_correct": 329,
     "mean_latency_s": 2.3435318749583303,
     "end_to_end_latency_s": 2.3435318749583303,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 7.064333333333334
    },
    {
     "pipeline": "image->sonnet-5.5",
@@ -2777,7 +2777,7 @@
     "fields_correct": 328,
     "mean_latency_s": 1.5912636429166394,
     "end_to_end_latency_s": 1.5912636429166394,
-    "cost_per_1k_docs_usd": null
+    "cost_per_1k_docs_usd": 4.142458333333333
    }
   ],
   "docs": [

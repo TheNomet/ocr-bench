@@ -7,17 +7,15 @@
 | question | clean pages | degraded pages |
 |---|---|---|
 | most accurate pipeline | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 100.0% | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 99.7% |
-| cheapest pipeline (among priced, see note) | – | – |
+| cheapest pipeline | granite-docling-258M text → Claude Sonnet 5.5 (`granite-docling->sonnet-5.5`): $4.73/1k docs | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): $4.15/1k docs |
 | fastest pipeline | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 1.7 s/doc | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 1.4 s/doc |
-
-**Cost note:** no cost could be computed for `granite-docling->sonnet-5.5`, `image->sonnet-5.5` (no price configured, or no successful request reported its token usage), so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
 
 Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 | pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
 |---|---|---|---|---|
-| granite-docling-258M text → Claude Sonnet 5.5 (`granite-docling->sonnet-5.5`) | 78.7% | 52.6% | 5.8 | – |
-| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 100.0% | 99.7% | 1.7 | – |
+| granite-docling-258M text → Claude Sonnet 5.5 (`granite-docling->sonnet-5.5`) | 78.7% | 52.6% | 5.8 | $4.73 |
+| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 100.0% | 99.7% | 1.7 | $7.06 |
 
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages | pages at token limit |
 |---|---|---|---|---|---|---|
@@ -40,35 +38,39 @@ Fields missed most often (count over clean + degraded documents):
 
 ## Recommendation
 
-*LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
+*LLM comment by opus-5.5 (anthropic/claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->sonnet-5.5`. It is the most accurate pipeline on both clean (100.0%) and degraded (99.7%) pages, and also the fastest. The `granite-docling` transcription step adds errors that the extractor cannot recover from, especially on phone-photo pages.
+Choose `image->sonnet-5.5`. It is the most accurate pipeline on both clean pages (100.0%) and degraded pages (99.7%), and it is also the fastest. The self-hosted transcription step in `granite-docling->sonnet-5.5` loses information that the extractor cannot recover, especially on degraded pages (52.6%).
 
 ## What the facts say
-- **The transcript limits accuracy.** Both pipelines use the same extractor (Claude Sonnet 5.5), so the accuracy gap comes from the input. `granite-docling->sonnet-5.5` reaches 78.7% clean and 52.6% degraded, and the extractor can only work with what the transcript contains.
-- **Degradation breaks `granite-docling`.** On degraded pages its CER median rises from 0.079 to 0.283 and number recall falls from 92.8% to 60.9%. Invented numbers jump from 3 to 639, and 3 pages ran away. Reading the images directly barely changes between clean and degraded pages.
-- **The most-missed fields point to lost structure and lost numbers.**
-  - `holiday_survey.activities` and `holiday_survey.accommodation` are the top misses for `granite-docling->sonnet-5.5`. This suggests survey layouts such as checkboxes or tables do not survive transcription.
-  - `payslip.gross_pay` and `receipt.total` are also often missed, which matches the drop in number recall.
-- **Token-limit pages signal looping or overlong output.** `granite-docling` hit the token limit on 2 clean pages and 8 degraded pages. That output becomes noisy text for the extractor.
-- **`image->sonnet-5.5` has only 1 recurring miss.** It missed `rental_contract.monthly_rent` (1), which is too few to show a pattern.
-- **Self-hosting does not help here.** `granite-docling` is slower (5.8 s/doc versus 1.7 s/doc clean) and less accurate. Its GPU costs $1.20/hour whether busy or idle.
+- The two pipelines use the same extractor (Claude Sonnet 5.5). The accuracy gap therefore comes from the input. Reading page images directly keeps everything, while the `granite-docling` transcript drops or distorts content before extraction starts.
+- `granite-docling` falls apart on degraded pages:
+  - CER median rises from 0.079 to 0.283.
+  - Number recall drops from 92.8% to 60.9%.
+  - Invented numbers jump from 3 to 639.
+  - 3 runaway pages and 8 pages at the token limit appear.
+- The fields it misses most are numeric or list fields, such as `payslip.gross_pay` (10) and `receipt.total` (9), plus `holiday_survey.activities` and `holiday_survey.accommodation` (12 each). This suggests that tables, totals and checkbox-style content do not survive transcription.
+- `image->sonnet-5.5` misses only `rental_contract.monthly_rent` (1). Its errors are therefore isolated, not systematic.
+- Cost depends on the page variant:
+  - On clean pages, `granite-docling->sonnet-5.5` is cheapest ($4.73/1k docs vs $7.06). That figure assumes the GPU is kept busy at concurrency 16. One request at a time, `granite-docling` costs $1.42/1k pages instead of $0.32.
+  - On degraded pages, `image->sonnet-5.5` is the cheapest ($4.15/1k docs).
+- Self-hosting does not help speed. `granite-docling->sonnet-5.5` takes 5.8 s/doc vs 1.7 s/doc.
 
 ## Choice by goal
 | goal | choice | why |
 |---|---|---|
 | highest accuracy | `image->sonnet-5.5` | Most accurate on clean and degraded pages |
-| lowest latency | `image->sonnet-5.5` | Fastest pipeline: 1.7 s/doc clean, 1.4 s/doc degraded |
-| lowest cost | unknown | No price is configured for either pipeline, so neither can be called cheapest. `granite-docling` transcription alone is $0.32/1k pages at full load, but the extractor cost is still missing. Set `price_per_mtok` to compare. |
-| checking / second opinion | Re-run `image->sonnet-5.5` on low-confidence fields | `granite-docling->sonnet-5.5` is too unreliable to serve as a check, especially on degraded pages |
-| when to self-host | Not on this evidence | Consider it only if data must stay on your own infrastructure, and expect much lower accuracy on photos |
+| lowest latency | `image->sonnet-5.5` | Fastest: 1.7 s/doc clean, 1.4 s/doc degraded |
+| lowest cost | `granite-docling->sonnet-5.5` (clean pages); `image->sonnet-5.5` (degraded pages) | Cheapest on clean is $4.73/1k docs, but only with a saturated GPU and at 78.7% accuracy; cheapest on degraded is $4.15/1k docs |
+| checking / second opinion | `image->sonnet-5.5` | `granite-docling` invents numbers on degraded pages, so it is unreliable as a cross-check |
+| self-host a model | Only if data cannot leave your infrastructure, pages are clean, and volume keeps the GPU busy | The GPU costs $1.20/hour whether busy or idle, and accuracy is far lower |
 
 ## Caveats
-- The benchmark uses 48 synthetic Norwegian documents across 8 types. Real scans, handwriting or other languages may behave differently.
-- "Degraded" is a simulated phone photo. Real capture problems such as glare, folds or skew may hurt more or less than the simulation.
-- Cost is entirely unpriced, so the choice may change once token prices are set. The `granite-docling` cost also depends heavily on keeping the GPU busy ($0.32 versus $1.42 per 1k pages).
-- Only 1 self-hosted reader was tested. A stronger OCR model might narrow the gap.
+- The benchmark covers 48 synthetic Norwegian documents across 8 types. Real scans, other languages and other layouts may behave differently.
+- "Degraded" means a simulated phone photo. Real capture defects could be harsher or milder.
+- `granite-docling` costs depend on keeping throughput sustained. Bursty or low-volume workloads would raise its cost.
+- Only 1 self-hosted reader was tested, with 1 extractor. Larger OCR models might narrow the gap.
 
 ## Setup
 
@@ -78,8 +80,8 @@ Choose `image->sonnet-5.5`. It is the most accurate pipeline on both clean (100.
 |---|---|---|---|---|---|---|
 | transcriber (self-hosted) | `granite-docling` | ibm-granite/granite-docling-258M @ 55d41aa2 | `ibm-granite/granite-docling-258M` | vLLM on SageMaker real-time endpoint | 0 | $1.20/hour (on-demand) |
 | extraction agent (default) | `sonnet-4.5` | Claude Sonnet 4.5 (2025-09-29) | `anthropic.claude-sonnet-4-5-20250929-v1:0` | OpenAI-compatible gateway | 0 | $3.0 in / $15.0 out per 1M tokens |
-| extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic.claude-sonnet-5-5` | OpenAI-compatible gateway | 1 | – |
-| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
+| extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic.claude-sonnet-5-5` | OpenAI-compatible gateway | 1 | $2.0 in / $10.0 out per 1M tokens |
+| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic/claude-opus-5-5` | OpenAI-compatible gateway | 1 | $4.0 in / $20.0 out per 1M tokens |
 
 ### The extraction agent
 
@@ -190,10 +192,10 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 
 | Pipeline id | Variant | Docs | Coverage | Field accuracy | Extractor latency (s) | End-to-end (s) | $/1k docs |
 |---|---|---|---|---|---|---|---|
-| granite-docling->sonnet-5.5 | clean | 48 | 100.0% | 78.7% | 2.08 | 5.79 | – |
-| granite-docling->sonnet-5.5 | degraded | 48 | 100.0% | 52.6% | 2.58 | 8.52 | – |
-| image->sonnet-5.5 | clean | 48 | 100.0% | 100.0% | 1.72 | 1.72 | – |
-| image->sonnet-5.5 | degraded | 48 | 100.0% | 99.7% | 1.37 | 1.37 | – |
+| granite-docling->sonnet-5.5 | clean | 48 | 100.0% | 78.7% | 2.08 | 5.79 | $4.73 |
+| granite-docling->sonnet-5.5 | degraded | 48 | 100.0% | 52.6% | 2.58 | 8.52 | $6.65 |
+| image->sonnet-5.5 | clean | 48 | 100.0% | 100.0% | 1.72 | 1.72 | $7.06 |
+| image->sonnet-5.5 | degraded | 48 | 100.0% | 99.7% | 1.37 | 1.37 | $4.15 |
 
 Most-missed fields (count over clean + degraded):
 

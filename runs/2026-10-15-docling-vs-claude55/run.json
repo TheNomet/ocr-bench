@@ -210,17 +210,24 @@
    "label": null,
    "postprocess": [],
    "model": "anthropic.claude-sonnet-5-5",
-   "price_per_mtok": null,
+   "price_per_mtok": {
+    "input": 2.0,
+    "output": 10.0
+   },
    "temperature": 1,
    "reasoning_effort": null,
-   "via": "OpenAI-compatible gateway"
+   "via": "OpenAI-compatible gateway",
+   "price_added": "2026-10-22"
   },
   "opus-5.5": {
    "kind": "openai_compatible",
    "label": null,
    "postprocess": [],
-   "model": "anthropic.claude-opus-5-5",
-   "price_per_mtok": null,
+   "model": "anthropic/claude-opus-5-5",
+   "price_per_mtok": {
+    "input": 4.0,
+    "output": 20.0
+   },
    "temperature": 1,
    "reasoning_effort": "medium",
    "via": "OpenAI-compatible gateway"
@@ -276,8 +283,8 @@
    "seconds": 0.2
   },
   "summarize": {
-   "finished": "2026-10-15T11:37:51",
-   "seconds": 15.2
+   "finished": "2026-10-22T07:28:21",
+   "seconds": 11.7
   }
  }
 }

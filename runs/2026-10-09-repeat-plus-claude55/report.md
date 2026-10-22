@@ -7,18 +7,16 @@
 | question | clean pages | degraded pages |
 |---|---|---|
 | most accurate pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 100.0% | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 99.1% |
-| cheapest pipeline (among priced, see note) | – | – |
+| cheapest pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): $0.37/1k docs | page images → Claude Haiku 5.5 (`image->haiku-5.5`): $0.28/1k docs |
 | fastest pipeline | page images → Claude Haiku 5.5 (`image->haiku-5.5`): 1.5 s/doc | page images → Claude Sonnet 5.5 (`image->sonnet-5.5`): 1.7 s/doc |
-
-**Cost note:** no cost could be computed for `image->haiku-5.5`, `image->sonnet-5.5`, `unlimited-ocr->sonnet-5.5` (no price configured, or no successful request reported its token usage), so they are left out of the cheapest-pipeline comparison. Set `price_per_mtok` for those backends to include them.
 
 Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 | pipeline | clean accuracy | degraded accuracy | s/doc (clean) | $/1k docs (clean) |
 |---|---|---|---|---|
-| page images → Claude Haiku 5.5 (`image->haiku-5.5`) | 100.0% | 98.2% | 1.5 | – |
-| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 99.7% | 99.1% | 2.1 | – |
-| Unlimited-OCR text → Claude Sonnet 5.5 (`unlimited-ocr->sonnet-5.5`) | 95.1% | 78.7% | 8.1 | – |
+| page images → Claude Haiku 5.5 (`image->haiku-5.5`) | 100.0% | 98.2% | 1.5 | $0.37 |
+| page images → Claude Sonnet 5.5 (`image->sonnet-5.5`) | 99.7% | 99.1% | 2.1 | $7.07 |
+| Unlimited-OCR text → Claude Sonnet 5.5 (`unlimited-ocr->sonnet-5.5`) | 95.1% | 78.7% | 8.1 | $4.55 |
 
 | reader | variant | CER median | number recall | invented numbers (excl. runaway) | runaway pages | pages at token limit |
 |---|---|---|---|---|---|---|
@@ -39,6 +37,8 @@ Every pipeline (field accuracy, time per document, cost per 1,000 documents):
 
 Pipeline costs that include `unlimited-ocr` use $0.86/1k pages: the cost at its best sustained throughput: 28.8 pages/min at concurrency 16 (GPU kept busy). One request at a time it would be $2.56/1k pages.
 
+- `unlimited-ocr` is cheaper than `sonnet-5.5` transcription ($11.37/1k pages) above **~131 pages/hour** sustained
+- `unlimited-ocr` is not cheaper than `haiku-5.5` transcription ($0.79/1k pages) at any volume: it would take ~1898 pages/hour, more than one GPU handled in this run
 
 Fields missed most often (count over clean + degraded documents):
 
@@ -48,33 +48,33 @@ Fields missed most often (count over clean + degraded documents):
 
 ## Recommendation
 
-*LLM comment by opus-5.5 (anthropic.claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
+*LLM comment by opus-5.5 (anthropic/claude-opus-5-5) on the computed key facts. It interprets the key facts above.*
 
 ## Bottom line
-Choose `image->sonnet-5.5` for production. It is the most accurate on degraded pages (99.1%) and nearly perfect on clean pages (99.7%), so it holds up best on real-world phone photos. `image->haiku-5.5` is a close alternative if clean scans dominate.
+Choose `image->haiku-5.5` as the default: it is the cheapest and the most accurate on clean pages (100.0%), and it stays close to the top on degraded pages (98.2%). If your documents are mostly phone photos and every field matters, use `image->sonnet-5.5`, which is the most accurate on degraded pages (99.1%) but costs more.
 
 ## What the facts say
-- **Reading images directly beats transcribing first.** Both image pipelines stay near-perfect. `unlimited-ocr->sonnet-5.5` drops to 95.1% on clean pages and 78.7% on degraded pages, because errors in the OCR text cannot be recovered by the extractor.
-- **The self-hosted reader degrades badly on photos.** `unlimited-ocr` falls to 90.8% number recall and produces 85 invented numbers on degraded pages. The Claude readers produce single-digit counts.
-- **The OCR pipeline's misses are mostly on form-style fields.** `holiday_survey.activities`, `holiday_survey.accommodation` and `holiday_survey.pets` are probably checkbox or selection items. This suggests the transcript loses marks and layout. Its misses on `receipt.merchant` may come from logos or stylised headers.
-- **The image pipelines share one blind spot.** Both miss `newsletter.new_fee` (3 each), which points to an ambiguous field (e.g. old vs. new fee) rather than a reading problem.
-- **No runaway pages occurred for any reader**, so the failures are degradation and hallucination, not runaway output.
-- **Self-hosting does not help here.** `unlimited-ocr` is slower per page (6.1 s p50) and much lower in throughput (29 vs. 175 pages/min for `sonnet-5.5`). Its GPU costs $1.49/hour even when idle.
+- Reading page images directly beats transcribing first. The self-hosted pipeline `unlimited-ocr->sonnet-5.5` uses the same extractor as `image->sonnet-5.5`, yet it is less accurate, slower and dearer. So the losses come from the transcript, not from the extractor.
+- Degraded pages are where `unlimited-ocr` breaks down. Its accuracy falls to 78.7%, its number recall drops to 90.8%, and it invents 85 numbers on degraded pages. That is far more invented numbers than either Claude reader.
+- `unlimited-ocr`'s most-missed fields are `holiday_survey.activities`, `holiday_survey.accommodation`, `holiday_survey.pets` and `receipt.merchant`. This suggests trouble with checkbox and form layouts and with logos or stylised headers, which a text transcript flattens away.
+- The image pipelines share one hard field, `newsletter.new_fee`, plus occasional misses on rental-contract amounts. These look like ambiguous fields rather than reading errors.
+- No reader produced runaway pages or hit the token limit. The failures here are misreads, not truncation.
+- Self-hosting does not pay off against `haiku-5.5`. `unlimited-ocr` is not cheaper than `haiku-5.5` transcription at any volume one GPU handled. It is only cheaper than `sonnet-5.5` transcription above ~131 pages/hour sustained.
 
 ## Choice by goal
-| Goal | Choice | Why |
+| goal | choice | why |
 |---|---|---|
-| Highest accuracy | `image->sonnet-5.5` | Most accurate on degraded pages, near-perfect on clean |
-| Lowest latency | `image->haiku-5.5` (clean); `image->sonnet-5.5` (degraded) | Fastest on clean at 1.5 s/doc; fastest on degraded at 1.7 s/doc |
-| Lowest cost | Unknown: no pipeline can be named cheapest | No price is configured for any pipeline. Set `price_per_mtok` to compare. The `unlimited-ocr` step's $0.86/1k pages excludes the Sonnet extraction cost. |
-| Checking / second opinion | `image->haiku-5.5` cross-checking `image->sonnet-5.5` | Independent, accurate model; flag disagreements, especially on `newsletter.new_fee` |
-| Self-host a model | Not on this evidence | Lower accuracy, more invented numbers, lower throughput. Revisit only if data-residency rules forbid hosted APIs, and verify on your own documents first. |
+| highest accuracy | `image->sonnet-5.5` for degraded pages, `image->haiku-5.5` for clean pages | Each is the top pipeline in its condition: 99.1% degraded, 100.0% clean. |
+| lowest latency | `image->haiku-5.5` | It is the fastest on clean pages (1.5 s/doc). `image->sonnet-5.5` is the fastest on degraded pages. |
+| lowest cost | `image->haiku-5.5` | It is the cheapest pipeline in both conditions ($0.37/1k docs clean). |
+| checking/second opinion | Run `image->sonnet-5.5` against `image->haiku-5.5` | Both are strong, so where they disagree is a useful flag for review. |
+| self-host a model | Don't, unless data cannot leave your infrastructure | `unlimited-ocr->sonnet-5.5` is the least accurate pipeline, and its GPU costs $1.49/hour even when idle. |
 
 ## Caveats
-- **Synthetic sample.** The data is 48 synthetic Norwegian documents with simulated degradation. Real scans, handwriting and other languages may behave differently.
-- **Small sample.** Differences between the two image pipelines amount to a handful of fields and may not be meaningful.
-- **Untested combination.** Both Claude models ran at temperature 1, and `unlimited-ocr` was tested only with a Sonnet extractor.
-- **Cost conclusions are impossible until prices are configured.** GPU economics also depend on keeping the instance busy: one request at a time it would be $2.56/1k pages.
+- The benchmark uses 48 synthetic Norwegian documents across 8 types. Real scans, handwriting and other languages may behave differently.
+- "Degraded" means a simulated phone photo. Real capture problems such as glare, folds or skew may be harsher.
+- Both extractors ran at temperature 1, and the missed-field counts are small, so rankings near the top could shift if the benchmark were rerun.
+- Only 1 self-hosted model and 1 GPU size were tested. The result says nothing about other OCR models or hardware.
 
 ## Setup
 
@@ -83,9 +83,9 @@ Choose `image->sonnet-5.5` for production. It is the most accurate on degraded p
 | role | name in tables | model | model id | served by | temperature | price |
 |---|---|---|---|---|---|---|
 | transcriber (self-hosted) | `unlimited-ocr` | baidu/Unlimited-OCR @ 07dea832 | `baidu/Unlimited-OCR` | vLLM on SageMaker real-time endpoint | 0 | $1.49/hour (on-demand) |
-| transcriber, extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic.claude-sonnet-5-5` | OpenAI-compatible gateway | 1 | – |
-| transcriber, extractor | `haiku-5.5` | Claude Haiku 5.5 | `anthropic.claude-haiku-5-5` | OpenAI-compatible gateway | 1 | – |
-| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic.claude-opus-5-5` | OpenAI-compatible gateway | 1 | – |
+| transcriber, extractor | `sonnet-5.5` | Claude Sonnet 5.5 | `anthropic.claude-sonnet-5-5` | OpenAI-compatible gateway | 1 | $2.0 in / $10.0 out per 1M tokens |
+| transcriber, extractor | `haiku-5.5` | Claude Haiku 5.5 | `anthropic.claude-haiku-5-5` | OpenAI-compatible gateway | 1 | $0.1 in / $0.5 out per 1M tokens |
+| recommendation writer | `opus-5.5` | Claude Opus 5.5 | `anthropic/claude-opus-5-5` | OpenAI-compatible gateway | 1 | $4.0 in / $20.0 out per 1M tokens |
 
 ### The extractors
 
@@ -191,10 +191,10 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 | unlimited-ocr | 1 | 108 | 108 | 9.7 | 6.05 | 8.69 | $2.56 |
 | unlimited-ocr | 4 | 108 | 108 | 23.9 | 10.18 | 13.56 | $1.04 |
 | unlimited-ocr | 16 | 108 | 108 | 28.8 | 32.45 | 40.33 | $0.86 |
-| sonnet-5.5 | 1 | 108 | 108 | 11.6 | 5.27 | 7.33 | – |
-| haiku-5.5 | 1 | 108 | 108 | 12.3 | 4.27 | 7.88 | – |
-| sonnet-5.5 | 16 | 108 | 108 | 174.7 | 4.98 | 7.34 | – |
-| haiku-5.5 | 16 | 108 | 108 | 136.3 | 4.08 | 8.58 | – |
+| sonnet-5.5 | 1 | 108 | 108 | 11.6 | 5.27 | 7.33 | $11.31 |
+| haiku-5.5 | 1 | 108 | 108 | 12.3 | 4.27 | 7.88 | $0.78 |
+| sonnet-5.5 | 16 | 108 | 108 | 174.7 | 4.98 | 7.34 | $11.43 |
+| haiku-5.5 | 16 | 108 | 108 | 136.3 | 4.08 | 8.58 | $0.80 |
 
 ### Transcription quality (stage 1)
 
@@ -211,12 +211,12 @@ All documents are synthetic Norwegian (bokmål) everyday paperwork with fictiona
 
 | Pipeline id | Variant | Docs | Coverage | Field accuracy | Extractor latency (s) | End-to-end (s) | $/1k docs |
 |---|---|---|---|---|---|---|---|
-| image->haiku-5.5 | clean | 48 | 100.0% | 100.0% | 1.50 | 1.50 | – |
-| image->haiku-5.5 | degraded | 48 | 100.0% | 98.2% | 1.88 | 1.88 | – |
-| image->sonnet-5.5 | clean | 48 | 100.0% | 99.7% | 2.07 | 2.07 | – |
-| image->sonnet-5.5 | degraded | 48 | 100.0% | 99.1% | 1.73 | 1.73 | – |
-| unlimited-ocr->sonnet-5.5 | clean | 48 | 100.0% | 95.1% | 1.45 | 8.06 | – |
-| unlimited-ocr->sonnet-5.5 | degraded | 48 | 100.0% | 78.7% | 2.12 | 9.40 | – |
+| image->haiku-5.5 | clean | 48 | 100.0% | 100.0% | 1.50 | 1.50 | $0.37 |
+| image->haiku-5.5 | degraded | 48 | 100.0% | 98.2% | 1.88 | 1.88 | $0.28 |
+| image->sonnet-5.5 | clean | 48 | 100.0% | 99.7% | 2.07 | 2.07 | $7.07 |
+| image->sonnet-5.5 | degraded | 48 | 100.0% | 99.1% | 1.73 | 1.73 | $4.18 |
+| unlimited-ocr->sonnet-5.5 | clean | 48 | 100.0% | 95.1% | 1.45 | 8.06 | $4.55 |
+| unlimited-ocr->sonnet-5.5 | degraded | 48 | 100.0% | 78.7% | 2.12 | 9.40 | $5.64 |
 
 Most-missed fields (count over clean + degraded):
 
